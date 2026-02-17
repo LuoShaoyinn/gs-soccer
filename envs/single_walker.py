@@ -165,10 +165,12 @@ class SingleWalkerEnv(gym.vector.VectorEnv):
                 dofs_pos + action * self.action_scale,
                 dofs_idx_local=self.dofs_idx_local)
         self.scene.step()
+        dofs_pos = robot.get_dofs_position(dofs_idx_local=dofs_idx_local)
+        dofs_vel = robot.get_dofs_velocity(dofs_idx_local=dofs_idx_local)
         return {
             "imu_data"  : self.imu.read(), 
             "dofs_pos"  : dofs_pos, 
-            "dofs_vel"  : robot.get_dofs_velocity(dofs_idx_local=dofs_idx_local), 
+            "dofs_vel"  : dofs_vel, 
             # "dofs_force": robot.get_dofs_force(dofs_idx_local=dofs_idx_local), 
             "body_quat" : robot_base.get_quat(), 
             "body_vel"  : robot_base.get_vel(), 
@@ -205,7 +207,10 @@ class SingleWalkerEnv(gym.vector.VectorEnv):
     @torch.no_grad()
     #@torch.compiler.disable()
     def reset_batch(self, envs_idx: torch.Tensor):
-        if not envs_idx.any():
+        if envs_idx.dtype == torch.bool:
+            if not envs_idx.any():
+                return
+        elif envs_idx.numel() == 0:
             return
         zeros = torch.zeros((len(self.dofs_idx_local)), 
                              device=self.cfg.device)
@@ -215,6 +220,7 @@ class SingleWalkerEnv(gym.vector.VectorEnv):
         self.robot.set_pos(pos=self.cfg.robot_initial_pos, envs_idx=envs_idx)
         self.robot.set_quat(quat=self.cfg.robot_initial_quat, envs_idx=envs_idx)
         self.command[envs_idx] = self.cfg.gen_cmd_fn()
+        self._obs_stack[envs_idx] = 0.0
 
     @torch.no_grad()
     #@torch.compile
@@ -249,4 +255,3 @@ class SingleWalkerEnv(gym.vector.VectorEnv):
     @torch.no_grad()
     def render(self):
         pass
-
