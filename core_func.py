@@ -22,11 +22,13 @@ def terminated_fn(link_force_threshold: float,
     hard_collision = net_contact_force.max(dim=1).values > link_force_threshold
     invalid = (~torch.isfinite(body_pos).all(dim=1)
                | ~torch.isfinite(body_quat).all(dim=1))
-    terminated = fallen | tilted | hard_collision | invalid
+    # Early training often has incidental self-contact; keep it as a penalty,
+    # not a hard termination condition.
+    terminated = fallen | tilted | invalid
     return terminated, {
         "terminated/fallen": fallen.float().mean(),
         "terminated/tilted": tilted.float().mean(),
-        "terminated/collision": hard_collision.float().mean(),
+        "contact/over_threshold": hard_collision.float().mean(),
     }
 
 
@@ -44,6 +46,7 @@ def gen_cmd_fn(low, high, device) -> torch.Tensor:
 @torch.no_grad()
 def reward_fn(num_envs: int,
               device: str,
+              collision_penalty_weight: float,
               body_pos: torch.Tensor,
               body_vel: torch.Tensor,
               body_quat: torch.Tensor,
@@ -75,7 +78,12 @@ def reward_fn(num_envs: int,
     rew_smooth = torch.exp(-dof_speed / 25.0)
 
     # 6) Penalize non-foot body collisions (net_contact_force excludes last 2 links).
-    collision_penalty = torch.tanh(net_contact_force.mean(dim=1) / 500.0)
+    # Rigid-body contacts can spike to ~1e4 N, so use a deadzone + linear ramp.
+    # Apply this mostly when the torso is near-upright.
+    peak_contact = net_contact_force.max(dim=1).values
+    collision_penalty_raw = torch.clamp((peak_contact - 3000.0) / 7000.0, min=0.0, max=1.0)
+    upright_gate = (rew_upright > 0.8).float()
+    collision_penalty = collision_penalty_raw * upright_gate
 
     reward = (
         1.20 * rew_lin_vel
@@ -83,7 +91,7 @@ def reward_fn(num_envs: int,
         + 0.60 * rew_upright
         + 0.40 * rew_height
         + 0.20 * rew_smooth
-        - 0.30 * collision_penalty
+        - collision_penalty_weight * collision_penalty
         + 0.20
     )
     reward = torch.clamp(reward, min=0.0, max=3.0)
@@ -94,6 +102,7 @@ def reward_fn(num_envs: int,
         "rew/upright": rew_upright.mean(),
         "rew/height": rew_height.mean(),
         "rew/smooth": rew_smooth.mean(),
+        "rew/collision_penalty_raw": collision_penalty_raw.mean(),
         "rew/collision_penalty": collision_penalty.mean(),
         "rew/total": reward.mean(),
     }

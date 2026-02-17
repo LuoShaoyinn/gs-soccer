@@ -19,10 +19,11 @@ from network import Policy, Value
 EVAL = False
 RESUME_TRAINING = False
 CHECKPOINT_PATH = "runs/PPO_Walker/fuck2/checkpoints/best_agent.pt"
-NUM_ENVS = 16 if EVAL else 8192
+NUM_ENVS = 16 if EVAL else 16348
 DEVICE = "cuda"
 FIELD_RANGE = 2.0
 ROLLOUT_STEPS = 48
+COLLISION_PENALTY_WEIGHT = 0.0
 
 set_seed(42)
 gs.init(backend=gs.gs_backend.vulkan, 
@@ -34,15 +35,21 @@ env = SingleWalkerEnv(SingleWalkerEnvConfig(
     num_envs        = NUM_ENVS,
     robot_URDF      = 'assets/MOS9/MOS9.urdf',
     field_range     = FIELD_RANGE, 
-    reward_fn       = partial(reward_fn, num_envs=NUM_ENVS, device=DEVICE), 
+    reward_fn       = partial(
+        reward_fn,
+        num_envs=NUM_ENVS,
+        device=DEVICE,
+        collision_penalty_weight=COLLISION_PENALTY_WEIGHT,
+    ), 
     action_scale    = np.array([0.2] * 12, dtype=np.float32), 
-    terminated_fn   = partial(terminated_fn, link_force_threshold=500), 
+    terminated_fn   = partial(terminated_fn, link_force_threshold=12000), 
     force_range     = np.array([[-120.0] * 12, [120.0] * 12], dtype=np.float32), 
     truncated_fn    = partial(truncated_fn, field_range=FIELD_RANGE), 
     gen_cmd_fn      = partial(
         gen_cmd_fn,
-        low=np.array([-0.6, -0.3, -1.0], dtype=np.float32),
-        high=np.array([0.8, 0.3, 1.0], dtype=np.float32),
+        # Easier command range to bootstrap standing + basic walking.
+        low=np.array([-0.2, -0.05, -0.3], dtype=np.float32),
+        high=np.array([0.4, 0.05, 0.3], dtype=np.float32),
         device=DEVICE,
     ),
     show_viewer     = EVAL, 

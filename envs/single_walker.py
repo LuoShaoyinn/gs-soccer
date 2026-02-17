@@ -176,8 +176,9 @@ class SingleWalkerEnv(gym.vector.VectorEnv):
             "body_vel"  : robot_base.get_vel(), 
             "body_pos"  : robot_base.get_pos(), 
             "cmd_vel"   : self.command, 
-            "net_contact_force" : torch.sum( torch.square(
-                robot.get_links_net_contact_force()[:, :-2, :]), dim=2)
+            # Use force magnitude (N), not squared magnitude (N^2).
+            "net_contact_force" : torch.linalg.norm(
+                robot.get_links_net_contact_force()[:, :-2, :], dim=2)
         }
 
     #@torch.compile()
