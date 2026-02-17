@@ -1,0 +1,25 @@
+<mujoco model="custom_arena">
+    <asset>
+        <texture type="skybox" builtin="gradient" rgb1="0.1 0.1 0.2" rgb2="0.6 0.8 1.0" 
+                 width="512" height="512"/>
+        <texture name="grass_tex" type="2d" file="texture/grass.png"/>
+        <material name="grass_mat" texture="grass_tex" specular="0" shininess="0" reflectance="0"  texuniform="true"/>
+        
+        <material name="line_mat" rgba="1 1 1 1" specular="0" shininess="0"/>
+    </asset>
+    <visual>
+        <headlight ambient="0.4 0.4 0.5" diffuse="0.8 0.8 0.8" specular="0.1 0.1 0.1"/>`
+        <map fogstart="3" fogend="10"/>
+    </visual>
+
+    <worldbody>
+        <geom name="field" type="plane" size="5.5 4.0 0.1" material="grass_mat"/>
+        <body>
+            <geom name="line_side1" type="box" size="4.9 0.01 0.001" pos="0 3.4 0.001" material="line_mat"/>
+            <geom name="line_side2" type="box" size="4.9 0.01 0.001" pos="0 -3.4 0.001" material="line_mat"/>
+            <geom name="line_side3" type="box" size="0.01 3.4 0.001" pos="4.9 0 0.001" material="line_mat"/>
+            <geom name="line_side4" type="box" size="0.01 3.4 0.001" pos="-4.9 0 0.001" material="line_mat"/>
+            <geom name="line_mid" type="box" size="0.01 3.4 0.001" pos="0 0 0.001" material="line_mat"/> 
+        </body>
+    </worldbody>
+</mujoco>
