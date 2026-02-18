@@ -16,9 +16,10 @@ from envs.single_walker import SingleWalkerEnv, SingleWalkerEnvConfig
 from core_func import reward_fn, truncated_fn, terminated_fn, gen_cmd_fn
 from network import Policy, Value
 
-EVAL = False
+EVAL = True
 RESUME_TRAINING = False
-CHECKPOINT_PATH = "runs/PPO_Walker/fuck2/checkpoints/best_agent.pt"
+EXPERIMENT_NAME = "fuck1"
+CHECKPOINT_PATH = f"runs/PPO_Walker/{EXPERIMENT_NAME}/checkpoints/best_agent.pt"
 NUM_ENVS = 16 if EVAL else 16348
 DEVICE = "cuda"
 FIELD_RANGE = 2.0
@@ -26,9 +27,16 @@ ROLLOUT_STEPS = 48
 COLLISION_PENALTY_WEIGHT = 0.0
 
 set_seed(42)
-gs.init(backend=gs.gs_backend.vulkan, 
+backend = gs.gs_backend.gpu
+if DEVICE == "cuda":
+    name = torch.cuda.get_device_name(DEVICE)
+    if "AMD" in name or "amd" in name or "rocm" in name: 
+        backend = gs.gs_backend.vulkan
+elif DEVICE == "cpu":
+    backend = gs.gs_backend.cpu
+gs.init(backend=backend, 
         performance_mode=True, 
-        logging_level='info')
+        logging_level='warning')
 
 # Environment Setup
 env = SingleWalkerEnv(SingleWalkerEnvConfig(
@@ -41,7 +49,7 @@ env = SingleWalkerEnv(SingleWalkerEnvConfig(
         device=DEVICE,
         collision_penalty_weight=COLLISION_PENALTY_WEIGHT,
     ), 
-    action_scale    = np.array([0.2] * 12, dtype=np.float32), 
+    action_scale    = np.array([0.5] * 12, dtype=np.float32), 
     terminated_fn   = partial(terminated_fn, link_force_threshold=12000), 
     force_range     = np.array([[-120.0] * 12, [120.0] * 12], dtype=np.float32), 
     truncated_fn    = partial(truncated_fn, field_range=FIELD_RANGE), 
@@ -55,8 +63,8 @@ env = SingleWalkerEnv(SingleWalkerEnvConfig(
     show_viewer     = EVAL, 
     robot_initial_pos  = np.array([0.0, 0.0, 0.51]),
     robot_initial_quat = np.array([1.0, 0.0, 0.0, 0.0]),
-    kp              = np.array([40.0] * 12, dtype=np.float32),
-    kv              = np.array([4.0] * 12, dtype=np.float32), 
+    kp              = np.array([70.0] * 12, dtype=np.float32),
+    kv              = np.array([3.0] * 12, dtype=np.float32), 
     joint_names = ['b_Rh', 'b_Lh', 'Rh_Rl', 'Lh_Ll', 'Rl_Rl1', 'Ll_Ll1', 
                    'Rl1_Rl2', 'Ll1_Ll2', 'Rl2_Ra', 'Ll2_La', 'Ra_Rf', 'La_Lf']
 ))
@@ -89,7 +97,7 @@ cfg["value_preprocessor_kwargs"] = {"size": 1, "device": DEVICE}
 cfg["experiment"]["directory"] = "runs/PPO_Walker" # type: ignore
 cfg["experiment"]["write_interval"] = 100           # type: ignore
 cfg["experiment"]["checkpoint_interval"] = 1000     # type: ignore
-cfg["experiment"]["experiment_name"] = "fuck2"      # type: ignore
+cfg["experiment"]["experiment_name"] = EXPERIMENT_NAME      # type: ignore
 
 agent = PPO(models=models,
             memory=RandomMemory(memory_size=ROLLOUT_STEPS, 

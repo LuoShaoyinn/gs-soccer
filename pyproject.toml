@@ -14,7 +14,7 @@ dependencies = [
     "skrl[torch]>=1.4.3",
     "ipython>=9.10.0",
     "setuptools<80.0.0",
-    "rsl-rl-lib >= 2.2.1",
+    "rsl-rl-lib>=3",
 ]
 
 [project.optional-dependencies]
