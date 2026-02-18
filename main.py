@@ -2,29 +2,34 @@ import os
 import numpy as np
 import genesis as gs
 import torch
-import torch.nn as nn
 from functools import partial
 
 from skrl.agents.torch.ppo import PPO, PPO_DEFAULT_CONFIG
 from skrl.memories.torch import RandomMemory
-from skrl.envs.wrappers.torch import wrap_env
 from skrl.trainers.torch import SequentialTrainer
 from skrl.resources.preprocessors.torch import RunningStandardScaler
 from skrl.utils import set_seed
 
 from envs.single_walker import SingleWalkerEnv, SingleWalkerEnvConfig
-from core_func import reward_fn, truncated_fn, terminated_fn, gen_cmd_fn
+from core_func import (
+    UNITREE_G1_REWARD_SCALES,
+    reward_fn,
+    truncated_fn,
+    terminated_fn,
+    gen_cmd_fn,
+)
 from network import Policy, Value
 
-EVAL = True
+EVAL = False
 RESUME_TRAINING = False
-EXPERIMENT_NAME = "fuck1"
+EXPERIMENT_NAME = "unitree_style_mos9"
 CHECKPOINT_PATH = f"runs/PPO_Walker/{EXPERIMENT_NAME}/checkpoints/best_agent.pt"
-NUM_ENVS = 16 if EVAL else 16348
-DEVICE = "cuda"
+NUM_ENVS = 16 if EVAL else 4096
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 FIELD_RANGE = 2.0
-ROLLOUT_STEPS = 48
-COLLISION_PENALTY_WEIGHT = 0.0
+SIM_DT = 0.005
+CONTROL_DECIMATION = 4
+ROLLOUT_STEPS = 24
 
 set_seed(42)
 backend = gs.gs_backend.gpu
@@ -38,33 +43,63 @@ gs.init(backend=backend,
         performance_mode=True, 
         logging_level='warning')
 
+# Unitree G1 reference control defaults mapped to this 12-DoF biped layout:
+# [hip_yaw, hip_yaw, hip_roll, hip_roll, hip_pitch, hip_pitch,
+#  knee, knee, ankle_pitch, ankle_pitch, ankle_roll, ankle_roll]
+default_joint_angles = np.array(
+    [0.0, 0.0, 0.0, 0.0, -0.1, -0.1, 0.3, 0.3, -0.2, -0.2, 0.0, 0.0],
+    dtype=np.float32,
+)
+kp = np.array([100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 150.0, 150.0, 40.0, 40.0, 40.0, 40.0], dtype=np.float32)
+kv = np.array([2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 4.0, 4.0, 2.0, 2.0, 2.0, 2.0], dtype=np.float32)
+
 # Environment Setup
 env = SingleWalkerEnv(SingleWalkerEnvConfig(
     num_envs        = NUM_ENVS,
+    device          = DEVICE,
     robot_URDF      = 'assets/MOS9/MOS9.urdf',
     field_range     = FIELD_RANGE, 
     reward_fn       = partial(
         reward_fn,
-        num_envs=NUM_ENVS,
-        device=DEVICE,
-        collision_penalty_weight=COLLISION_PENALTY_WEIGHT,
+        reward_dt=SIM_DT * CONTROL_DECIMATION,
+        tracking_sigma=0.25,
+        base_height_target=0.51,
+        reward_scales=UNITREE_G1_REWARD_SCALES,
+        only_positive_rewards=True,
+        hip_indices=(1, 2, 7, 8),
     ), 
-    action_scale    = np.array([0.5] * 12, dtype=np.float32), 
-    terminated_fn   = partial(terminated_fn, link_force_threshold=12000), 
-    force_range     = np.array([[-120.0] * 12, [120.0] * 12], dtype=np.float32), 
+    action_scale    = np.array([0.25] * 12, dtype=np.float32), 
+    terminated_fn   = partial(
+        terminated_fn,
+        base_contact_force_threshold=1.0,
+        max_roll=0.8,
+        max_pitch=1.0,
+    ),
+    force_range     = np.array([[-60.0] * 12, [60.0] * 12], dtype=np.float32), 
     truncated_fn    = partial(truncated_fn, field_range=FIELD_RANGE), 
     gen_cmd_fn      = partial(
         gen_cmd_fn,
-        # Easier command range to bootstrap standing + basic walking.
-        low=np.array([-0.2, -0.05, -0.3], dtype=np.float32),
-        high=np.array([0.4, 0.05, 0.3], dtype=np.float32),
+        low=np.array([-1.0, -1.0, -1.0], dtype=np.float32),
+        high=np.array([1.0, 1.0, 1.0], dtype=np.float32),
         device=DEVICE,
     ),
+    sim_dt          = SIM_DT,
+    control_decimation=CONTROL_DECIMATION,
+    command_resample_time_s=10.0,
+    episode_length_s=20.0,
+    gait_period_s=0.8,
+    command_zero_threshold=0.2,
+    observation_clip=100.0,
+    action_clip=100.0,
     show_viewer     = EVAL, 
     robot_initial_pos  = np.array([0.0, 0.0, 0.51]),
     robot_initial_quat = np.array([1.0, 0.0, 0.0, 0.0]),
-    kp              = np.array([70.0] * 12, dtype=np.float32),
-    kv              = np.array([3.0] * 12, dtype=np.float32), 
+    default_joint_angles=default_joint_angles,
+    kp              = kp,
+    kv              = kv,
+    foot_link_names = ["Lfoot", "Rfoot"],
+    penalized_contact_link_names = ["Rhip", "Lhip", "Rleg1", "Lleg1"],
+    termination_contact_link_names = ["base"],
     joint_names = ['b_Rh', 'b_Lh', 'Rh_Rl', 'Lh_Ll', 'Rl_Rl1', 'Ll_Ll1', 
                    'Rl1_Rl2', 'Ll1_Ll2', 'Rl2_Ra', 'Ll2_La', 'Ra_Rf', 'La_Lf']
 ))
@@ -76,19 +111,16 @@ models = {
     "value": Value(env.observation_space, env.action_space, DEVICE),
 }
 
-for model in models.values():
-    model.init_parameters(method_name="normal_", mean=0.0, std=0.1)
-
 cfg = PPO_DEFAULT_CONFIG.copy()
 cfg["rollouts"] = ROLLOUT_STEPS
 cfg["discount_factor"] = 0.99
 cfg["lambda"] = 0.95
-cfg["learning_epochs"] = 8
-cfg["learning_rate"] = 3e-4
-cfg["mixed_precision"] = True
-cfg["entropy_loss_scale"] = 0.005
+cfg["learning_epochs"] = 5
+cfg["learning_rate"] = 1e-3
+cfg["mixed_precision"] = False
+cfg["entropy_loss_scale"] = 0.01
 # mini_batches is the number of divisions of the total collected data (ROLLOUT_STEPS * NUM_ENVS)
-cfg["mini_batches"] = 64
+cfg["mini_batches"] = 4
 cfg["state_preprocessor"] = RunningStandardScaler
 cfg["state_preprocessor_kwargs"] = {"size": env.observation_space, "device": DEVICE}
 cfg["value_preprocessor"] = RunningStandardScaler
@@ -128,6 +160,5 @@ else:
     states, _ = env.reset()
     with torch.no_grad():
         while True: # Run indefinitely or for a fixed range
-            # Use deterministic actions for evaluation
             actions, _, _ = agent.act(states, timestep=0, timesteps=0)
-            env.step(actions) 
+            states, _, _, _, _ = env.step(actions)

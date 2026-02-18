@@ -21,18 +21,16 @@ class Policy(GaussianMixin, Model):
 
         self.net = nn.Sequential(
             layer_init(nn.Linear(self.num_observations, 512)),
-            nn.LayerNorm(512), # Keeps inner activations in check
             nn.ELU(),
             layer_init(nn.Linear(512, 256)),
-            nn.LayerNorm(256),
             nn.ELU(),
-            layer_init(nn.Linear(256, self.num_actions), std=0.01), # Small std for final layer
-            nn.Tanh() # Strictly clips the output mean to [-1, 1]
+            layer_init(nn.Linear(256, 128)),
+            nn.ELU(),
+            layer_init(nn.Linear(128, self.num_actions), std=0.01),
         )
-        # Log std as a parameter (initialized to 0 results in std=1.0)
-        self.log_std_parameter = nn.Parameter(torch.zeros(self.num_actions))
+        # Unitree default action noise std is 0.8.
+        self.log_std_parameter = nn.Parameter(torch.log(torch.full((self.num_actions,), 0.8)))
 
-    @torch.compile()
     def compute(self, inputs: Mapping[str, Union[torch.Tensor, Any]], role: str = "") -> tuple[torch.Tensor, torch.Tensor, dict]:
         return self.net(inputs["states"]), self.log_std_parameter, {}
 
@@ -43,14 +41,13 @@ class Value(DeterministicMixin, Model):
 
         self.net = nn.Sequential(
             layer_init(nn.Linear(self.num_observations, 512)),
-            nn.LayerNorm(512),
             nn.ELU(),
             layer_init(nn.Linear(512, 256)),
-            nn.LayerNorm(256),
             nn.ELU(),
-            layer_init(nn.Linear(256, 1), std=1.0) # Value isn't clipped; needs to represent any range
+            layer_init(nn.Linear(256, 128)),
+            nn.ELU(),
+            layer_init(nn.Linear(128, 1), std=1.0),
         )
 
-    @torch.compile()
     def compute(self, inputs: Mapping[str, Union[torch.Tensor, Any]], role: str = "") -> tuple[torch.Tensor, dict]:
         return self.net(inputs["states"]), {}
