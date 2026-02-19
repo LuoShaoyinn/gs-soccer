@@ -20,11 +20,11 @@ from core_func import (
 )
 from network import Policy, Value
 
-EVAL = False
+EVAL = True
 RESUME_TRAINING = False
 EXPERIMENT_NAME = "unitree_style_mos9"
 CHECKPOINT_PATH = f"runs/PPO_Walker/{EXPERIMENT_NAME}/checkpoints/best_agent.pt"
-NUM_ENVS = 16 if EVAL else 4096
+NUM_ENVS = 16 if EVAL else 16384
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 FIELD_RANGE = 2.0
 SIM_DT = 0.005
@@ -32,13 +32,7 @@ CONTROL_DECIMATION = 4
 ROLLOUT_STEPS = 24
 
 set_seed(42)
-backend = gs.gs_backend.gpu
-if DEVICE == "cuda":
-    name = torch.cuda.get_device_name(DEVICE)
-    if "AMD" in name or "amd" in name or "rocm" in name: 
-        backend = gs.gs_backend.vulkan
-elif DEVICE == "cpu":
-    backend = gs.gs_backend.cpu
+backend = gs.gpu
 gs.init(backend=backend, 
         performance_mode=True, 
         logging_level='warning')
