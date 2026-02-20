@@ -16,7 +16,7 @@ from envs.single_walker import SingleWalkerEnv, SingleWalkerEnvConfig
 from core_func import reward_fn, truncated_fn, terminated_fn, gen_cmd_fn
 from network import Policy, Value
 
-EVAL = True
+EVAL = False
 RESUME_TRAINING = False
 EXPERIMENT_NAME = "fuck1"
 CHECKPOINT_PATH = f"runs/PPO_Walker/{EXPERIMENT_NAME}/checkpoints/best_agent.pt"
@@ -27,14 +27,7 @@ ROLLOUT_STEPS = 48
 COLLISION_PENALTY_WEIGHT = 0.0
 
 set_seed(42)
-backend = gs.gs_backend.gpu
-if DEVICE == "cuda":
-    name = torch.cuda.get_device_name(DEVICE)
-    if "AMD" in name or "amd" in name or "rocm" in name: 
-        backend = gs.gs_backend.vulkan
-elif DEVICE == "cpu":
-    backend = gs.gs_backend.cpu
-gs.init(backend=backend, 
+gs.init(backend=gs.gpu,  # type: ignore[unsolved-attribute]
         performance_mode=True, 
         logging_level='warning')
 
@@ -52,7 +45,7 @@ env = SingleWalkerEnv(SingleWalkerEnvConfig(
     action_scale    = np.array([0.5] * 12, dtype=np.float32), 
     terminated_fn   = partial(terminated_fn, link_force_threshold=12000), 
     force_range     = np.array([[-120.0] * 12, [120.0] * 12], dtype=np.float32), 
-    truncated_fn    = partial(truncated_fn, field_range=FIELD_RANGE), 
+    truncated_fn    = partial(truncated_fn, field_range=FIELD_RANGE, timeout=20), 
     gen_cmd_fn      = partial(
         gen_cmd_fn,
         # Easier command range to bootstrap standing + basic walking.
