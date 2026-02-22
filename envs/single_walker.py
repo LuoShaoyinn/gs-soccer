@@ -144,7 +144,7 @@ class SingleWalkerEnv():
         pos_limits   = self.robot.get_dofs_limit(dofs_idx_local=self.dofs_idx_local)
         # [qpos, qvel, ang_vel, project_gravity, prev_action, cmd, sin, cos]
         shapes = n_joints + n_joints + 3 + 3 + n_joints + 3 + 1 + 1
-        std_range = np.array([[-1.0] * 12, [1.0] * 12])
+        std_range = np.array([[-1.0] * 12, [1.0] * 12], dtype=np.float32)
         self._obs_range = torch.zeros((3, shapes), device=cfg.device)
         for i in range(2):  
             self._obs_range[i] = torch.cat((

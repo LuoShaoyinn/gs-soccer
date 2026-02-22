@@ -16,8 +16,8 @@ from envs.single_walker import SingleWalkerEnv, SingleWalkerEnvConfig
 from core_func import reward_fn, truncated_fn, terminated_fn, gen_cmd_fn
 from network import Policy, Value
 
-EVAL = False
-RESUME_TRAINING = False
+EVAL = True
+RESUME_TRAINING = True
 EXPERIMENT_NAME = "fuck1"
 CHECKPOINT_PATH = f"runs/PPO_Walker/{EXPERIMENT_NAME}/checkpoints/best_agent.pt"
 NUM_ENVS = 16 if EVAL else 16348
