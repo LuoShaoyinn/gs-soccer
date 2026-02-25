@@ -41,10 +41,10 @@ def terminated_fn(link_force_threshold: float,
 
 
 @torch.no_grad()
-def gen_cmd_fn(low, high, device) -> torch.Tensor:
+def gen_cmd_fn(low, high, num_envs, device) -> torch.Tensor:
     low_t = torch.as_tensor(low, device=device, dtype=torch.float32)
     high_t = torch.as_tensor(high, device=device, dtype=torch.float32)
-    return (high_t - low_t) * torch.rand((3,), device=device) + low_t
+    return (high_t - low_t) * torch.rand((num_envs, 3), device=device) + low_t
 
 
 @torch.no_grad()

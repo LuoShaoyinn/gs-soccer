@@ -43,7 +43,7 @@ env = SingleWalkerEnv(SingleWalkerEnvConfig(
         collision_penalty_weight=COLLISION_PENALTY_WEIGHT,
     ), 
     action_scale    = np.array([0.5] * 12, dtype=np.float32), 
-    terminated_fn   = partial(terminated_fn, link_force_threshold=12000), 
+    terminated_fn   = partial(terminated_fn, link_force_threshold=200), 
     force_range     = np.array([[-120.0] * 12, [120.0] * 12], dtype=np.float32), 
     truncated_fn    = partial(truncated_fn, field_range=FIELD_RANGE, timeout=20), 
     gen_cmd_fn      = partial(
@@ -51,6 +51,7 @@ env = SingleWalkerEnv(SingleWalkerEnvConfig(
         # Easier command range to bootstrap standing + basic walking.
         low=np.array([-0.2, -0.05, -0.3], dtype=np.float32),
         high=np.array([0.4, 0.05, 0.3], dtype=np.float32),
+        num_envs=NUM_ENVS,
         device=DEVICE,
     ),
     show_viewer     = EVAL, 
@@ -103,7 +104,7 @@ agent = PPO(models=models,
 
 # --- Training ---
 
-cfg_trainer = { "timesteps": 1000000, 
+cfg_trainer = { "timesteps": 10000, 
                 "headless": True,
                 "environment_info": "extra", 
                 # "disable_progressbar": True,

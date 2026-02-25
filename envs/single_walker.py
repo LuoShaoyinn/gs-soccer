@@ -239,7 +239,7 @@ class SingleWalkerEnv():
                                      envs_idx=envs_idx)
         self.robot.set_pos(pos=self.cfg.robot_initial_pos, envs_idx=envs_idx)
         self.robot.set_quat(quat=self.cfg.robot_initial_quat, envs_idx=envs_idx)
-        self.command[envs_idx] = self.cfg.gen_cmd_fn()
+        self.command[envs_idx] = self.cfg.gen_cmd_fn()[envs_idx]
 
 
     @torch.no_grad()
@@ -268,12 +268,16 @@ class SingleWalkerEnv():
     @torch.compile()
     def reset(self, seed=None, options=None
             ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        self.reset_batch(envs_idx = torch.arange(self.num_envs, \
-                                        device = self.cfg.device))
+        self.reset_batch(envs_idx = torch.ones(self.num_envs, \
+                dtype=torch.bool, device = self.cfg.device))
         res = self.step(torch.zeros((self.num_envs, len(self.cfg.joint_names)),\
                                         device = self.cfg.device))
         return res[0], res[-1] # observation, info
 
     @torch.no_grad()
     def render(self):
+        pass
+
+    @torch.no_grad()
+    def close(self):
         pass
