@@ -26,7 +26,7 @@ FIELD_RANGE = 2.0
 ROLLOUT_STEPS = 48
 COLLISION_PENALTY_WEIGHT = 0.0
 
-set_seed(42)
+set_seed()
 gs.init(backend=gs.gpu,  # type: ignore[unsolved-attribute]
         performance_mode=True, 
         logging_level='warning')
@@ -104,7 +104,7 @@ agent = PPO(models=models,
 
 # --- Training ---
 
-cfg_trainer = { "timesteps": 10000, 
+cfg_trainer = { "timesteps": 100000, 
                 "headless": True,
                 "environment_info": "extra", 
                 # "disable_progressbar": True,
