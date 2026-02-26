@@ -1,5 +1,5 @@
-# single_walker.py
-#   Build up a single walker env
+# dribble.py
+#   Build up a dribble env
 #
 
 import torch
@@ -11,18 +11,20 @@ from dataclasses import dataclass, field
 from typing import Optional, Callable
 
 from .robot import RobotConfig, Robot
+from .field import FieldConfig, Field
 
 @dataclass
-class SingleWalkerEnvConfig():
+class DribbleEnvConfig():
     robot_cfg:      RobotConfig
+    field_cfg:      FieldConfig
     num_envs:       int     = 1
     field_range:    float   = 1.0
     rl_dt:          float   = 0.02
     substeps:       int     = 10
     show_viewer:    bool    = False
 
-class SingleWalkerEnv():
-    def __init__(self, cfg: SingleWalkerEnvConfig):
+class DribbleEnv():
+    def __init__(self, cfg: DribbleEnvConfig):
         super().__init__()
         self.cfg = cfg
         self.num_envs = cfg.num_envs
@@ -53,9 +55,10 @@ class SingleWalkerEnv():
             ),
             show_viewer = self.cfg.show_viewer,
         )
-        self.plane = self.scene.add_entity(gs.morphs.Plane())
-        self.robot = Robot(self.cfg.robot_cfg, self.scene)
+        self.robot = Robot(cfg=self.cfg.robot_cfg, scene=self.scene)
+        self.field = Field(cfg=self.cfg.field_cfg, scene=self.scene)
         self.robot.gs_build()
+        self.field.gs_build()
         self.scene.build(n_envs=self.cfg.num_envs, \
                 env_spacing=(self.cfg.field_range, self.cfg.field_range))
 
@@ -64,8 +67,9 @@ class SingleWalkerEnv():
     def gs_config(self):
         self.observation_space = self.robot.observation_space
         self.action_space = self.robot.action_space
-        self.cmd_vel = torch.rand((self.num_envs, 3)) * 2.0 - 1.0
+        self.cmd_vel = torch.rand((self.num_envs, 3), device=gs.device) * 2.0 - 1.0
         self.robot.gs_config()
+        self.field.gs_config()
  
     #@torch.no_grad()
     #@torch.compile()

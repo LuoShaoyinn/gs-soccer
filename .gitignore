@@ -11,6 +11,7 @@ wheels/
 uv.lock
 
 runs/
+# torch compile auto generate this on AMDGPU
 tunableop_results0.csv
-test.py
 logs/
+models/

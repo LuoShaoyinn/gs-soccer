@@ -29,6 +29,7 @@ override-dependencies = [
     "torch; extra == 'cuda'",
     "torchvision; extra == 'cuda'",
     "triton; extra == 'cuda'",
+    "quadrants>=0.4.2",
 ]
 
 conflicts = [[{ extra = "cuda" }, { extra = "rocm" }]]
