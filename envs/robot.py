@@ -8,6 +8,7 @@ import genesis as gs
 import gymnasium as gym
 from dataclasses import dataclass, field
 
+
 @dataclass
 class RobotConfig:
     robot_URDF:     str                 # urdf path

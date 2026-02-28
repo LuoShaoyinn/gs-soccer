@@ -10,7 +10,6 @@ import random
 from dataclasses import dataclass, field
 from typing import Optional, Callable
 
-from .robot import RobotConfig, Robot
 
 @dataclass
 class FieldConfig():

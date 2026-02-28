@@ -5,6 +5,7 @@ import torch
 
 from envs.field import FieldConfig
 from envs.robot import RobotConfig
+from envs.controlled_robot import ControlledRobotConfig
 from envs.single_walker import SingleWalkerEnv, SingleWalkerEnvConfig
 from envs.dribble import DribbleEnv, DribbleEnvConfig
 
@@ -19,7 +20,8 @@ gs.init(backend=gs.gpu,  # type: ignore[unsolved-attribute]
         logging_level='info')
 
 env = DribbleEnv(DribbleEnvConfig(
-    robot_cfg = RobotConfig(
+    robot_cfg = ControlledRobotConfig(
+        policy_path     = "a",
         robot_URDF      = 'assets/MOS9/MOS9.urdf',
         kp              = np.array([70.0] * 12, dtype=np.float32),
         kv              = np.array([3.0] * 12, dtype=np.float32), 
@@ -38,6 +40,6 @@ env = DribbleEnv(DribbleEnvConfig(
 
 
 env.reset()
-actions = torch.zeros((NUM_ENVS, 12), dtype=torch.float, device=DEVICE)
+actions = torch.ones((NUM_ENVS, 3), dtype=torch.float, device=DEVICE)
 while True: 
     env.step(actions) 

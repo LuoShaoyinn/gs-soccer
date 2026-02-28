@@ -10,18 +10,20 @@ import random
 from dataclasses import dataclass, field
 from typing import Optional, Callable
 
-from .robot import RobotConfig, Robot
+from .controlled_robot import ControlledRobotConfig, ControlledRobot
 from .field import FieldConfig, Field
+
 
 @dataclass
 class DribbleEnvConfig():
-    robot_cfg:      RobotConfig
+    robot_cfg:      ControlledRobotConfig
     field_cfg:      FieldConfig
     num_envs:       int     = 1
     field_range:    float   = 1.0
     rl_dt:          float   = 0.02
     substeps:       int     = 10
     show_viewer:    bool    = False
+
 
 class DribbleEnv():
     def __init__(self, cfg: DribbleEnvConfig):
@@ -55,7 +57,7 @@ class DribbleEnv():
             ),
             show_viewer = self.cfg.show_viewer,
         )
-        self.robot = Robot(cfg=self.cfg.robot_cfg, scene=self.scene)
+        self.robot = ControlledRobot(cfg=self.cfg.robot_cfg, scene=self.scene)
         self.field = Field(cfg=self.cfg.field_cfg, scene=self.scene)
         self.robot.gs_build()
         self.field.gs_build()

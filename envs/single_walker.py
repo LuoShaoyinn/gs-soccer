@@ -12,6 +12,7 @@ from typing import Optional, Callable
 
 from .robot import RobotConfig, Robot
 
+
 @dataclass
 class SingleWalkerEnvConfig():
     robot_cfg:      RobotConfig
@@ -20,6 +21,7 @@ class SingleWalkerEnvConfig():
     rl_dt:          float   = 0.02
     substeps:       int     = 10
     show_viewer:    bool    = False
+
 
 class SingleWalkerEnv():
     def __init__(self, cfg: SingleWalkerEnvConfig):
