@@ -7,7 +7,6 @@ requires-python = ">=3.12, <3.13"
 
 dependencies = [
     "torch",
-    "torchvision",
     "gymnasium[classic-control]",
     "genesis-world>=0.4.0",
     "tensorboard>=2.20.0",
@@ -17,38 +16,31 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-cuda = ["torch", "torchvision", "triton"]
-rocm = ["torch", "torchvision", "triton", "triton-kernels"]
+cuda = ["torch", "triton"]
+metal = ["torch"]
+rocm = ["torch", "triton", "triton-kernels"]
 
 [tool.uv]
 override-dependencies = [
-    "torch==2.9.1+rocm7.2.0; extra == 'rocm'",
-    "torchvision==0.25.0+rocm7.2.0; extra == 'rocm'",
-    "triton==3.4.0+rocm7.2.0; extra == 'rocm'",
-    "triton-kernels; extra == 'rocm'",
-    "torch; extra == 'cuda'",
-    "torchvision; extra == 'cuda'",
-    "triton; extra == 'cuda'",
     "quadrants>=0.4.2",
 ]
 
-conflicts = [[{ extra = "cuda" }, { extra = "rocm" }]]
+conflicts = [[{ extra = "cuda" }, { extra = "rocm" }],
+             [{ extra = "metal" }, { extra = "rocm" }],
+             [{ extra = "metal" }, { extra = "cuda" }]]
 
 [tool.uv.sources]
 torch = [
-  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2/torch-2.9.1%2Brocm7.2.0.lw.git7e1940d4-cp312-cp312-linux_x86_64.whl", extra = "rocm", marker = "extra == 'rocm'" },
-  { index = "pytorch-cuda130", extra = "cuda", marker = "extra == 'cuda'" }
-]
-torchvision = [
-  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2/torchvision-0.24.0%2Brocm7.2.0.gitb919bd0c-cp312-cp312-linux_x86_64.whl", extra = "rocm", marker = "extra == 'rocm'" },
-  { index = "pytorch-cuda130", extra = "cuda", marker = "extra == 'cuda'" }
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2/torch-2.10.0%2Brocm7.2.0.lw.gitb6ee5fde-cp312-cp312-linux_x86_64.whl", extra = "rocm"},
+  { index = "pytorch-cuda130", extra = "cuda" },
+  { index = "pytorch-darwin", extra = "metal"}
 ]
 triton = [
-  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2/triton-3.4.0%2Brocm7.2.0.git0cace8d2-cp312-cp312-linux_x86_64.whl", extra = "rocm", marker = "extra == 'rocm'" },
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2/triton-3.6.0%2Brocm7.2.0.gitba5c1517-cp312-cp312-linux_x86_64.whl", extra = "rocm"},
   { index = "pytorch-cuda130", extra = "cuda", marker = "extra == 'cuda'" }
 ]
 triton-kernels = [
-  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2/triton_kernels-1.0.0-py3-none-any.whl", extra = "rocm", marker = "extra == 'rocm'" },
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2/triton_kernels-1.0.0-py3-none-any.whl", extra = "rocm"},
 ]
 
 [[tool.uv.index]]
@@ -56,4 +48,8 @@ name = "pytorch-cuda130"
 url = "https://download.pytorch.org/whl/cu130"
 explicit = true
 
+[[tool.uv.index]]
+name = "pytorch-darwin"
+url = "https://pypi.org/simple"
+explicit = true
 
