@@ -82,9 +82,9 @@ class Robot:
         # we have to do it here after the scene is initialized
         self.initial_pos = torch.from_numpy(self.cfg.initial_pos).to(gs.device)
         self.initial_quat = torch.from_numpy(self.cfg.initial_quat).to(gs.device)
-        self.all_envs_idx = torch.arange(self.scene.n_envs, 
-                                         dtype=torch.long,
-                                         device=gs.device)
+        self.__last_action = torch.zeros((self.scene.n_envs, len(self.cfg.joint_names)),
+                                       dtype=torch.float,
+                                       device=gs.device)
 
     #@torch.no_grad()
     #@torch.compiler.disable # prevent torch from compiling underlying gs
@@ -105,6 +105,22 @@ class Robot:
                                      envs_idx=envs_idx)
         self.robot.set_pos(pos=reset_pos, envs_idx=envs_idx)
         self.robot.set_quat(quat=reset_quat, envs_idx=envs_idx)
+    
+    #@torch.no_grad()
+    #@torch.compiler.disable # prevent torch from compiling underlying gs
+    def gs_state(self, envs_idx: torch.Tensor) -> dict[str, torch.Tensor]:
+        robot = self.robot
+        robot_base = self.robot_base
+        dofs_idx_local = self.dofs_idx_local
+        return {
+            "dofs_pos"  : robot.get_dofs_position(dofs_idx_local=dofs_idx_local, envs_idx=envs_idx), 
+            "dofs_vel"  : robot.get_dofs_velocity(dofs_idx_local=dofs_idx_local, envs_idx=envs_idx),
+            "body_pos"  : robot_base.get_pos(envs_idx=envs_idx), 
+            "body_quat" : robot_base.get_quat(envs_idx=envs_idx), 
+            "body_lin_vel"  : robot_base.get_vel(envs_idx=envs_idx), 
+            "body_ang_vel"  : self.imu.read(envs_idx=envs_idx).ang_vel, 
+            "last_action"   : self.__last_action,
+        }
 
 
     # ---------------
@@ -112,64 +128,20 @@ class Robot:
     # ---------------
     #@torch.no_grad()
     #@torch.compile()
-    def step(self, action: torch.Tensor, 
-            cmd_vel: torch.Tensor, 
-            envs_idx: torch.Tensor | None = None
-            ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,\
-                        dict[str, torch.Tensor] | torch.Tensor]:
-        if envs_idx is None:
-            envs_idx = self.all_envs_idx
+    def step(self, action: torch.Tensor, envs_idx: torch.Tensor) -> None:
         self.gs_step(action, envs_idx)
-        kwargs = self.get_kwargs(cmd_vel=cmd_vel, last_action=action, envs_idx=envs_idx)
-        next_observation    = self.get_observation(**kwargs)
-        reward              = self.get_reward(**kwargs)
-        terminated          = self.get_terminated(**kwargs)
-        truncated           = self.get_truncated(**kwargs)
-        info                = self.get_info(**kwargs)
-        need_reset = torch.logical_or(terminated, truncated)
-        if need_reset.any():
-            reset_idx = torch.nonzero(need_reset)
-            reset_observation, reset_info = self.reset(reset_idx)
-            next_observation[reset_idx] = reset_observation
-        return (next_observation, reward, terminated, truncated, info)
+        self.__last_action = action
 
     #@torch.no_grad()
     #@torch.compile()
-    def reset(self, envs_idx: torch.Tensor | None = None, 
-              reset_pos:  torch.Tensor | None = None, 
-              reset_quat: torch.Tensor | None = None
-              ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        if envs_idx is None:
-            envs_idx = self.all_envs_idx
+    def reset(self, envs_idx: torch.Tensor) -> None:
         reset_n = envs_idx.shape[0]
-        n_dofs = len(self.cfg.joint_names)
-        if reset_pos is None:
-            reset_pos = torch.broadcast_to(self.initial_pos, (reset_n, 3))
-        if reset_quat is None:
-            reset_quat = torch.broadcast_to(self.initial_quat, (reset_n, 4))
+        reset_pos  = torch.broadcast_to(self.initial_pos,  (reset_n, 3))
+        reset_quat = torch.broadcast_to(self.initial_quat, (reset_n, 4))
         self.gs_reset(reset_pos=reset_pos, reset_quat=reset_quat, envs_idx=envs_idx)
-        kwargs = self.get_kwargs(envs_idx=envs_idx,
-                                 cmd_vel=torch.zeros((reset_n, 3), 
-                                                     dtype=torch.float, 
-                                                     device=gs.device), 
-                                 last_action=torch.zeros((reset_n, n_dofs), 
-                                                         dtype=torch.float, 
-                                                         device=gs.device))
-        next_observation    = self.get_observation(**kwargs)
-        info                = self.get_info(**kwargs)
-        return (next_observation, info)
+        self.__last_action[envs_idx] = 0.0
     
-    #@torch.no_grad()
-    #@torch.compile()
-    def render(self):
-        pass
 
-    #@torch.no_grad()
-    #@torch.compile()
-    def close(self):
-        pass
-
-    
     # --------------------------------------
     # Observation, actions
     # The functions you may want to override
@@ -190,23 +162,11 @@ class Robot:
                               high  = pos_limits[1].cpu().numpy(), 
                               shape = (N,), 
                               dtype = np.float32)
-
+    
     #@torch.no_grad()
-    #@torch.compiler.disable # prevent torch from compiling underlying gs
-    def get_kwargs(self, envs_idx: torch.Tensor, **kwargs
-                   ) -> dict[str, torch.Tensor]:
-        robot = self.robot
-        robot_base = self.robot_base
-        dofs_idx_local = self.dofs_idx_local
-        return {
-            "dofs_pos"  : robot.get_dofs_position(dofs_idx_local=dofs_idx_local, envs_idx=envs_idx), 
-            "dofs_vel"  : robot.get_dofs_velocity(dofs_idx_local=dofs_idx_local, envs_idx=envs_idx),
-            "body_pos"  : robot_base.get_pos(envs_idx=envs_idx), 
-            "body_quat" : robot_base.get_quat(envs_idx=envs_idx), 
-            "body_lin_vel"  : robot_base.get_vel(envs_idx=envs_idx), 
-            "body_ang_vel"  : self.imu.read(envs_idx=envs_idx).ang_vel, 
-            **kwargs
-        }
+    #@torch.compile()
+    def get_state(self, envs_idx: torch.Tensor, **kwargs) -> dict[str, torch.Tensor]:
+        return {**self.gs_state(envs_idx), **kwargs}
 
     #@torch.no_grad()
     #@torch.compile()
@@ -243,30 +203,4 @@ class Robot:
                           obs_cmd_vel,
                           obs_dofs_pos,
                           obs_dofs_vel,
-                          obs_last_action), dim=1)
-    
-    #@torch.no_grad()
-    #@torch.compile()
-    def get_reward(self, **kwargs) -> torch.Tensor:
-        return torch.zeros((self.scene.n_envs,), 
-                           dtype=torch.float, 
-                           device=gs.device)
-
-    #@torch.no_grad()
-    #@torch.compile()
-    def get_terminated(self, **kwargs) -> torch.Tensor:
-        return torch.zeros((self.scene.n_envs,), 
-                           dtype=torch.bool, 
-                           device=gs.device)
-    
-    #@torch.no_grad()
-    #@torch.compile()
-    def get_truncated(self, **kwargs) -> torch.Tensor:
-        return torch.zeros((self.scene.n_envs,), 
-                           dtype=torch.bool, 
-                           device=gs.device)
-
-    #@torch.no_grad()
-    #@torch.compile()
-    def get_info(self, **kwargs) -> dict:
-        return dict()
+                          obs_last_action), dim=1) 

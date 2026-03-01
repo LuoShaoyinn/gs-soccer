@@ -69,35 +69,68 @@ class DribbleEnv():
     def gs_config(self):
         self.observation_space = self.robot.observation_space
         self.action_space = self.robot.action_space
-        self.cmd_vel = torch.rand((self.num_envs, 3), device=gs.device) * 2.0 - 1.0
         self.robot.gs_config()
-        self.field.gs_config()
- 
+        self.field.gs_config() 
+        self.all_envs_idx = torch.arange(self.num_envs, 
+                                         dtype=torch.long, 
+                                         device=gs.device)
     #@torch.no_grad()
     #@torch.compile()
-    def step(self, action : torch.Tensor):
-        ret = self.robot.step(action=action, cmd_vel=self.cmd_vel)
+    def step(self, action: torch.Tensor):
+        self.robot.step(action=action, envs_idx=self.all_envs_idx)
         self.scene.step()
-        return ret
+        kwargs = self.robot.get_state(envs_idx=self.all_envs_idx)
+        next_observation    = self.get_observation(**kwargs)
+        reward              = self.get_reward(**kwargs)
+        terminated          = self.get_terminated(**kwargs)
+        truncated           = self.get_truncated(**kwargs)
+        info                = self.get_info(**kwargs)
+        need_reset = torch.logical_or(terminated, truncated)
+        if need_reset.any():
+            reset_idx = torch.nonzero(need_reset)
+            reset_observation, reset_info = self.reset(reset_idx)
+            next_observation[reset_idx] = reset_observation
+        return (next_observation, reward, terminated, truncated, info)
     
     #@torch.no_grad()
     #@torch.compile()
     def reset(self, envs_idx: torch.Tensor | None = None
               ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        if envs_idx is None:
-            envs_idx = torch.arange(self.cfg.num_envs, 
-                                    dtype=torch.long, 
-                                    device=gs.device)
-        reset_n = envs_idx.shape[0]
-        self.cmd_vel[envs_idx] = (torch.rand((reset_n, 3), 
-                                             dtype=torch.float, 
-                                             device=gs.device) * 2.0 - 1.0)
-        return self.robot.reset(envs_idx=envs_idx)
+        envs_idx = envs_idx or self.all_envs_idx
+        self.robot.reset(envs_idx=envs_idx)
+        kwargs = self.robot.get_state(envs_idx=envs_idx)
+        return (self.get_observation(**kwargs), self.get_info(**kwargs))
+
+    
+    #@torch.no_grad()
+    #@torch.compile()
+    def get_observation(self, **kwargs):
+        return self.robot.get_observation(ball_pos=self.field.ball.get_pos(), **kwargs)
+
+    #@torch.no_grad()
+    #@torch.compile()
+    def get_terminated(self, **kwargs) -> torch.Tensor:
+        return torch.zeros((self.cfg.num_envs, ), dtype=torch.bool, device=gs.device)
+    
+    #@torch.no_grad()
+    #@torch.compile()
+    def get_truncated(self, **kwargs) -> torch.Tensor:
+        return torch.zeros((self.cfg.num_envs, ), dtype=torch.bool, device=gs.device)
+    
+    #@torch.no_grad()
+    #@torch.compile()
+    def get_reward(self, **kwargs) -> torch.Tensor:
+        return torch.zeros((self.cfg.num_envs, ), dtype=torch.float, device=gs.device)
+    
+    #@torch.no_grad()
+    #@torch.compile()
+    def get_info(self, **kwargs) -> dict[str, torch.Tensor]:
+        return {}
 
     #@torch.no_grad()
     def render(self):
-        self.robot.render()
+        pass
 
     #@torch.no_grad()
     def close(self):
-        self.robot.close()
+        pass

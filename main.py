@@ -22,11 +22,12 @@ gs.init(backend=gs.gpu,  # type: ignore[unsolved-attribute]
 env = DribbleEnv(DribbleEnvConfig(
     robot_cfg = ControlledRobotConfig(
         policy_path     = "a",
-        robot_URDF      = 'assets/MOS9/MOS9.urdf',
+        robot_URDF      = 'assets/MOS9/MOS9_walk.urdf',
         kp              = np.array([70.0] * 12, dtype=np.float32),
         kv              = np.array([3.0] * 12, dtype=np.float32), 
         joint_names     = ['b_Rh', 'b_Lh', 'Rh_Rl', 'Lh_Ll', 'Rl_Rl1', 'Ll_Ll1', 
                            'Rl1_Rl2', 'Ll1_Ll2', 'Rl2_Ra', 'Ll2_La', 'Ra_Rf', 'La_Lf'], 
+        base_link_name  = "body", 
         initial_pos     = np.array([0.0, 0.0, 0.51]),
         force_range     = np.array([[-100] * 12, [100] * 12], dtype=np.float32), 
         velocity_range  = np.array([[-100] * 12, [100] * 12], dtype=np.float32), 
