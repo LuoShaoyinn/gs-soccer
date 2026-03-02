@@ -17,11 +17,15 @@ class RobotConfig:
     kv:             np.ndarray          # kv
     velocity_range: np.ndarray          # joint velocity range
     force_range:    np.ndarray          # joint force(torque) range, 2xN
-    initial_pos:    np.ndarray = field(default_factory=\
+    initial_pos:    np.ndarray  = field(default_factory=\
             lambda: np.array([0.0, 0.0, 0.0], dtype=np.float32))
-    initial_quat:   np.ndarray = field(default_factory=\
+    initial_quat:   np.ndarray  = field(default_factory=\
             lambda: np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32))
-    decimate_aggressiveness: int = 5    # convexify
+    target_q_offset:np.ndarray  = field(default_factory=\
+            lambda: np.array([0.0] * 12, dtype=np.float32))
+    cycle_time:    float        = 0.8
+    step_ewma_factor: float     = 0.8
+    decimate_aggressiveness: int = 10    # convexify
     base_link_name: str = "base"        # base link_name
 
 
@@ -80,9 +84,18 @@ class Robot:
 
         # initialize some constants for quick refering
         # we have to do it here after the scene is initialized
-        self.initial_pos = torch.from_numpy(self.cfg.initial_pos).to(gs.device)
+        self.n_envs = self.scene.n_envs
+        self.n_dofs = len(self.cfg.joint_names)
+        self.initial_pos  = torch.from_numpy(self.cfg.initial_pos).to(gs.device)
         self.initial_quat = torch.from_numpy(self.cfg.initial_quat).to(gs.device)
-        self.__last_action = torch.zeros((self.scene.n_envs, len(self.cfg.joint_names)),
+        self.target_q_offset = torch.from_numpy(self.cfg.target_q_offset).to(gs.device)
+        self.__last_action = torch.zeros((self.n_envs, self.n_dofs),
+                                       dtype=torch.float,
+                                       device=gs.device)
+        self.__last_target_q = torch.zeros((self.n_envs, self.n_dofs),
+                                           dtype=torch.float,
+                                           device=gs.device)
+        self.__last_obs = torch.zeros((self.n_envs, 5, 47),
                                        dtype=torch.float,
                                        device=gs.device)
 
@@ -129,8 +142,14 @@ class Robot:
     #@torch.no_grad()
     #@torch.compile()
     def step(self, action: torch.Tensor, envs_idx: torch.Tensor) -> None:
-        self.gs_step(action, envs_idx)
+        '''
+        Here action is target_q
+        '''
         self.__last_action = action
+        self.__last_target_q[envs_idx] *= self.cfg.step_ewma_factor
+        self.__last_target_q[envs_idx] += action * (1.0 - self.cfg.step_ewma_factor)
+        self.gs_step(action=self.__last_target_q + self.target_q_offset,
+                     envs_idx=envs_idx)
 
     #@torch.no_grad()
     #@torch.compile()
@@ -140,6 +159,8 @@ class Robot:
         reset_quat = torch.broadcast_to(self.initial_quat, (reset_n, 4))
         self.gs_reset(reset_pos=reset_pos, reset_quat=reset_quat, envs_idx=envs_idx)
         self.__last_action[envs_idx] = 0.0
+        self.__last_target_q[envs_idx] = self.target_q_offset[envs_idx]
+        self.__last_obs[envs_idx] = 0.0
     
 
     # --------------------------------------
@@ -148,11 +169,14 @@ class Robot:
     # --------------------------------------
     @property
     def observation_space(self) -> gym.spaces.Box:
-        N = len(self.cfg.joint_names)
-        return gym.spaces.Box(low   = -100.0, 
-                              high  =  100.0, 
-                              shape = (12 + 3 * N,), 
-                              dtype = np.float32)
+        # Each single frame is 47 dimensions:
+        # [sin, cos, vx, vy, az, dof_pos(12), dof_vel(12), action(12), omega(3), rpy(3)]
+        return gym.spaces.Box(
+            low   = -18.0, 
+            high  = 18.0, 
+            shape = (47 * 5,),
+            dtype = np.float32
+        )
     
     @property
     def action_space(self) -> gym.spaces.Box:
@@ -171,36 +195,68 @@ class Robot:
     #@torch.no_grad()
     #@torch.compile()
     def get_observation(self, body_lin_vel, body_ang_vel, body_quat, \
-            cmd_vel, dofs_pos, dofs_vel, last_action, **kwargs) -> torch.Tensor:
-        def compute_projected_gravity(quat):
+                        cmd_vel, dofs_pos, dofs_vel, **kwargs) -> torch.Tensor: 
+        def quaternion_to_euler_array(quat):
             w, x, y, z = quat[:, 0], quat[:, 1], quat[:, 2], quat[:, 3]
-            # Pre-calculate common terms for speed
-            xw = x * w
-            yw = y * w
-            yz = y * z
-            xz = x * z
-            # Calculate components
-            # These represent the local-frame gravity vector
-            gx = 2 * (xz - yw)
-            gy = 2 * (yz + xw)
-            gz = w**2 - x**2 - y**2 + z**2
-            return torch.stack([gx, gy, gz], dim=-1)
+            t0 = +2.0 * (w * x + y * z)
+            t1 = +1.0 - 2.0 * (x * x + y * y)
+            roll = torch.atan2(t0, t1)
+            t2 = +2.0 * (w * y - z * x)
+            t2 = torch.clamp(t2, -1.0, 1.0)
+            pitch = torch.asin(t2)
+            t3 = +2.0 * (w * z + x * y)
+            t4 = +1.0 - 2.0 * (y * y + z * z)
+            yaw = torch.atan2(t3, t4) 
+            return torch.stack([roll, pitch, yaw], dim=-1)
         def add_noise(x: torch.Tensor, scale: float):
-            return x + (torch.rand(x.shape, device=gs.device) * 2.0 - 1.0) * scale
-        obs_body_lin_vel  = torch.clip(body_lin_vel, min=-100.0, max=100.0)
-        obs_body_ang_vel  = add_noise(body_ang_vel * 0.2, 0.2)
-        obs_body_ang_vel  = torch.clip(obs_body_ang_vel, min=-100.0, max=100.0)
-        obs_proj_gravity  = add_noise(compute_projected_gravity(body_quat), 0.05)
-        obs_cmd_vel       = cmd_vel
-        obs_dofs_pos      = add_noise(dofs_pos, 0.1)
-        obs_dofs_pos      = torch.clip(obs_dofs_pos, min=-100.0, max=100.0)
-        obs_dofs_vel      = add_noise(dofs_vel * 0.05, 1.5)
-        obs_dofs_vel      = torch.clip(obs_dofs_vel, min=-100.0, max=100.0)
-        obs_last_action   = last_action
-        return torch.cat((obs_body_lin_vel, 
-                          obs_body_ang_vel, 
-                          obs_proj_gravity,
-                          obs_cmd_vel,
-                          obs_dofs_pos,
-                          obs_dofs_vel,
-                          obs_last_action), dim=1) 
+            return x + (torch.randn_like(x) * scale)
+
+        # 1. Phase Observations (Sin/Cos)
+        phase = 2 * np.pi * self.scene.t * self.scene.dt / self.cfg.cycle_time
+        obs_sin_phase = torch.sin(torch.tensor([phase], device=gs.device)) \
+                             .repeat(self.n_envs, 1)
+        obs_cos_phase = torch.cos(torch.tensor([phase], device=gs.device)) \
+                             .repeat(self.n_envs, 1)
+
+        # 2. Command Velocity (vx, vy, az)
+        obs_cmd_vel = cmd_vel # Assumed [batch, 3]
+
+        # 3. DOF Position: (q - offset) * scale
+        # The snippet uses 1.0 as the scale for dof_pos
+        obs_dofs_pos = (dofs_pos - self.target_q_offset) * 1.0
+        
+        # 4. DOF Velocity: dq * scale
+        # The snippet uses 0.05 as the scale for dof_vel
+        obs_dofs_vel = dofs_vel * 0.05
+
+        # 5. Last Action (12 dims)
+        obs_last_action = self.__last_action
+
+        # 6. Base Angular Velocity + Noise
+        # The snippet uses noise scale: 0.12 * 0.6
+        obs_body_ang_vel = add_noise(body_ang_vel, 0.12 * 0.6)
+
+        # 7. Euler Angles + Noise (Replaces Projected Gravity)
+        eu_ang = quaternion_to_euler_array(body_quat)
+        # Normalize euler angles if they exceed pi (as seen in snippet)
+        eu_ang = torch.where(eu_ang > np.pi, eu_ang - 2 * np.pi, eu_ang)
+        obs_eu_ang = add_noise(eu_ang, 0.12 * 0.6)
+
+        # Concatenate in the exact order found in the sim-to-sim script:
+        # [sin, cos, vx, vy, az, dof_pos, dof_vel, action, omega, rpy]
+        obs_single_frame = torch.cat((
+            obs_sin_phase,      # 1
+            obs_cos_phase,      # 1
+            obs_cmd_vel,        # 3
+            obs_dofs_pos,       # 12
+            obs_dofs_vel,       # 12
+            obs_last_action,    # 12
+            obs_body_ang_vel,   # 3
+            obs_eu_ang          # 3
+        ), dim=-1) # Total = 47
+        obs_single_frame = torch.clip(obs_single_frame, -18.0, 18.0)
+
+        # Final clipping (Snippet uses 18.0)
+        self.__last_obs = torch.roll(self.__last_obs, shifts=-1, dims=1)
+        self.__last_obs[:, -1, :] = obs_single_frame
+        return self.__last_obs.reshape(self.scene.n_envs, -1)
