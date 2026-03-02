@@ -101,7 +101,7 @@ class SingleWalkerEnv():
                                              dtype=torch.float, 
                                              device=gs.device) * 2.0 - 1.0)
         self.robot.reset(envs_idx=envs_idx)
-        kwargs = self.robot.get_state(envs_idx=envs_idx)
+        kwargs = self.robot.get_state(envs_idx=envs_idx, cmd_vel=self.cmd_vel)
         return (self.get_observation(**kwargs), self.get_info(**kwargs))
 
     #@torch.no_grad()

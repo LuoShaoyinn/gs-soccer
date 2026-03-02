@@ -24,7 +24,7 @@ class RobotConfig:
     target_q_offset:np.ndarray  = field(default_factory=\
             lambda: np.array([0.0] * 12, dtype=np.float32))
     cycle_time:    float        = 0.8
-    step_ewma_factor: float     = 0.8
+    step_ewma_factor: float     = 0.2
     decimate_aggressiveness: int = 10    # convexify
     base_link_name: str = "base"        # base link_name
 
@@ -147,8 +147,8 @@ class Robot:
         '''
         self.__last_action = action
         self.__last_target_q[envs_idx] *= self.cfg.step_ewma_factor
-        self.__last_target_q[envs_idx] += action * (1.0 - self.cfg.step_ewma_factor)
-        self.gs_step(action=self.__last_target_q + self.target_q_offset,
+        self.__last_target_q[envs_idx] += 0.25 * action * (1.0 - self.cfg.step_ewma_factor)
+        self.gs_step(action=self.__last_target_q[envs_idx] + self.target_q_offset,
                      envs_idx=envs_idx)
 
     #@torch.no_grad()
@@ -159,7 +159,7 @@ class Robot:
         reset_quat = torch.broadcast_to(self.initial_quat, (reset_n, 4))
         self.gs_reset(reset_pos=reset_pos, reset_quat=reset_quat, envs_idx=envs_idx)
         self.__last_action[envs_idx] = 0.0
-        self.__last_target_q[envs_idx] = self.target_q_offset[envs_idx]
+        self.__last_target_q[envs_idx] = self.target_q_offset
         self.__last_obs[envs_idx] = 0.0
     
 
