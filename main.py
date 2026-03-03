@@ -3,12 +3,9 @@ import numpy as np
 import genesis as gs
 import torch
 
-from envs.field import FieldConfig
-from envs.robot import RobotConfig
-from envs.controlled_robot import ControlledRobotConfig
 from envs.single_walker import SingleWalkerEnv, SingleWalkerEnvConfig
-from envs.dribble import DribbleEnv, DribbleEnvConfig
-
+from robots.mos9 import MOS9, MOS9Config
+from fields.field import Field, FieldConfig
 
 MODEL_PATH = f"models/walk_v5_t5.pt"
 NUM_ENVS = 16
@@ -32,24 +29,10 @@ gs.init(backend=gs.gpu,  # type: ignore[unsolved-attribute]
 '''
 
 env = SingleWalkerEnv(SingleWalkerEnvConfig(
-    robot_cfg = RobotConfig(
-        robot_URDF      = 'assets/MOS9/MOS9_walk.urdf',
-        kp              = np.array([100.0, 100.0,100.0, 100.0, 50.0, 24.0,
-                                    100.0, 100.0,100.0, 100.0, 50.0, 24.0], 
-                                   dtype=np.float32),
-        kv              = np.array([2.0, 2.0, 2.0, 2.0,1.5,0.3,
-                                    2.0, 2.0, 2.0, 2.0,1.5,0.3], 
-                                   dtype=np.float32), 
-        target_q_offset = np.array([0.3, 0.0, 0.0, -0.6, 0.3, 0.0,
-                                    -0.3, 0.0, 0.0, 0.6, -0.3, 0.0],
-                                   dtype=np.float32),
-        joint_names     = ['b_Lh','Lh_Ll','Ll_Ll1','Ll1_Ll2','Ll2_La','La_Lf', 
-                           'b_Rh','Rh_Rl','Rl_Rl1','Rl1_Rl2','Rl2_Ra','Ra_Rf'],
-        base_link_name  = "body", 
-        initial_pos     = np.array([0.0, 0.0, 0.51]),
-        force_range     = np.array([[-100] * 12, [100] * 12], dtype=np.float32), 
-        velocity_range  = np.array([[-100] * 12, [100] * 12], dtype=np.float32), 
-    ),  
+    robot_cfg       = MOS9Config(),  
+    robot_class     = MOS9,
+    field_cfg       = FieldConfig(),
+    field_class     = Field,
     field_range     = FIELD_RANGE, 
     num_envs        = NUM_ENVS,
     show_viewer     = True, 

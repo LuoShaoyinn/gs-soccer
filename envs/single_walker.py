@@ -10,12 +10,17 @@ import random
 from dataclasses import dataclass, field
 from typing import Optional, Callable
 
-from .robot import RobotConfig, Robot
+from .env import Env, EnvConfig
+from robots.robot import RobotConfig, Robot
+from fields.field import FieldConfig, Field
 
 
 @dataclass
-class SingleWalkerEnvConfig():
-    robot_cfg:      RobotConfig
+class SingleWalkerEnvConfig(EnvConfig):
+    robot_cfg:      RobotConfig = field(default_factory=lambda: RobotConfig)
+    robot_class:    type[Robot] = field(default_factory=lambda: Robot)
+    field_cfg:      FieldConfig = field(default_factory=lambda: FieldConfig)
+    field_class:    type[Field] = field(default_factory=lambda: Field)
     num_envs:       int     = 1
     field_range:    float   = 1.0
     rl_dt:          float   = 0.02
@@ -23,67 +28,41 @@ class SingleWalkerEnvConfig():
     show_viewer:    bool    = False
 
 
-class SingleWalkerEnv():
-    def __init__(self, cfg: SingleWalkerEnvConfig):
-        super().__init__()
-        self.cfg = cfg
-        self.num_envs = cfg.num_envs
-        self.num_agents = 1
-        self.is_vector_env = True
-        self.gs_build() 
-        self.gs_config()
-    
+class SingleWalkerEnv(Env): 
+    cfg: SingleWalkerEnvConfig
+
     #@torch.no_grad()
-    #@torch.compiler.disable # prevent torch from compiling underlying gs
-    def gs_build(self): # scene = field + robot
-        self.scene = gs.Scene(
-            viewer_options = gs.options.ViewerOptions(
-                camera_pos    = (0, -3.5, 2.5),
-                camera_lookat = (0.0, 0.0, 0.5),
-                camera_fov    = 30,
-                res           = (960, 640),
-                max_FPS       = 60,
-            ),
-            sim_options = gs.options.SimOptions(
-                dt = self.cfg.rl_dt,
-                substeps = self.cfg.substeps,
-            ),
-            rigid_options=gs.options.RigidOptions(
-                enable_self_collision=True,
-                tolerance=1e-6,
-                max_collision_pairs=20,
-            ),
-            show_viewer = self.cfg.show_viewer,
-        )
-        self.plane = self.scene.add_entity(gs.morphs.Plane())
-        self.robot = Robot(self.cfg.robot_cfg, self.scene)
-        self.robot.gs_build()
-        self.scene.build(n_envs=self.cfg.num_envs, \
-                env_spacing=(self.cfg.field_range, self.cfg.field_range))
+    #@torch.compiler.disable
+    def build(self):
+        self.field = self.cfg.field_class(self.cfg.field_cfg, self.scene)
+        self.robot = self.cfg.robot_class(self.cfg.robot_cfg, self.scene)
+        self.field.build()
+        self.robot.build()
 
     #@torch.no_grad()
     #@torch.compiler.disable # prevent torch from compiling underlying gs
-    def gs_config(self):
+    def config(self):
         self.observation_space = self.robot.observation_space
         self.action_space = self.robot.action_space
-        self.cmd_vel = torch.rand((self.num_envs, 3)) * 2.0 - 1.0
-        self.robot.gs_config()
+        self.field.config()
+        self.robot.config()
         self.all_envs_idx = torch.arange(self.num_envs, 
                                          dtype=torch.long, 
                                          device=gs.device)
- 
+        self.cmd_vel = torch.rand((self.num_envs, 3)) * 2.0 - 1.0
+    
     #@torch.no_grad()
     #@torch.compile()
-    def step(self, action: torch.Tensor):
+    def step(self, action: torch.Tensor, envs_idx: torch.Tensor | None = None):
+        envs_idx = envs_idx or self.all_envs_idx
         self.robot.step(action=action, envs_idx=self.all_envs_idx)
         self.scene.step()
-        kwargs = self.robot.get_state(cmd_vel=self.cmd_vel, 
-                                      envs_idx=self.all_envs_idx)
-        next_observation    = self.get_observation(**kwargs)
-        reward              = self.get_reward(**kwargs)
-        terminated          = self.get_terminated(**kwargs)
-        truncated           = self.get_truncated(**kwargs)
-        info                = self.get_info(**kwargs)
+        kwargs = self.get_state(envs_idx=envs_idx)
+        next_observation    = self.build_observation(**kwargs)
+        reward              = self.build_reward(**kwargs)
+        terminated          = self.build_terminated(**kwargs)
+        truncated           = self.build_truncated(**kwargs)
+        info                = self.build_info(**kwargs)
         need_reset = torch.logical_or(terminated, truncated)
         if need_reset.any():
             reset_idx = torch.nonzero(need_reset)
@@ -101,32 +80,40 @@ class SingleWalkerEnv():
                                              dtype=torch.float, 
                                              device=gs.device) * 2.0 - 1.0)
         self.robot.reset(envs_idx=envs_idx)
-        kwargs = self.robot.get_state(envs_idx=envs_idx, cmd_vel=self.cmd_vel)
-        return (self.get_observation(**kwargs), self.get_info(**kwargs))
+        kwargs = self.get_state(envs_idx=envs_idx)
+        return (self.build_observation(**kwargs), self.build_info(**kwargs))
+    
 
     #@torch.no_grad()
     #@torch.compile()
-    def get_observation(self, **kwargs):
-        return self.robot.get_observation(**kwargs)
+    def get_state(self, envs_idx: torch.Tensor, **kwargs) -> dict[str, torch.Tensor]:
+        return {"cmd_vel": self.cmd_vel[envs_idx], 
+                **self.robot.get_state(envs_idx = envs_idx, **kwargs)}
+ 
+ 
+    #@torch.no_grad()
+    #@torch.compile()
+    def build_observation(self, **kwargs):
+        return self.robot.build_observation(**kwargs)
 
     #@torch.no_grad()
     #@torch.compile()
-    def get_terminated(self, **kwargs) -> torch.Tensor:
+    def build_terminated(self, **kwargs) -> torch.Tensor:
         return torch.zeros((self.cfg.num_envs, ), dtype=torch.bool, device=gs.device)
     
     #@torch.no_grad()
     #@torch.compile()
-    def get_truncated(self, **kwargs) -> torch.Tensor:
+    def build_truncated(self, **kwargs) -> torch.Tensor:
         return torch.zeros((self.cfg.num_envs, ), dtype=torch.bool, device=gs.device)
     
     #@torch.no_grad()
     #@torch.compile()
-    def get_reward(self, **kwargs) -> torch.Tensor:
+    def build_reward(self, **kwargs) -> torch.Tensor:
         return torch.zeros((self.cfg.num_envs, ), dtype=torch.float, device=gs.device)
     
     #@torch.no_grad()
     #@torch.compile()
-    def get_info(self, **kwargs) -> dict[str, torch.Tensor]:
+    def build_info(self, **kwargs) -> dict[str, torch.Tensor]:
         return {}
 
     #@torch.no_grad()

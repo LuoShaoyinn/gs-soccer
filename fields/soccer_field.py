@@ -35,7 +35,7 @@ class Field():
     
     #@torch.no_grad()
     #@torch.compiler.disable # prevent torch from compiling underlying gs
-    def gs_build(self):
+    def build(self):
         # Only field and ball have collision
         self.field = self.scene.add_entity(
             morph=gs.morphs.Plane(),
@@ -50,9 +50,9 @@ class Field():
             surface=gs.surfaces.Rough(), 
             material=gs.materials.Rigid(friction=self.cfg.ball_friction)
         )
-        self.gs_build_virtual()
+        self.__gs_build_virtual()
 
-    def gs_build_virtual(self):
+    def __gs_build_virtual(self):
         half_field_length = self.cfg.half_field_size[0]
         half_field_width  = self.cfg.half_field_size[1]
         fence_height      = self.cfg.fence_height
@@ -111,14 +111,9 @@ class Field():
     
     #@torch.no_grad()
     #@torch.compiler.disable # prevent torch from compiling underlying gs
-    def gs_config(self):
+    def config(self):
         self.ball.set_dofs_damping(self.cfg.ball_damping)
- 
-    #@torch.no_grad()
-    #@torch.compile()
-    def step(self, action : torch.Tensor):
-        pass
-    
+  
     #@torch.no_grad()
     #@torch.compile()
     def reset(self, envs_idx: torch.Tensor | None = None):
