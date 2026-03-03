@@ -10,9 +10,10 @@ import random
 from dataclasses import dataclass, field
 from typing import Optional, Callable
 
+from .field import FieldConfig, Field
 
-@dataclass
-class FieldConfig():
+@dataclass(kw_only = True)
+class SoccerFieldConfig(FieldConfig):
     half_field_size:    tuple = (5.0, 3.0)
     fence_height:       float = 0.5
     goal_width:         float = 3
@@ -27,14 +28,9 @@ class FieldConfig():
     ball_damping:       float = 5e-3
 
 
-class Field():
-    def __init__(self, cfg: FieldConfig, scene: gs.Scene):
-        super().__init__()
-        self.cfg = cfg
-        self.scene = scene
+class SoccerField(Field):
+    cfg: SoccerFieldConfig
     
-    #@torch.no_grad()
-    #@torch.compiler.disable # prevent torch from compiling underlying gs
     def build(self):
         # Only field and ball have collision
         self.field = self.scene.add_entity(
@@ -108,21 +104,14 @@ class Field():
             surface=gs.surfaces.Rough(color=self.cfg.blue_goal_color),
         )
 
-    
-    #@torch.no_grad()
-    #@torch.compiler.disable # prevent torch from compiling underlying gs
+    def reset(self, envs_idx: torch.Tensor, 
+              ball_pos: torch.Tensor | None = None, **kwargs) -> None: # type: ignore[override]
+        ball_pos = ball_pos or torch.zeros((envs_idx.shape[0], 3), dtype=torch.float, device=gs.device)
+        self.ball.set_pos(envs_idx=envs_idx, pos=ball_pos)
+        self.ball.zero_all_dofs_velocity(envs_idx=envs_idx)
+ 
     def config(self):
         self.ball.set_dofs_damping(self.cfg.ball_damping)
   
-    #@torch.no_grad()
-    #@torch.compile()
-    def reset(self, envs_idx: torch.Tensor | None = None):
-        pass
-
-    #@torch.no_grad()
-    def render(self):
-        pass
-
-    #@torch.no_grad()
-    def close(self):
-        pass
+    def get_state(self, envs_idx = torch.Tensor) -> dict[str, torch.Tensor]:
+        return {"ball_pos": self.ball.get_pos() }

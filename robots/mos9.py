@@ -10,7 +10,8 @@ from dataclasses import dataclass, field
 
 from .robot import Robot, RobotConfig
 
-@dataclass
+
+@dataclass(kw_only = True)
 class MOS9Config(RobotConfig):
     robot_URDF:     str         = 'assets/MOS9/MOS9_walk.urdf'
     base_link_name: str         = "body"
@@ -61,8 +62,8 @@ class MOS9(Robot):
 
     #@torch.no_grad()
     #@torch.compile()
-    def reset(self, envs_idx: torch.Tensor) -> None:
-        super().reset(envs_idx=envs_idx)
+    def reset(self, envs_idx: torch.Tensor, **kwargs) -> None: # type: ignore[override]
+        super().reset(envs_idx=envs_idx, **kwargs)
         self.__last_action[envs_idx] = 0.0
         self.__last_target_q[envs_idx] = self.target_q_offset
         self.__last_obs[envs_idx] = 0.0

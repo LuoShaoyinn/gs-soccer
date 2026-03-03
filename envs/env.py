@@ -13,7 +13,7 @@ from robots.robot import RobotConfig, Robot
 from fields.field import FieldConfig, Field
 
 
-@dataclass
+@dataclass(kw_only = True)
 class EnvConfig():
     num_envs:       int     = 1
     field_range:    float   = 1.0
@@ -61,10 +61,20 @@ class Env(ABC):
     def config(self):
         ''' Is called after the scene is built, but before the first reset. '''
         pass
- 
     
     @abstractmethod
-    def get_state(self, envs_idx: torch.Tensor, **kwargs) -> dict[str, torch.Tensor]:
+    def step(self, action: torch.Tensor, envs_idx: torch.Tensor | None = None
+             ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,
+                        dict[str,torch.Tensor]]: 
+        pass
+    
+    @abstractmethod
+    def reset(self, envs_idx: torch.Tensor | None = None
+             ) -> tuple[torch.Tensor, dict[str,torch.Tensor]]: 
+        pass
+  
+    @abstractmethod
+    def get_state(self, envs_idx: torch.Tensor) -> dict[str, torch.Tensor]:
         pass
 
     @abstractmethod

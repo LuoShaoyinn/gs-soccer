@@ -10,7 +10,7 @@ from typing import TypeVar, Generic
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 
-@dataclass
+@dataclass(kw_only = True)
 class RobotConfig:
     robot_URDF:     str                 # urdf path
     base_link_name: str                 # base link_name
@@ -141,14 +141,19 @@ class Robot(ABC):
 
     #@torch.no_grad()
     #@torch.compile()
-    def reset(self, envs_idx: torch.Tensor) -> None:
-        self.__gs_reset(**self.reset_pose(envs_idx=envs_idx),
+    def reset(self, envs_idx: torch.Tensor, 
+              reset_pos: torch.Tensor | None = None,
+              reset_quat: torch.Tensor | None = None, **kwargs) -> None:
+        n_reset_envs = envs_idx.shape[0]
+        reset_pos = reset_pos or self.__init_pos.broadcast_to((n_reset_envs, 3))
+        reset_quat = reset_quat or self.__init_quat.broadcast_to((n_reset_envs, 4))
+        self.__gs_reset(reset_pos=reset_pos, reset_quat=reset_quat, 
                         envs_idx=envs_idx)
     
     #@torch.no_grad()
     #@torch.compile()
-    def get_state(self, envs_idx: torch.Tensor, **kwargs) -> dict[str, torch.Tensor]:
-        return {**self.__gs_state(envs_idx), **kwargs}
+    def get_state(self, envs_idx: torch.Tensor) -> dict[str, torch.Tensor]:
+        return {**self.__gs_state(envs_idx)}
     
 
     # --------------------------------------
@@ -165,14 +170,6 @@ class Robot(ABC):
     def action_space(self) -> gym.spaces.Box:
         pass
     
-    def reset_pose(self, envs_idx: torch.Tensor
-                  ) -> dict[str, torch.Tensor]:
-        n_reset_envs = envs_idx.shape[0]
-        return {
-            "reset_pos"  : self.__init_pos.broadcast_to((n_reset_envs, 3)),
-            "reset_quat" : self.__init_quat.broadcast_to((n_reset_envs, 4)),
-        }
-
     @abstractmethod
     def build_observation(self, **kwargs) -> torch.Tensor:
         '''

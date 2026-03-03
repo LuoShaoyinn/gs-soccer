@@ -3,12 +3,17 @@ import numpy as np
 import genesis as gs
 import torch
 
-from envs.single_walker import SingleWalkerEnv, SingleWalkerEnvConfig
-from robots.mos9 import MOS9, MOS9Config
-from fields.field import Field, FieldConfig
+from envs.walker    import WalkEnv,     WalkEnvConfig
+from envs.dribble   import DribbleEnv,  DribbleEnvConfig
+from robots.mos9    import MOS9,        MOS9Config
+from fields.field   import Field,       FieldConfig
+from fields.soccer_field        import (SoccerField, 
+                                        SoccerFieldConfig)
+from robots.controlled_robot    import (ControlledRobotWrapper, 
+                                        ControlledRobotWrapperConfig)
 
-MODEL_PATH = f"models/walk_v5_t5.pt"
-NUM_ENVS = 16
+MODEL_PATH = f"models/walk_v3_t8.pt"
+NUM_ENVS = 1
 DEVICE = "cuda"
 FIELD_RANGE = 2.0
 
@@ -16,32 +21,22 @@ gs.init(backend=gs.gpu,  # type: ignore[unsolved-attribute]
         performance_mode=True, 
         logging_level='info')
 
-'''
-        init_joint_pos = {
-            "b_Lh": 0.3,
-            "Ll1_Ll2": -0.6,
-            "Ll2_La": 0.3,
-
-            "b_Rh": -0.3,
-            "Rl1_Rl2": 0.6,
-            "Rl2_Ra": -0.3,
-            }
-'''
-
-env = SingleWalkerEnv(SingleWalkerEnvConfig(
-    robot_cfg       = MOS9Config(),  
-    robot_class     = MOS9,
-    field_cfg       = FieldConfig(),
-    field_class     = Field,
+env = DribbleEnv(DribbleEnvConfig(
+    robot_cfg       = ControlledRobotWrapperConfig(
+        robot_cfg      = MOS9Config(),
+        robot_class    = MOS9,
+        policy_path    = MODEL_PATH,
+    ),
+    robot_class     = ControlledRobotWrapper,
+    field_cfg       = SoccerFieldConfig(),
+    field_class     = SoccerField,
     field_range     = FIELD_RANGE, 
     num_envs        = NUM_ENVS,
     show_viewer     = True, 
 ))
 
 
-actor = torch.jit.load(MODEL_PATH).to(gs.device)
 obs, info = env.reset()
-time.sleep(1)
+actions = torch.tensor([0.2, 0, 0], dtype=torch.float, device=gs.device).broadcast_to((NUM_ENVS, 3))
 while True: 
-    actions = actor(obs)
     obs, rew, terminated, truncated, info = env.step(actions) 
