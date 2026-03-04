@@ -20,6 +20,8 @@ class Field():
         self.cfg = cfg
         self.scene = scene
     
+    @torch.no_grad()
+    @torch.compiler.disable
     def build(self):
         self.plane = self.scene.add_entity( morph=gs.morphs.Plane() )
     

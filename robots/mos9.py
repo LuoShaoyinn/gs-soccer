@@ -41,6 +41,8 @@ class MOS9Config(RobotConfig):
 class MOS9(Robot):
     cfg: MOS9Config
 
+    @torch.no_grad()
+    @torch.compile()
     def config(self) -> None:
         super().config()
         self.target_q_offset = torch.tensor(self.cfg.target_q_offset,  device=gs.device)
@@ -48,8 +50,8 @@ class MOS9(Robot):
         self.__last_target_q = torch.zeros((self.n_envs, self.n_dofs), device=gs.device)
         self.__last_obs      = torch.zeros((self.scene.n_envs, 5, 47), device=gs.device)
 
-    #@torch.no_grad()
-    #@torch.compile()
+    @torch.no_grad()
+    @torch.compile()
     def step(self, action: torch.Tensor, envs_idx: torch.Tensor) -> None:
         '''
         Here action is target_q
@@ -60,8 +62,8 @@ class MOS9(Robot):
         super().step(action=self.__last_target_q[envs_idx] + self.target_q_offset,
                      envs_idx=envs_idx)
 
-    #@torch.no_grad()
-    #@torch.compile()
+    @torch.no_grad()
+    @torch.compile()
     def reset(self, envs_idx: torch.Tensor, **kwargs) -> None: # type: ignore[override]
         super().reset(envs_idx=envs_idx, **kwargs)
         self.__last_action[envs_idx] = 0.0
@@ -93,8 +95,8 @@ class MOS9(Robot):
                               shape = (N,), 
                               dtype = np.float32)
     
-    #@torch.no_grad()
-    #@torch.compile()
+    @torch.no_grad()
+    @torch.compile()
     def build_observation(self, body_lin_vel, body_ang_vel, body_quat, \
             cmd_vel, dofs_pos, dofs_vel, **kwargs) -> torch.Tensor: # type: ignore
         def quaternion_to_euler_array(quat):

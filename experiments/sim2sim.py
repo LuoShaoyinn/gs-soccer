@@ -1,4 +1,3 @@
-import os, time
 import numpy as np
 import genesis as gs
 import torch
@@ -30,13 +29,16 @@ env = DribbleEnv(DribbleEnvConfig(
     robot_class     = ControlledRobotWrapper,
     field_cfg       = SoccerFieldConfig(),
     field_class     = SoccerField,
-    field_range     = FIELD_RANGE, 
+    env_spacing     = FIELD_RANGE, 
     num_envs        = NUM_ENVS,
     show_viewer     = True, 
 ))
 
 
 obs, info = env.reset()
-actions = torch.tensor([0.2, 0, 0], dtype=torch.float, device=gs.device).broadcast_to((NUM_ENVS, 3))
+actions = torch.tensor([0.2, 0, 0], 
+                       dtype=torch.float, 
+                       device=gs.device) \
+                .broadcast_to((NUM_ENVS, 3))
 while True: 
     obs, rew, terminated, truncated, info = env.step(actions) 

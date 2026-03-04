@@ -14,7 +14,7 @@ from .field import FieldConfig, Field
 
 @dataclass(kw_only = True)
 class SoccerFieldConfig(FieldConfig):
-    half_field_size:    tuple = (5.0, 3.0)
+    half_field_size:    tuple = (12.0, 9.0)
     fence_height:       float = 0.5
     goal_width:         float = 3
     goal_height:        float = 1
@@ -23,6 +23,8 @@ class SoccerFieldConfig(FieldConfig):
     red_goal_color:     tuple = (1.0, 0.3, 0.3)
     blue_goal_color:    tuple = (0.3, 0.3, 1.0)
     ball_radius:        float = 0.1
+    ball_init_pos:      np.ndarray = field(default_factory=\
+            lambda: np.array([0.0, 0.0, 0.05], dtype=np.float32))
     field_friction:     float = 1.0
     ball_friction:      float = 1.0
     ball_damping:       float = 5e-3
@@ -31,6 +33,8 @@ class SoccerFieldConfig(FieldConfig):
 class SoccerField(Field):
     cfg: SoccerFieldConfig
     
+    @torch.no_grad()
+    @torch.compiler.disable
     def build(self):
         # Only field and ball have collision
         self.field = self.scene.add_entity(
@@ -48,6 +52,8 @@ class SoccerField(Field):
         )
         self.__gs_build_virtual()
 
+    @torch.no_grad()
+    @torch.compiler.disable
     def __gs_build_virtual(self):
         half_field_length = self.cfg.half_field_size[0]
         half_field_width  = self.cfg.half_field_size[1]
@@ -103,15 +109,26 @@ class SoccerField(Field):
             ),
             surface=gs.surfaces.Rough(color=self.cfg.blue_goal_color),
         )
+    
+    @torch.no_grad()
+    @torch.compiler.disable
+    def config(self):
+        self.ball.set_dofs_damping(self.cfg.ball_damping)
+        self.ball_init_pos = torch.from_numpy(self.cfg.ball_init_pos).to(gs.device)
 
+
+    @torch.no_grad()
+    @torch.compiler.disable
     def reset(self, envs_idx: torch.Tensor, 
               ball_pos: torch.Tensor | None = None, **kwargs) -> None: # type: ignore[override]
-        ball_pos = ball_pos or torch.zeros((envs_idx.shape[0], 3), dtype=torch.float, device=gs.device)
+        if ball_pos is None:
+            ball_pos = self.ball_init_pos.broadcast_to((envs_idx.shape[0], 3))
         self.ball.set_pos(envs_idx=envs_idx, pos=ball_pos)
         self.ball.zero_all_dofs_velocity(envs_idx=envs_idx)
  
-    def config(self):
-        self.ball.set_dofs_damping(self.cfg.ball_damping)
-  
+ 
+    @torch.no_grad()
+    @torch.compiler.disable
     def get_state(self, envs_idx = torch.Tensor) -> dict[str, torch.Tensor]:
-        return {"ball_pos": self.ball.get_pos() }
+        return {"ball_pos": self.ball.get_pos(envs_idx=envs_idx), 
+                "ball_vel": self.ball.get_vel(envs_idx=envs_idx)}

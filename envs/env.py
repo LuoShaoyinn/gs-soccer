@@ -16,10 +16,11 @@ from fields.field import FieldConfig, Field
 @dataclass(kw_only = True)
 class EnvConfig():
     num_envs:       int     = 1
-    field_range:    float   = 1.0
+    env_spacing:    float   = 1.0
     rl_dt:          float   = 0.02
     substeps:       int     = 10
     show_viewer:    bool    = False
+    self_collision: bool    = False
 
 
 class Env(ABC):
@@ -41,7 +42,7 @@ class Env(ABC):
                 substeps = self.cfg.substeps,
             ),
             rigid_options=gs.options.RigidOptions(
-                enable_self_collision=True,
+                enable_self_collision=self.cfg.self_collision,
                 tolerance=1e-6,
                 max_collision_pairs=20,
             ),
@@ -49,7 +50,7 @@ class Env(ABC):
         )
         self.build()
         self.scene.build(n_envs=self.cfg.num_envs, \
-                env_spacing=(self.cfg.field_range, self.cfg.field_range))
+                env_spacing=(self.cfg.env_spacing, self.cfg.env_spacing))
         self.config()
     
     @abstractmethod
@@ -70,7 +71,7 @@ class Env(ABC):
     
     @abstractmethod
     def reset(self, envs_idx: torch.Tensor | None = None
-             ) -> tuple[torch.Tensor, dict[str,torch.Tensor]]: 
+             ) -> tuple[torch.Tensor, dict]: 
         pass
   
     @abstractmethod
@@ -78,7 +79,7 @@ class Env(ABC):
         pass
 
     @abstractmethod
-    def build_observation(self, **kwargs):
+    def build_observation(self, **kwargs) -> torch.Tensor:
         pass
 
     @abstractmethod
@@ -93,10 +94,6 @@ class Env(ABC):
     def build_reward(self, **kwargs) -> torch.Tensor:
         pass
     
-    @abstractmethod
-    def build_info(self, **kwargs) -> dict[str, torch.Tensor]:
-        pass
-
     def render(self):
         pass
 

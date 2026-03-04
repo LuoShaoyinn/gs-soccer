@@ -31,12 +31,16 @@ class WalkEnvConfig(EnvConfig):
 class WalkEnv(Env): 
     cfg: WalkEnvConfig
 
+    @torch.no_grad()
+    @torch.compile()
     def build(self):
         self.field = self.cfg.field_class(self.cfg.field_cfg, self.scene)
         self.robot = self.cfg.robot_class(self.cfg.robot_cfg, self.scene)
         self.field.build()
         self.robot.build()
 
+    @torch.no_grad()
+    @torch.compile()
     def config(self):
         self.observation_space = self.robot.observation_space
         self.action_space = self.robot.action_space
@@ -47,6 +51,8 @@ class WalkEnv(Env):
                                          device=gs.device)
         self.cmd_vel = torch.rand((self.num_envs, 3)) * 2.0 - 1.0
     
+    @torch.no_grad()
+    @torch.compiler.disable
     def step(self, action: torch.Tensor, envs_idx: torch.Tensor | None = None
              ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,
                         dict[str,torch.Tensor]]: 
@@ -66,6 +72,8 @@ class WalkEnv(Env):
             next_observation[reset_idx] = reset_observation
         return (next_observation, reward, terminated, truncated, info)
     
+    @torch.no_grad()
+    @torch.compile()
     def reset(self, envs_idx: torch.Tensor | None = None
               ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         envs_idx = envs_idx or self.all_envs_idx
@@ -79,23 +87,35 @@ class WalkEnv(Env):
         return (self.build_observation(**kwargs), self.build_info(**kwargs))
     
 
+    @torch.no_grad()
+    @torch.compile()
     def get_state(self, envs_idx: torch.Tensor) -> dict[str, torch.Tensor]:
         return {"cmd_vel": self.cmd_vel[envs_idx], 
                 **self.robot.get_state(envs_idx = envs_idx), 
                 **self.field.get_state(envs_idx = envs_idx)}
  
  
+    @torch.no_grad()
+    @torch.compile()
     def build_observation(self, **kwargs):
         return self.robot.build_observation(**kwargs)
 
+    @torch.no_grad()
+    @torch.compile()
     def build_terminated(self, **kwargs) -> torch.Tensor:
         return torch.zeros((self.cfg.num_envs, ), dtype=torch.bool, device=gs.device)
     
+    @torch.no_grad()
+    @torch.compile()
     def build_truncated(self, **kwargs) -> torch.Tensor:
         return torch.zeros((self.cfg.num_envs, ), dtype=torch.bool, device=gs.device)
     
+    @torch.no_grad()
+    @torch.compile()
     def build_reward(self, **kwargs) -> torch.Tensor:
         return torch.zeros((self.cfg.num_envs, ), dtype=torch.float, device=gs.device)
     
+    @torch.no_grad()
+    @torch.compile()
     def build_info(self, **kwargs) -> dict[str, torch.Tensor]:
         return {}
