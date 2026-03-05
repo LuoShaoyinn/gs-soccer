@@ -22,15 +22,15 @@ from robots.controlled_robot    import (ControlledRobotWrapper,
 from network import Policy, Value
 
 
-EVAL = False
+EVAL = True
 DEVICE = "cuda"
-RESUME_TRAINING = False
+RESUME_TRAINING = True
 EXPERIMENT_NAME = "dribble_walk"
 MODEL_PATH = f"models/walk_v3_t8.pt"
-CHECKPOINT_PATH = f"runs/PPO_Walker/{EXPERIMENT_NAME}/checkpoints/agent_2000.pt"
+CHECKPOINT_PATH = f"runs/PPO_Walker/{EXPERIMENT_NAME}/checkpoints/best_agent.pt"
 NUM_ENVS = 1 if EVAL else 8192
 FIELD_RANGE = 0.0
-ROLLOUT_STEPS = 24
+ROLLOUT_STEPS = 48
 
 
 gs.init(backend=gs.gpu,  # type: ignore[unsolved-attribute]
@@ -66,17 +66,10 @@ for model in models.values():
 cfg = PPO_DEFAULT_CONFIG.copy()
 cfg["rollouts"] = ROLLOUT_STEPS
 cfg["discount_factor"] = 0.97
-cfg["lambda"] = 0.95
 cfg["learning_epochs"] = 8
-cfg["learning_rate"] = 3e-4
 cfg["mixed_precision"] = True
-cfg["entropy_loss_scale"] = 0.005
 # mini_batches is the number of divisions of the total collected data (ROLLOUT_STEPS * NUM_ENVS)
 cfg["mini_batches"] = 4
-cfg["state_preprocessor"] = RunningStandardScaler
-cfg["state_preprocessor_kwargs"] = {"size": env.observation_space, "device": DEVICE}
-cfg["value_preprocessor"] = RunningStandardScaler
-cfg["value_preprocessor_kwargs"] = {"size": 1, "device": DEVICE}
 
 cfg["experiment"]["directory"] = "runs/PPO_Walker"          # type: ignore
 cfg["experiment"]["write_interval"] = 50                    # type: ignore
@@ -94,7 +87,7 @@ agent = PPO(models=models,
 
 # --- Training ---
 
-cfg_trainer = { "timesteps": 1000000, 
+cfg_trainer = { "timesteps": 5000, 
                 "headless": True,
                 "environment_info": "extra", }
 trainer = SequentialTrainer(cfg=cfg_trainer, env=env, agents=[agent]) # type: ignore
@@ -102,17 +95,15 @@ trainer = SequentialTrainer(cfg=cfg_trainer, env=env, agents=[agent]) # type: ig
 if (EVAL or RESUME_TRAINING) and os.path.exists(CHECKPOINT_PATH):
     agent.load(CHECKPOINT_PATH)
     print(f"Model loaded from {CHECKPOINT_PATH}")
-else:
-    print(f"No checkpoint found at {CHECKPOINT_PATH}, starting from scratch.")
-    input()
 
 if not EVAL:
     trainer.train()
 else:
-    agent.policy.eval() # type: ignore
+    agent.policy.eval() # type: ignore[union-attr]
     states, _ = env.reset()
     with torch.no_grad():
-        while True: # Run indefinitely or for a fixed range
-            # Use deterministic actions for evaluation
+        for i in range(1000):
             actions, _, _ = agent.act(states, timestep=0, timesteps=0)
-            env.step(actions)
+            # actions = states[:, 7:10] * 0.5
+            # actions[:, 2] = 0.0
+            (states, _, _, _, _) = env.step(actions)

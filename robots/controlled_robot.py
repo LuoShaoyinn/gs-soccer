@@ -36,7 +36,6 @@ class ControlledRobotWrapper():
     @torch.compile()
     def config(self):
         self.robot.config()
-        self.__last_cmd_vel = torch.zeros((self.scene.n_envs, 3), device=gs.device)
  
 
     @torch.no_grad()
@@ -52,7 +51,6 @@ class ControlledRobotWrapper():
     @torch.no_grad()
     @torch.compile()
     def reset(self, envs_idx: torch.Tensor, **kwargs) -> None:
-        self.__last_cmd_vel[envs_idx] = 0.0
         self.robot.reset(envs_idx=envs_idx, **kwargs)
  
 
@@ -60,12 +58,14 @@ class ControlledRobotWrapper():
     @torch.no_grad()
     @torch.compiler.disable
     def observation_space(self) -> gym.spaces.Box:
-        # body_pos[0:3]
-        # body_vel[3:6] (lin_x, lin_y, ang_z)
-        # ball_rel[6:8]
+        # body_pos[0:2]
+        # body_heading[2:4] (sin_yaw, cos_yaw)          Do not use angle
+        # body_vel[4:7]     (lin_x, lin_y, ang_z)
+        # ball_rel[7:9]     (ball_rel_x, ball_rel_y)
+        # cmd_vel[9:12]     (lin_x, lin_y, ang_z)       last control command
         return gym.spaces.Box(low   = -10.0, 
                               high  =  10.0, 
-                              shape = (9,), 
+                              shape = (12,), 
                               dtype = np.float32)
     
     @property
@@ -81,18 +81,22 @@ class ControlledRobotWrapper():
     @torch.no_grad()
     @torch.compile()
     def get_state(self, envs_idx: torch.Tensor) -> dict[str, torch.Tensor]:
-        return {"last_cmd_vel": self.__last_cmd_vel[envs_idx], 
-                **self.robot.get_state(envs_idx=envs_idx)}
+        return self.robot.get_state(envs_idx=envs_idx)
 
     @torch.no_grad()
     @torch.compile()
     def build_observation(self, 
                         body_pos: torch.Tensor, 
+                        body_quat: torch.Tensor,
                         body_lin_vel: torch.Tensor,
                         body_ang_vel: torch.Tensor,
-                        ball_pos: torch.Tensor,
+                        body_heading: torch.Tensor,
+                        ball_pos_rel: torch.Tensor,
+                        cmd_vel: torch.Tensor,
                         **kwargs) -> torch.Tensor:
-        return torch.cat((body_pos, 
+        return torch.cat((body_pos[:, 0:2], 
+                          body_heading,
                           body_lin_vel[:, 0:2], 
                           body_ang_vel[:, 2].unsqueeze(-1),
-                          ball_pos - body_pos), dim=1)
+                          ball_pos_rel,
+                          cmd_vel), dim=1)

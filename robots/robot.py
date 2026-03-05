@@ -146,8 +146,10 @@ class Robot(ABC):
               reset_pos: torch.Tensor | None = None,
               reset_quat: torch.Tensor | None = None, **kwargs) -> None:
         n_reset_envs = envs_idx.shape[0]
-        reset_pos = reset_pos or self.__init_pos.broadcast_to((n_reset_envs, 3))
-        reset_quat = reset_quat or self.__init_quat.broadcast_to((n_reset_envs, 4))
+        if reset_pos is None:
+            reset_pos = self.__init_pos.broadcast_to((n_reset_envs, 3))
+        if reset_quat is None:
+            reset_quat = self.__init_quat.broadcast_to((n_reset_envs, 4))
         self.__gs_reset(reset_pos=reset_pos, reset_quat=reset_quat, 
                         envs_idx=envs_idx)
     
