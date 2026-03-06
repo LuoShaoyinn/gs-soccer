@@ -24,13 +24,13 @@ from network import Policy, Value
 
 EVAL = True
 DEVICE = "cuda"
-RESUME_TRAINING = True
-EXPERIMENT_NAME = "dribble_walk"
+RESUME_TRAINING = False
+EXPERIMENT_NAME = "dribble_walk_2"
 MODEL_PATH = f"models/walk_v3_t8.pt"
 CHECKPOINT_PATH = f"runs/PPO_Walker/{EXPERIMENT_NAME}/checkpoints/best_agent.pt"
 NUM_ENVS = 1 if EVAL else 8192
 FIELD_RANGE = 0.0
-ROLLOUT_STEPS = 48
+ROLLOUT_STEPS = 32
 
 
 gs.init(backend=gs.gpu,  # type: ignore[unsolved-attribute]
@@ -87,7 +87,7 @@ agent = PPO(models=models,
 
 # --- Training ---
 
-cfg_trainer = { "timesteps": 5000, 
+cfg_trainer = { "timesteps": 30000, 
                 "headless": True,
                 "environment_info": "extra", }
 trainer = SequentialTrainer(cfg=cfg_trainer, env=env, agents=[agent]) # type: ignore

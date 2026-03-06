@@ -22,17 +22,17 @@ class DribbleEnvConfig(EnvConfig):
     field_cfg:          FieldConfig
     field_class:        type[Field]
     robot_reset_pos:   np.ndarray  = field(default_factory= \
-            lambda: np.array([-0.4, 0.0], dtype=np.float32))
-    robot_reset_noise:  float       = 0.1
+            lambda: np.array([-0.8, 0.0], dtype=np.float32))
+    robot_reset_noise:  float       = 0.2
     ball_reset_pos:     np.ndarray  = field(default_factory= \
             lambda: np.array([0.0, 0.0], dtype=np.float32))
     ball_reset_noise:   float       = 0.1
     terminate_range:    np.ndarray  = field(default_factory= \
             lambda: np.array([12, 9], dtype=np.float32))
-    truncated_step_limit:   int     = 200
+    truncated_step_limit:   int     = 400
     freq_ratio:         int         = 5
     self_collision:     bool        = False
-    ball_loss_distance: float       = 1.5
+    ball_loss_distance: float       = 2.0
 
 
 class DribbleEnv(Env):
@@ -62,6 +62,16 @@ class DribbleEnv(Env):
         self.ball_reset_pos = torch.from_numpy(self.cfg.ball_reset_pos).to(gs.device)
         self.robot_pos = torch.from_numpy(self.cfg.robot_reset_pos).to(gs.device)
         self.__cmd_vel = torch.zeros((self.num_envs, 5, 3), device=gs.device)
+        tensor_zero = torch.tensor([0.0], dtype=torch.float, device=gs.device)
+        self.__reward_info = {
+            "rew_ball_x": tensor_zero.mean().detach(),
+            "rew_ball_y": tensor_zero.mean().detach(),
+            "rew_cmd_smooth": tensor_zero.mean().detach(),
+            "rew_close_to_ball": tensor_zero.mean().detach(),
+            "rew_rel_y": tensor_zero.mean().detach(),
+            "rew_action": tensor_zero.mean().detach(),
+            "rew_heading": tensor_zero.mean().detach(),
+        }
 
 
     @torch.no_grad()
@@ -174,7 +184,7 @@ class DribbleEnv(Env):
     
     @torch.no_grad()
     @torch.compile()
-    def build_reward(self, cmd_vel, last_cmd_vel, body_pos, body_lin_vel, 
+    def build_reward(self, cmd_vel, last_cmd_vel, body_pos, body_lin_vel, body_heading,
                      ball_pos, ball_vel, ball_pos_rel, ball_vel_rel, 
                      **kwargs) -> torch.Tensor: # type: ignore[override]
         rew_ball_x = torch.clip(1.0 - torch.exp(-ball_vel[:, 0] / 0.1), -1.0, 1.0)
@@ -183,16 +193,28 @@ class DribbleEnv(Env):
                                 -1.0, 1.0)
         rew_cmd_smooth = torch.exp(-torch.linalg.norm(cmd_vel - last_cmd_vel, dim=1))
         ball_pos_rel_unprojected = ball_pos[:, 0:2] - body_pos[:, 0:2]
-        ball_distance = torch.linalg.norm(ball_pos_rel_unprojected, dim=1, keepdim=True) + 1e-5
-        ball_pos_rel_unprojected /= ball_distance
-        rew_close_to_ball = (ball_pos_rel_unprojected * body_lin_vel[:, 0:2]).sum(dim=1)
-        rew_rel_y = -(ball_pos_rel[:, 1] / (ball_distance.squeeze(1) + 0.1)) ** 2
+        ball_distance = torch.linalg.norm(ball_pos_rel_unprojected, dim=1) + 1e-5
+        rew_close_to_ball = (ball_pos_rel_unprojected * body_lin_vel[:, 0:2]).sum(dim=1) / ball_distance
+        rew_rel_y = -(ball_pos_rel[:, 1] / (ball_distance + 0.1)) ** 2
+        rew_action = 1.0 - torch.exp(-torch.linalg.norm(cmd_vel, dim=1) / 0.5)
+        rew_heading = body_heading[:, 0] - 1.0  # encourage facing the goal
+        self.__reward_info = {
+            "rew_ball_x": rew_ball_x.mean().detach(),
+            "rew_ball_y": rew_ball_y.mean().detach(),
+            "rew_cmd_smooth": rew_cmd_smooth.mean().detach(),
+            "rew_close_to_ball": rew_close_to_ball.mean().detach(),
+            "rew_rel_y": rew_rel_y.mean().detach(),
+            "rew_action": rew_action.mean().detach(),
+            "rew_heading": rew_heading.mean().detach(),
+        }
         return ((rew_ball_x
                 + rew_ball_y * 0.03
                 + rew_cmd_smooth * 0.2
                 + rew_close_to_ball * 1.0
-                + rew_rel_y * 5.0)
-                / (1.0 + 0.03 + 0.2 + 1.0 + 5.0)).unsqueeze(1)
+                + rew_rel_y * 4.0
+                + rew_action * 0.5
+                + rew_heading * 1.0)
+                / (1.0 + 0.03 + 0.2 + 1.0 + 4.0 + 0.5 + 1.0)).unsqueeze(1)
     
     @torch.no_grad()
     @torch.compile()
@@ -207,5 +229,5 @@ class DribbleEnv(Env):
                  "body_pos_y": body_pos[:, 1].mean().detach(),
                  "ball_rel_pos_x": ball_pos_rel[:, 0].mean().detach(),
                  "ball_rel_pos_y": ball_pos_rel[:, 1].mean().detach(),
-                 "cmd_vel": cmd_vel.mean().detach()
-                 }}
+                 "cmd_vel": cmd_vel.mean().detach(),
+                 **self.__reward_info, }}
