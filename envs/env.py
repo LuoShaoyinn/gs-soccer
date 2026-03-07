@@ -86,6 +86,7 @@ class Env(ABC):
              ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,
                         dict[str,torch.Tensor]]: 
         envs_idx = envs_idx or self.all_envs_idx
+        action = self.model.preprocess_action(action)
         self.robot.step(action=action, envs_idx=self.all_envs_idx)
         self.scene.step()
         kwargs = self.get_state(envs_idx=envs_idx)
