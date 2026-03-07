@@ -11,7 +11,7 @@ from fields.soccer_field        import (SoccerField,
 from robots.controlled_robot    import (ControlledRobotWrapper, 
                                         ControlledRobotWrapperConfig)
 
-MODEL_PATH = f"models/walk_v3_t8.pt"
+MODEL_PATH = f"models_ckpt/walk_v3_t8.pt"
 NUM_ENVS = 1
 DEVICE = "cuda"
 FIELD_RANGE = 2.0

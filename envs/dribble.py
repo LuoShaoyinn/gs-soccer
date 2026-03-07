@@ -38,16 +38,12 @@ class DribbleEnvConfig(EnvConfig):
 class DribbleEnv(Env):
     cfg: DribbleEnvConfig
     
-    @torch.no_grad()
-    @torch.compile()
     def build(self): 
         self.robot = self.cfg.robot_class(cfg=self.cfg.robot_cfg, scene=self.scene)
         self.field = self.cfg.field_class(cfg=self.cfg.field_cfg, scene=self.scene)
         self.robot.build()
         self.field.build()
 
-    @torch.no_grad()
-    @torch.compile()
     def config(self):
         self.observation_space = self.robot.observation_space
         self.action_space = self.robot.action_space
@@ -74,7 +70,6 @@ class DribbleEnv(Env):
         }
 
 
-    @torch.no_grad()
     @torch.compiler.disable
     def step(self, action: torch.Tensor, envs_idx: torch.Tensor | None = None
              ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,
@@ -98,8 +93,6 @@ class DribbleEnv(Env):
             next_observation[reset_idx] = reset_observation
         return (next_observation, reward, terminated, truncated, info)
     
-    @torch.no_grad()
-    @torch.compile()
     def reset(self, envs_idx: torch.Tensor | None = None
               ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         if envs_idx is None:
@@ -118,8 +111,6 @@ class DribbleEnv(Env):
         kwargs = self.get_state(envs_idx=envs_idx)
         return (self.build_observation(**kwargs), self.build_info(**kwargs))
 
-    @torch.no_grad()
-    @torch.compile()
     def get_state(self, envs_idx: torch.Tensor) -> dict[str, torch.Tensor]:
         state = {
             "cmd_vel": self.__cmd_vel[envs_idx][:, -1, :], 
@@ -154,13 +145,9 @@ class DribbleEnv(Env):
         state["ball_distance"] = torch.norm(state["ball_pos_rel"], dim=1, keepdim=True)     
         return state
     
-    @torch.no_grad()
-    @torch.compile()
     def build_observation(self, **kwargs):
         return self.robot.build_observation(**kwargs)
 
-    @torch.no_grad()
-    @torch.compile()
     def build_terminated(self, body_pos: torch.Tensor, ball_pos: torch.Tensor, **kwargs
                          ) -> torch.Tensor: # type: ignore[override]
         robot_fall = body_pos[:, 2] < 0.3
@@ -177,13 +164,9 @@ class DribbleEnv(Env):
                 | robot_out_of_range 
                 | ball_too_far_from_robot).unsqueeze(1)
     
-    @torch.no_grad()
-    @torch.compile()
     def build_truncated(self, **kwargs) -> torch.Tensor:
         return (self.step_count >= self.cfg.truncated_step_limit).unsqueeze(1)
     
-    @torch.no_grad()
-    @torch.compile()
     def build_reward(self, cmd_vel, last_cmd_vel, body_pos, body_lin_vel, body_heading,
                      ball_pos, ball_vel, ball_pos_rel, ball_vel_rel, 
                      **kwargs) -> torch.Tensor: # type: ignore[override]
@@ -216,8 +199,6 @@ class DribbleEnv(Env):
                 + rew_heading * 1.0)
                 / (1.0 + 0.03 + 0.2 + 1.0 + 4.0 + 0.5 + 1.0)).unsqueeze(1)
     
-    @torch.no_grad()
-    @torch.compile()
     def build_info(self, ball_pos, ball_vel, body_pos, cmd_vel, ball_pos_rel, ball_vel_rel,
                    **kwargs) -> dict[str, dict[str, torch.Tensor]]: # type: ignore[override]
         return {"extra": 

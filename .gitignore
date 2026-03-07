@@ -14,5 +14,5 @@ runs/
 # torch compile auto generate this on AMDGPU
 tunableop_results0.csv
 logs/
-models/
+models_ckpt/
 *.mp4

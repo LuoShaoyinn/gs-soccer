@@ -27,19 +27,13 @@ class ControlledRobotWrapper():
         self.robot = self.cfg.robot_class(self.cfg.robot_cfg, scene)
         self.policy = torch.jit.load(self.cfg.policy_path).to(gs.device)
 
-    @torch.no_grad()
-    @torch.compile()
     def build(self):
         self.robot.build()
 
-    @torch.no_grad()
-    @torch.compile()
     def config(self):
         self.robot.config()
  
 
-    @torch.no_grad()
-    @torch.compile()
     def step(self, envs_idx: torch.Tensor, action: torch.Tensor) -> None:
         # action: lin_x, lin_y, ang_z
         state = self.get_state(envs_idx=envs_idx)
@@ -48,28 +42,26 @@ class ControlledRobotWrapper():
         policy_action = self.policy(policy_obs)
         self.robot.step(action=policy_action, envs_idx=envs_idx)
 
-    @torch.no_grad()
-    @torch.compile()
     def reset(self, envs_idx: torch.Tensor, **kwargs) -> None:
         self.robot.reset(envs_idx=envs_idx, **kwargs)
  
 
     @property
-    @torch.no_grad()
     @torch.compiler.disable
     def observation_space(self) -> gym.spaces.Box:
         # body_pos[0:2]
         # body_heading[2:4] (sin_yaw, cos_yaw)          Do not use angle
         # body_vel[4:7]     (lin_x, lin_y, ang_z)
-        # ball_rel[7:9]     (ball_rel_x, ball_rel_y)
-        # cmd_vel[9:12]     (lin_x, lin_y, ang_z)       last control command
+        # ball_pos_rel[7:9] (ball_rel_x, ball_rel_y)
+        # ball_vel_rel[9:11]
+        # cmd_vel[11:14]    (lin_x, lin_y, ang_z)       last control command
+        # target_pos[14:16]
         return gym.spaces.Box(low   = -10.0, 
                               high  =  10.0, 
-                              shape = (12,), 
+                              shape = (16,), 
                               dtype = np.float32)
     
     @property
-    @torch.no_grad()
     @torch.compiler.disable
     def action_space(self) -> gym.spaces.Box:
         # lin_x, lin_y, ang_z
@@ -78,16 +70,11 @@ class ControlledRobotWrapper():
                               shape = (3,), 
                               dtype = np.float32)
     
-    @torch.no_grad()
-    @torch.compile()
     def get_state(self, envs_idx: torch.Tensor) -> dict[str, torch.Tensor]:
         return self.robot.get_state(envs_idx=envs_idx)
 
-    @torch.no_grad()
-    @torch.compile()
     def build_observation(self, 
-                        body_pos: torch.Tensor, 
-                        body_quat: torch.Tensor,
+                        body_pos_2D: torch.Tensor, 
                         body_lin_vel: torch.Tensor,
                         body_ang_vel: torch.Tensor,
                         body_heading: torch.Tensor,

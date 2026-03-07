@@ -33,7 +33,6 @@ class SoccerFieldConfig(FieldConfig):
 class SoccerField(Field):
     cfg: SoccerFieldConfig
     
-    @torch.no_grad()
     @torch.compiler.disable
     def build(self):
         # Only field and ball have collision
@@ -52,7 +51,6 @@ class SoccerField(Field):
         )
         self.__gs_build_virtual()
 
-    @torch.no_grad()
     @torch.compiler.disable
     def __gs_build_virtual(self):
         half_field_length = self.cfg.half_field_size[0]
@@ -110,14 +108,12 @@ class SoccerField(Field):
             surface=gs.surfaces.Rough(color=self.cfg.blue_goal_color),
         )
     
-    @torch.no_grad()
     @torch.compiler.disable
     def config(self):
         self.ball.set_dofs_damping(self.cfg.ball_damping)
         self.ball_init_pos = torch.from_numpy(self.cfg.ball_init_pos).to(gs.device)
 
 
-    @torch.no_grad()
     @torch.compiler.disable
     def reset(self, envs_idx: torch.Tensor, 
               ball_pos: torch.Tensor | None = None, **kwargs) -> None: # type: ignore[override]
@@ -127,7 +123,6 @@ class SoccerField(Field):
         self.ball.zero_all_dofs_velocity(envs_idx=envs_idx)
  
  
-    @torch.no_grad()
     @torch.compiler.disable
     def get_state(self, envs_idx = torch.Tensor) -> dict[str, torch.Tensor]:
         return {"ball_pos": self.ball.get_pos(envs_idx=envs_idx), 
