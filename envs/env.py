@@ -22,9 +22,9 @@ class EnvConfig():
     field_class:    type[Field]
     model_cfg:      ModelConfig
     model_class:    type[Model]
-    env_spacing:    float
     policy_freq:    int
-    sim_freq:       int
+    sim_freq:       int     = 500
+    env_spacing:    float   = 0.0
     num_envs:       int     = 1
     show_viewer:    bool    = True
     self_collision: bool    = True
@@ -39,7 +39,7 @@ class Env(ABC):
         self.all_envs_idx = torch.arange(self.num_envs, 
                                          dtype=torch.long, 
                                          device=gs.device)
-        assert(self.cfg.sim_freq % self.cfg.policy_freq == 0, 
+        assert((self.cfg.sim_freq % self.cfg.policy_freq) == 0, 
                "sim_freq must be divisible by policy_freq")
         self.scene = gs.Scene(
             viewer_options = gs.options.ViewerOptions(
@@ -82,14 +82,13 @@ class Env(ABC):
         self.observation_space = self.model.observation_space
         self.action_space = self.model.action_space
     
-    def step(self, action: torch.Tensor, envs_idx: torch.Tensor | None = None
+    def step(self, action: torch.Tensor
              ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,
                         dict[str,torch.Tensor]]: 
-        envs_idx = envs_idx or self.all_envs_idx
         action = self.model.preprocess_action(action)
-        self.robot.step(action=action, envs_idx=self.all_envs_idx)
+        self.robot.step(action=action)
         self.scene.step()
-        kwargs = self.get_state(envs_idx=envs_idx)
+        kwargs = self.get_state(envs_idx=self.all_envs_idx)
         next_observation    = self.model.build_observation(**kwargs)
         reward              = self.model.build_reward(**kwargs)
         terminated          = self.model.build_terminated(**kwargs)

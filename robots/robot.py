@@ -79,10 +79,9 @@ class Robot(ABC):
 
 
     @torch.compiler.disable
-    def __gs_step(self, action: torch.Tensor, envs_idx: torch.Tensor) -> None:
+    def __gs_step(self, action: torch.Tensor) -> None:
         self.robot.control_dofs_position(action, 
-                                         dofs_idx_local=self.dofs_idx_local, 
-                                         envs_idx=envs_idx)
+                                         dofs_idx_local=self.dofs_idx_local)
 
     @torch.compiler.disable
     def __gs_reset(self, 
@@ -125,8 +124,8 @@ class Robot(ABC):
         self.init_pos  = torch.from_numpy(self.cfg.initial_pos).to(gs.device)
         self.init_quat = torch.from_numpy(self.cfg.initial_quat).to(gs.device)
 
-    def step(self, action: torch.Tensor, envs_idx: torch.Tensor) -> None:
-        self.__gs_step(action=action, envs_idx=envs_idx)
+    def step(self, action: torch.Tensor) -> None:
+        self.__gs_step(action=action)
 
     def reset(self, envs_idx: torch.Tensor, 
               reset_pos: torch.Tensor | None = None,

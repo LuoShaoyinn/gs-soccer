@@ -1,7 +1,6 @@
 # walk_model.py
 #   Define walking model
 
-
 import torch
 import numpy as np
 import genesis as gs
@@ -14,6 +13,7 @@ from .model import ModelConfig, Model
 class WalkModelConfig(ModelConfig):
     n_dofs:             int
     target_q_offset:    np.ndarray
+    step_dt:            float       = 0.02
     history_frames:     int         = 5
     cycle_time:         float       = 0.8
     step_ewma_factor:   float       = 0.2
@@ -45,11 +45,18 @@ class WalkModel(Model):
                                       dtype=torch.float, 
                                       device=gs.device)
 
-    def reset(self, envs_idx: torch.Tensor): # type: ignore[override]
+    def reset(self, envs_idx: torch.Tensor):
         self.time_steps[envs_idx]   = 0.0
         self.last_action[envs_idx]  = 0.0
         self.ewma_action[envs_idx]  = 0.0
         self.last_obs[envs_idx]     = 0.0
+    
+    def preprocess_action(self, action: torch.Tensor):
+        self.last_action = action
+        self.time_steps += 1.0
+        self.ewma_action *= self.cfg.step_ewma_factor
+        self.ewma_action += self.cfg.action_scale * (1.0 - self.cfg.step_ewma_factor) * action
+        return self.ewma_action + self.target_q_offset
 
 
     @property
@@ -68,14 +75,6 @@ class WalkModel(Model):
         return gym.spaces.Box(low   = -np.pi, high  = np.pi, 
                               shape = (self.cfg.n_dofs,), 
                               dtype = np.float32)
-
-
-    def preprocess_action(self, action: torch.Tensor):
-        self.last_action = action
-        self.time_steps += 1.0
-        self.ewma_action *= self.cfg.step_ewma_factor
-        self.ewma_action += self.cfg.action_scale * (1.0 - self.cfg.step_ewma_factor) * action
-        return self.ewma_action + self.target_q_offset
 
 
     def build_observation(self, body_lin_vel, body_ang_vel, body_quat, 
@@ -97,7 +96,7 @@ class WalkModel(Model):
         n_envs = self.scene.n_envs
 
         # 1. Phase Observations (Sin/Cos)
-        phase = self.time_steps * (2.0 * torch.pi * self.scene.dt / self.cfg.cycle_time)
+        phase = self.time_steps * (2.0 * torch.pi * self.cfg.step_dt / self.cfg.cycle_time)
         obs_sin_phase = torch.sin(phase).reshape((n_envs, 1))
         obs_cos_phase = torch.cos(phase).reshape((n_envs, 1))
 

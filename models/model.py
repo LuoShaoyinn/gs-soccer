@@ -21,6 +21,12 @@ class Model(ABC):
 
     def config(self):
         pass
+    
+    def reset(self, envs_idx: torch.Tensor):
+        pass
+    
+    def preprocess_action(self, action: torch.Tensor) -> torch.Tensor:
+        return action
  
     @property
     @abstractmethod
@@ -31,7 +37,7 @@ class Model(ABC):
     @abstractmethod
     def action_space(self) -> gym.spaces.Box:
         pass 
-    
+ 
     @abstractmethod
     def build_observation(self, **kwargs) -> torch.Tensor:
         pass
@@ -48,5 +54,3 @@ class Model(ABC):
     def build_info(self, **kwargs) -> dict[str, torch.Tensor]:
         return {}
     
-    def reset(self, envs_idx: torch.Tensor | None = None):
-        pass

@@ -4,29 +4,24 @@ import genesis as gs
 import torch
 import torch.nn as nn
 
-from skrl.agents.torch.ppo import PPO, PPO_DEFAULT_CONFIG
-from skrl.memories.torch import RandomMemory
-from skrl.envs.wrappers.torch import wrap_env
-from skrl.trainers.torch import SequentialTrainer
-from skrl.resources.preprocessors.torch import RunningStandardScaler
-from skrl.utils import set_seed
+from skrl.agents.torch.ppo      import PPO, PPO_DEFAULT_CONFIG
+from skrl.memories.torch        import RandomMemory
+from skrl.trainers.torch        import SequentialTrainer
 
-from envs.walker    import WalkEnv,     WalkEnvConfig
-from envs.dribble   import DribbleEnv,  DribbleEnvConfig
-from robots.mos9    import MOS9,        MOS9Config
-from fields.field   import Field,       FieldConfig
-from fields.soccer_field        import (SoccerField, 
-                                        SoccerFieldConfig)
+from robots.mos9                import MOS9, MOS9Config
 from robots.controlled_robot    import (ControlledRobotWrapper, 
                                         ControlledRobotWrapperConfig)
-from network import Policy, Value
+from fields.soccer_field        import SoccerField, SoccerFieldConfig
+from models.walk_model          import WalkModelConfig, WalkModel
+from models.dribble_model       import DribbleModelConfig, DribbleModel
+from envs.dribble               import DribbleEnv,  DribbleEnvConfig
+from network                    import Policy, Value
 
 
-EVAL = True
+EVAL = False
 DEVICE = "cuda"
 RESUME_TRAINING = False
 EXPERIMENT_NAME = "dribble_walk_2"
-MODEL_PATH = f"models/walk_v3_t8.pt"
 CHECKPOINT_PATH = f"runs/PPO_Walker/{EXPERIMENT_NAME}/checkpoints/best_agent.pt"
 NUM_ENVS = 1 if EVAL else 8192
 FIELD_RANGE = 0.0
@@ -40,18 +35,26 @@ gs.init(backend=gs.gpu,  # type: ignore[unsolved-attribute]
 env = DribbleEnv(DribbleEnvConfig(
     robot_cfg       = ControlledRobotWrapperConfig(
         robot_cfg      = MOS9Config(
-            self_collision  = False,
             initial_pos     = np.array([-1.0, 0.0, 0.5], dtype=np.float32),
         ),
-        robot_class    = MOS9,
-        policy_path    = MODEL_PATH,
+        robot_class     = MOS9,
+        ctrl_model_cfg       = WalkModelConfig(
+            n_dofs = 12, 
+            target_q_offset = np.array([0.0] * 12),
+        ),
+        ctrl_model_class     = WalkModel,
+        ctrl_policy_path     = "models_ckpt/walk_v3_t8.pt",
     ),
     robot_class     = ControlledRobotWrapper,
     field_cfg       = SoccerFieldConfig(),
     field_class     = SoccerField,
-    env_spacing     = FIELD_RANGE, 
+    model_cfg       = DribbleModelConfig(),
+    model_class     = DribbleModel,
     num_envs        = NUM_ENVS,
     show_viewer     = EVAL, 
+    ctrl_freq_ratio = 10, 
+    policy_freq     = 50,
+    sim_freq        = 500,
 ))
 
 
