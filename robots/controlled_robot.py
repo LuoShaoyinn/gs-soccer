@@ -33,18 +33,19 @@ class ControlledRobotWrapper():
 
     def config(self):
         self.robot.config()
+        self.model.config()
         self.all_envs_idx = torch.arange(self.scene.n_envs, 
                                          dtype=torch.long, 
                                          device=gs.device)
  
     def step(self, action: torch.Tensor) -> None:
         # action: lin_x, lin_y, ang_z
-        for i in range(self.ctrl_substeps):
-            state = self.robot.get_state(envs_idx=self.all_envs_idx)
-            policy_obs = self.model.build_observation(cmd_vel=action,
-                                                      **state)
-            policy_action = self.policy(policy_obs)
-            self.robot.step(action=policy_action)
+        state = self.robot.get_state(envs_idx=self.all_envs_idx)
+        policy_obs = self.model.build_observation(envs_idx=self.all_envs_idx,
+                                                  cmd_vel=action,
+                                                  **state)
+        policy_action = self.policy(policy_obs)
+        self.robot.step(action=policy_action)
 
     def reset(self, envs_idx: torch.Tensor, **kwargs) -> None: # type: ignore
         self.robot.reset(envs_idx=envs_idx, **kwargs)

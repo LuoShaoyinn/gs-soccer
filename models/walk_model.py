@@ -30,7 +30,7 @@ class WalkModel(Model):
     def config(self):
         self.target_q_offset = torch.from_numpy(self.cfg.target_q_offset).to(gs.device)
         self.dim_observations = 11 + 3 * self.cfg.n_dofs
-        self.time_steps = torch.zeros((self.scene.n_envs, 1), 
+        self.time_steps = torch.zeros((self.scene.n_envs, ), 
                                       dtype=torch.float, 
                                       device=gs.device)
         self.last_obs = torch.zeros((self.scene.n_envs, 
@@ -77,7 +77,7 @@ class WalkModel(Model):
                               dtype = np.float32)
 
 
-    def build_observation(self, body_lin_vel, body_ang_vel, body_quat, 
+    def build_observation(self, envs_idx, body_lin_vel, body_ang_vel, body_quat, 
                           cmd_vel, dofs_pos, dofs_vel, **kwargs) -> torch.Tensor: # type: ignore
         def quaternion_to_euler_array(quat):
             w, x, y, z = quat[:, 0], quat[:, 1], quat[:, 2], quat[:, 3]
@@ -112,7 +112,7 @@ class WalkModel(Model):
         obs_dofs_vel = dofs_vel * self.cfg.dofs_vel_scale
 
         # 5. Last Action (n_dofs dims)
-        obs_last_action = self.last_action
+        obs_last_action = self.last_action[envs_idx]
 
         # 6. Base Angular Velocity + Noise
         # The snippet uses noise scale: 0.12 * 0.6

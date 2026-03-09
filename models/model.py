@@ -39,18 +39,18 @@ class Model(ABC):
         pass 
  
     @abstractmethod
-    def build_observation(self, **kwargs) -> torch.Tensor:
+    def build_observation(self, envs_idx, **kwargs) -> torch.Tensor:
         pass
     
-    def build_reward(self, body_pos, **kwargs) -> torch.Tensor:
-        return torch.tensor(0.0, dtype=torch.float, device=gs.device)
+    def build_reward(self, envs_idx, body_pos, **kwargs) -> torch.Tensor:
+        return torch.zeros((envs_idx.shape[0], 1), dtype=torch.float, device=gs.device)
     
-    def build_terminated(self, **kwargs) -> torch.Tensor:
-        return torch.tensor(0, dtype=torch.bool, device=gs.device)
+    def build_terminated(self, envs_idx, **kwargs) -> torch.Tensor:
+        return torch.zeros((envs_idx.shape[0], 1), dtype=torch.bool, device=gs.device)
     
-    def build_truncated(self, **kwargs) -> torch.Tensor:
-        return torch.tensor(0, dtype=torch.bool, device=gs.device)
+    def build_truncated(self, envs_idx,  **kwargs) -> torch.Tensor:
+        return torch.zeros((envs_idx.shape[0], 1), dtype=torch.bool, device=gs.device)
     
-    def build_info(self, **kwargs) -> dict[str, torch.Tensor]:
+    def build_info(self, envs_idx, **kwargs) -> dict[str, torch.Tensor]:
         return {}
     
