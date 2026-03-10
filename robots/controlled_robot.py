@@ -44,7 +44,7 @@ class ControlledRobotWrapper():
         policy_obs = self.model.build_observation(envs_idx=self.all_envs_idx,
                                                   cmd_vel=action,
                                                   **state)
-        policy_action = self.policy(policy_obs)
+        policy_action = self.model.preprocess_action(self.policy(policy_obs))
         self.robot.step(action=policy_action)
 
     def reset(self, envs_idx: torch.Tensor, **kwargs) -> None: # type: ignore

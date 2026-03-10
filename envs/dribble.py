@@ -45,14 +45,20 @@ class DribbleEnv(Env):
         self.target_pos      = torch.from_numpy(self.cfg.target_pos) \
                                     .to(gs.device) \
                                     .broadcast_to((self.num_envs, 2))
+
+    @torch.compiler.disable
+    def __gs_step(self):
+        self.scene.step()
     
+    @torch.no_grad()
+    @torch.compile()
     def step(self, action: torch.Tensor
              ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,
                         dict[str,torch.Tensor]]: 
         action = self.model.preprocess_action(action)
         for i in range(self.cfg.ctrl_freq_ratio):
             self.robot.step(action=action)
-            self.scene.step()
+            self.__gs_step()
         kwargs = self.get_state(envs_idx=self.all_envs_idx)
         next_observation    = self.model.build_observation(envs_idx=self.all_envs_idx, **kwargs)
         reward              = self.model.build_reward(envs_idx=self.all_envs_idx, **kwargs)

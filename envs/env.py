@@ -31,6 +31,7 @@ class EnvConfig():
 
 
 class Env(ABC):
+    @torch.compiler.disable
     def __init__(self, cfg: EnvConfig):
         self.cfg = cfg
         self.num_envs = cfg.num_envs
@@ -39,8 +40,8 @@ class Env(ABC):
         self.all_envs_idx = torch.arange(self.num_envs, 
                                          dtype=torch.long, 
                                          device=gs.device)
-        assert((self.cfg.sim_freq % self.cfg.policy_freq) == 0, 
-               "sim_freq must be divisible by policy_freq")
+        assert self.cfg.sim_freq % self.cfg.policy_freq == 0,  \
+               "sim_freq must be divisible by policy_freq"
         self.scene = gs.Scene(
             viewer_options = gs.options.ViewerOptions(
                 camera_pos    = (0, -3.5, 2.5),

@@ -18,7 +18,7 @@ from envs.dribble               import DribbleEnv,  DribbleEnvConfig
 from network                    import Policy, Value
 
 
-EVAL = False
+EVAL = True
 DEVICE = "cuda"
 RESUME_TRAINING = False
 EXPERIMENT_NAME = "dribble_walk_2"
