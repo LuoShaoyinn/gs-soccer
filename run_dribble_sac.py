@@ -18,14 +18,14 @@ from envs.dribble               import DribbleEnv,  DribbleEnvConfig
 from network                    import Policy, QNetwork
 
 
-EVAL = True
+EVAL = False
 DEVICE = "cuda"
 RESUME_TRAINING = False
 EXPERIMENT_NAME = "dribble_sac_1"
 CHECKPOINT_PATH = f"runs/SAC_Walker/{EXPERIMENT_NAME}/checkpoints/best_agent.pt"
 NUM_ENVS = 1 if EVAL else 8192
 
-gs.init(backend=gs.gpu,
+gs.init(backend=gs.gpu, # type: ignore[unsolved-attribute]
         performance_mode=True,
         logging_level='warning')
 
@@ -100,7 +100,7 @@ cfg["experiment"]["experiment_name"] = EXPERIMENT_NAME      # type: ignore
 # -----------------------------
 
 memory = RandomMemory(
-    memory_size = 2048,
+    memory_size = 65536,
     num_envs = env.num_envs,
     device = DEVICE
 )
@@ -130,7 +130,7 @@ cfg_trainer = {
     "environment_info": "extra",
 }
 
-trainer = SequentialTrainer(cfg=cfg_trainer, env=env, agents=[agent])
+trainer = SequentialTrainer(cfg=cfg_trainer, env=env, agents=[agent]) # type: ignore[union-attr]
 
 
 # -----------------------------

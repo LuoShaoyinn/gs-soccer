@@ -15,27 +15,42 @@ def layer_init(layer, std=1.0, bias_const=0.0):
 
 
 class Policy(GaussianMixin, Model):
-    def __init__(self, observation_space, action_space, device,
-                 clip_actions=False, clip_log_std=True, min_log_std=-20, max_log_std=2):
+    def __init__(
+        self,
+        observation_space,
+        action_space,
+        device,
+        clip_actions=True,
+        clip_log_std=True,
+        min_log_std=-5,
+        max_log_std=2,
+    ):
         Model.__init__(self, observation_space, action_space, device)
-        GaussianMixin.__init__(self, clip_actions, clip_log_std, min_log_std, max_log_std)
-
-        self.net = nn.Sequential(
-            layer_init(nn.Linear(self.num_observations, 512)),
-            nn.LayerNorm(512),
-            nn.ELU(),
-            layer_init(nn.Linear(512, 256)),
-            nn.LayerNorm(256),
-            nn.ELU(),
-            layer_init(nn.Linear(256, self.num_actions), std=0.01),
-            nn.Tanh()
+        GaussianMixin.__init__(
+            self,
+            clip_actions=clip_actions,
+            clip_log_std=clip_log_std,
+            min_log_std=min_log_std,
+            max_log_std=max_log_std,
         )
 
-        self.log_std_parameter = nn.Parameter(torch.zeros(self.num_actions))
+        self.backbone = nn.Sequential(
+            layer_init(nn.Linear(self.num_observations, 512)),
+            nn.ELU(),
+            layer_init(nn.Linear(512, 256)),
+            nn.ELU(),
+        )
 
-    @torch.compile()
+        # SAC policy mean should be unsquashed
+        self.mean_layer = layer_init(nn.Linear(256, self.num_actions), std=0.01)
+
+        # Start with a moderate std instead of exp(0) = 1.0
+        self.log_std_parameter = nn.Parameter(torch.full((self.num_actions,), -0.5))
+
     def compute(self, inputs: Mapping[str, Union[torch.Tensor, Any]], role: str = ""):
-        return self.net(inputs["states"]), self.log_std_parameter, {}
+        x = self.backbone(inputs["states"])
+        mean = self.mean_layer(x)
+        return mean, self.log_std_parameter, {}
 
 
 class Value(DeterministicMixin, Model):
@@ -45,10 +60,8 @@ class Value(DeterministicMixin, Model):
 
         self.net = nn.Sequential(
             layer_init(nn.Linear(self.num_observations, 512)),
-            nn.LayerNorm(512),
             nn.ELU(),
             layer_init(nn.Linear(512, 256)),
-            nn.LayerNorm(256),
             nn.ELU(),
             layer_init(nn.Linear(256, 1), std=1.0)
         )
@@ -65,10 +78,8 @@ class QNetwork(DeterministicMixin, Model):
 
         self.net = nn.Sequential(
             layer_init(nn.Linear(self.num_observations + self.num_actions, 512)),
-            nn.LayerNorm(512),
             nn.ELU(),
             layer_init(nn.Linear(512, 256)),
-            nn.LayerNorm(256),
             nn.ELU(),
             layer_init(nn.Linear(256, 1), std=1.0)
         )
