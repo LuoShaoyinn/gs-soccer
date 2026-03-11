@@ -28,7 +28,7 @@ env = WalkEnv(WalkEnvConfig(
     policy_freq     = 50, 
     sim_freq        = 500,
     model_class     = WalkModel,
-    env_spacing     = 2.0, 
+    env_spacing     = 0.0, 
     num_envs        = NUM_ENVS,
     show_viewer     = True, 
 ))

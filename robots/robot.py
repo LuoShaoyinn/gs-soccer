@@ -6,6 +6,7 @@ import torch
 import numpy as np
 import genesis as gs
 import gymnasium as gym
+from torch.nn import functional as F
 from typing import TypeVar, Generic
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
@@ -133,6 +134,8 @@ class Robot(ABC):
         n_reset_envs = envs_idx.shape[0]
         if reset_pos is None:
             reset_pos = self.init_pos.broadcast_to((n_reset_envs, 3))
+        elif reset_pos.shape[1] == 2:
+            reset_pos = F.pad(reset_pos, (0, 1), value=self.cfg.initial_pos[2].item())
         if reset_quat is None:
             reset_quat = self.init_quat.broadcast_to((n_reset_envs, 4))
         self.__gs_reset(reset_pos=reset_pos, reset_quat=reset_quat, 

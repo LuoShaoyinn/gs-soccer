@@ -20,7 +20,6 @@ class WalkEnvConfig(EnvConfig):
     num_envs:       int     = 1
     field_range:    float   = 1.0
     rl_dt:          float   = 0.02
-    substeps:       int     = 10
     show_viewer:    bool    = False
 
 

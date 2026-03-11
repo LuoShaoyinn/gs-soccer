@@ -108,6 +108,7 @@ class Env(ABC):
             envs_idx = self.all_envs_idx
         self.robot.reset(envs_idx=envs_idx)
         self.field.reset(envs_idx=envs_idx)
+        self.model.reset(envs_idx=envs_idx)
         kwargs = self.get_state(envs_idx=envs_idx)
         return (self.model.build_observation(envs_idx=envs_idx, **kwargs), 
                 self.model.build_info(envs_idx=envs_idx, **kwargs))

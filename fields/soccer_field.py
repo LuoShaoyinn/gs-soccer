@@ -2,11 +2,12 @@
 #   Build up a single walker env
 #
 
+import random
 import torch
 import numpy as np
 import genesis as gs
 import gymnasium as gym
-import random
+from torch.nn import functional as F
 from dataclasses import dataclass, field
 from typing import Optional, Callable
 
@@ -119,6 +120,8 @@ class SoccerField(Field):
               ball_pos: torch.Tensor | None = None, **kwargs) -> None: # type: ignore[override]
         if ball_pos is None:
             ball_pos = self.ball_init_pos.broadcast_to((envs_idx.shape[0], 3))
+        elif ball_pos.shape[1] == 2:
+            ball_pos = F.pad(ball_pos, (0, 1), value=self.cfg.ball_radius + 0.05)
         self.ball.set_pos(envs_idx=envs_idx, pos=ball_pos)
         self.ball.zero_all_dofs_velocity(envs_idx=envs_idx)
  
