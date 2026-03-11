@@ -34,41 +34,23 @@ class Policy(GaussianMixin, Model):
             max_log_std=max_log_std,
         )
 
-        self.backbone = nn.Sequential(
-            layer_init(nn.Linear(self.num_observations, 512)),
-            nn.ELU(),
-            layer_init(nn.Linear(512, 256)),
-            nn.ELU(),
-        )
-
-        # SAC policy mean should be unsquashed
-        self.mean_layer = layer_init(nn.Linear(256, self.num_actions), std=0.01)
-
-        # Start with a moderate std instead of exp(0) = 1.0
-        self.log_std_parameter = nn.Parameter(torch.full((self.num_actions,), -0.5))
-
-    def compute(self, inputs: Mapping[str, Union[torch.Tensor, Any]], role: str = ""):
-        x = self.backbone(inputs["states"])
-        mean = self.mean_layer(x)
-        return mean, self.log_std_parameter, {}
-
-
-class Value(DeterministicMixin, Model):
-    def __init__(self, observation_space, action_space, device, clip_actions=False):
-        Model.__init__(self, observation_space, action_space, device)
-        DeterministicMixin.__init__(self, clip_actions)
-
         self.net = nn.Sequential(
-            layer_init(nn.Linear(self.num_observations, 512)),
+            layer_init(nn.Linear(self.num_observations, 512), std=1.0),
+            nn.LayerNorm(512),
             nn.ELU(),
-            layer_init(nn.Linear(512, 256)),
+            layer_init(nn.Linear(512, 256), std=1.0),
+            nn.LayerNorm(256),
             nn.ELU(),
-            layer_init(nn.Linear(256, 1), std=1.0)
+            layer_init(nn.Linear(256, self.num_actions), std=0.01),
+            nn.Tanh(),
         )
 
-    @torch.compile()
+        # smaller initial std than zeros -> exp(0)=1.0
+        self.log_std_parameter = nn.Parameter(torch.full((self.num_actions,), -2.0))
+
     def compute(self, inputs: Mapping[str, Union[torch.Tensor, Any]], role: str = ""):
-        return self.net(inputs["states"]), {}
+        mean_actions = self.net(inputs["states"])
+        return mean_actions, self.log_std_parameter, {}
 
 
 class QNetwork(DeterministicMixin, Model):
@@ -77,14 +59,36 @@ class QNetwork(DeterministicMixin, Model):
         DeterministicMixin.__init__(self, clip_actions)
 
         self.net = nn.Sequential(
-            layer_init(nn.Linear(self.num_observations + self.num_actions, 512)),
+            layer_init(nn.Linear(self.num_observations + self.num_actions, 512), std=1.0),
+            nn.LayerNorm(512),
             nn.ELU(),
-            layer_init(nn.Linear(512, 256)),
+            layer_init(nn.Linear(512, 256), std=1.0),
+            nn.LayerNorm(256),
             nn.ELU(),
-            layer_init(nn.Linear(256, 1), std=1.0)
+            layer_init(nn.Linear(256, 1), std=0.5),
         )
 
-    @torch.compile()
     def compute(self, inputs: Mapping[str, Union[torch.Tensor, Any]], role: str = ""):
         x = torch.cat([inputs["states"], inputs["taken_actions"]], dim=1)
-        return self.net(x), {}
+        q = self.net(x)
+        return q, {}
+
+
+class Value(DeterministicMixin, Model):
+    def __init__(self, observation_space, action_space, device, clip_actions=False):
+        Model.__init__(self, observation_space, action_space, device)
+        DeterministicMixin.__init__(self, clip_actions)
+
+        self.net = nn.Sequential(
+            layer_init(nn.Linear(self.num_observations, 512), std=1.0),
+            nn.LayerNorm(512),
+            nn.ELU(),
+            layer_init(nn.Linear(512, 256), std=1.0),
+            nn.LayerNorm(256),
+            nn.ELU(),
+            layer_init(nn.Linear(256, 1), std=0.5),
+        )
+
+    def compute(self, inputs: Mapping[str, Union[torch.Tensor, Any]], role: str = ""):
+        v = self.net(inputs["states"])
+        return v, {}
