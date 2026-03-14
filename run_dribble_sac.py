@@ -12,7 +12,7 @@ from robots.mos9                import MOS9, MOS9Config
 from robots.controlled_robot    import (ControlledRobotWrapper,
                                         ControlledRobotWrapperConfig)
 from fields.soccer_field        import SoccerField, SoccerFieldConfig
-from models.walk_model          import WalkModelConfig, WalkModel
+from models.mos9_walk_model     import MOS9WalkModelConfig, MOS9WalkModel
 from models.dribble_model       import DribbleModelConfig, DribbleModel
 from envs.dribble               import DribbleEnv,  DribbleEnvConfig
 from network                    import Policy, QNetwork
@@ -36,11 +36,11 @@ env = DribbleEnv(DribbleEnvConfig(
             initial_pos     = np.array([-1.0, 0.0, 0.5], dtype=np.float32),
         ),
         robot_class     = MOS9,
-        ctrl_model_cfg       = WalkModelConfig(
+        ctrl_model_cfg       = MOS9WalkModelConfig(
             n_dofs = 12,
             target_q_offset = np.array([0.0] * 12),
         ),
-        ctrl_model_class     = WalkModel,
+        ctrl_model_class     = MOS9WalkModel,
         ctrl_policy_path     = "models_ckpt/walk_v3_t8.pt",
     ),
     robot_class     = ControlledRobotWrapper,

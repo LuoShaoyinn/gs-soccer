@@ -7,7 +7,8 @@ from robots.mos9    import MOS9,        MOS9Config
 from fields.field   import Field,       FieldConfig
 from fields.soccer_field        import (SoccerField, 
                                         SoccerFieldConfig)
-from models.walk_model import WalkModelConfig, WalkModel
+from models.mos9_walk_model     import (MOS9WalkModelConfig, 
+                                        MOS9WalkModel)
 
 NUM_ENVS = 1
 MODEL_PATH = f"models_ckpt/walk_v3_t8.pt"
@@ -21,13 +22,13 @@ env = WalkEnv(WalkEnvConfig(
     robot_class     = MOS9,
     field_cfg       = FieldConfig(),
     field_class     = Field,
-    model_cfg       = WalkModelConfig(
+    model_cfg       = MOS9WalkModelConfig(
         n_dofs = 12, 
         target_q_offset = np.array([0.0] * 12)
     ), 
     policy_freq     = 50, 
     sim_freq        = 500,
-    model_class     = WalkModel,
+    model_class     = MOS9WalkModel,
     env_spacing     = 0.0, 
     num_envs        = NUM_ENVS,
     show_viewer     = True, 

@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod
 from .model import ModelConfig, Model
 
 @dataclass(kw_only = True)
-class WalkModelConfig(ModelConfig):
+class MOS9WalkModelConfig(ModelConfig):
     n_dofs:             int
     target_q_offset:    np.ndarray
     step_dt:            float       = 0.02
@@ -25,8 +25,8 @@ class WalkModelConfig(ModelConfig):
     obs_clip:           tuple       = (-18.0, 18.0)
 
 
-class WalkModel(Model):
-    cfg: WalkModelConfig
+class MOS9WalkModel(Model):
+    cfg: MOS9WalkModelConfig
     def config(self):
         self.target_q_offset = torch.from_numpy(self.cfg.target_q_offset).to(gs.device)
         self.dim_observations = 11 + 3 * self.cfg.n_dofs

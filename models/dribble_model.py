@@ -16,8 +16,8 @@ class DribbleModelConfig(ModelConfig):
             lambda: np.array([12, 9], dtype=np.float32))
     truncated_step_limit:   int         = 100
     control_y:              float       = 0.1
-    ball_loss_distance:     float       = 2.0
-    finished_distance:      float       = 0.5
+    ball_loss_distance:     float       = 2.5
+    finished_distance:      float       = 2.0
 
 
 class DribbleModel(Model):

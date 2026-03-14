@@ -24,8 +24,8 @@ class DribbleEnvConfig(EnvConfig):
     ctrl_freq_ratio:    int         = 10
     self_collision:     bool        = False
     target_pos:         np.ndarray  = field(default_factory= \
-            lambda: np.array([5.0, 0.0], dtype=np.float32))
-    robot_reset_dis:    float       = 1.0
+            lambda: np.array([10.0, 0.0], dtype=np.float32))
+    robot_reset_dis:    float       = 2.0
     robot_reset_ang:    float       = np.pi
     robot_reset_dis_noise:  float   = 0.2
     robot_reset_ang_noise:  float   = 1.0
