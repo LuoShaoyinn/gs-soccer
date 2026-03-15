@@ -6,7 +6,6 @@ import torch
 import numpy as np
 import genesis as gs
 import gymnasium as gym
-import torch.nn as nn
 from dataclasses import dataclass, field
 
 from .robot import RobotConfig, Robot
@@ -27,28 +26,7 @@ class ControlledRobotWrapper():
         self.scene = scene
         self.robot = self.cfg.robot_class(self.cfg.robot_cfg, scene)
         self.model = self.cfg.ctrl_model_class(self.cfg.ctrl_model_cfg, scene)
-        self.policy = self.__load_policy(self.cfg.ctrl_policy_path).to(gs.device)
-
-    def __load_policy(self, policy_path: str):
-        try:
-            return torch.jit.load(policy_path)
-        except Exception:
-            # Secure fallback: tensor-only actor checkpoint.
-            checkpoint = torch.load(policy_path, map_location="cpu", weights_only=True)
-            if not isinstance(checkpoint, dict) or checkpoint.get("format") != "pi_actor_state_v1":
-                raise RuntimeError(f"Unsupported policy format: {policy_path}")
-
-            dims = checkpoint["dims"]
-            state_dict = checkpoint["state_dict"]
-            layers = []
-            for i in range(len(dims) - 1):
-                layers.append(nn.Linear(dims[i], dims[i + 1], bias=True))
-                if i < len(dims) - 2:
-                    layers.append(nn.ELU())
-            actor = nn.Sequential(*layers)
-            actor.load_state_dict(state_dict, strict=True)
-            actor.eval()
-            return actor
+        self.policy = torch.jit.load(self.cfg.ctrl_policy_path).to(gs.device)
 
     def build(self):
         self.robot.build()

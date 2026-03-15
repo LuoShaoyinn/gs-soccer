@@ -67,7 +67,7 @@ env = DribbleEnv(
                 target_q_offset=PI_TARGET_Q_OFFSET,
             ),
             ctrl_model_class=PIWalkModel,
-            ctrl_policy_path="models_ckpt/pi_walk_40000.pt",
+            ctrl_policy_path="models_ckpt/pi_policy.pt",
         ),
         robot_class=ControlledRobotWrapper,
         field_cfg=SoccerFieldConfig(),
