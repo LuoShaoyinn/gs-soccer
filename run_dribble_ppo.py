@@ -21,8 +21,8 @@ from network                    import Policy, Value
 EVAL = False
 DEVICE = "cuda"
 RESUME_TRAINING = False
-EXPERIMENT_NAME = "dribble_walk_3"
-CHECKPOINT_PATH = f"runs/PPO_Walker/{EXPERIMENT_NAME}/checkpoints/best_agent.pt"
+EXPERIMENT_NAME = "dribble_MOS9_v4"
+CHECKPOINT_PATH = f"runs/{EXPERIMENT_NAME}/checkpoints/best_agent.pt"
 NUM_ENVS = 1 if EVAL else 8192
 FIELD_RANGE = 0.0
 ROLLOUT_STEPS = 32
@@ -74,7 +74,7 @@ cfg["mixed_precision"] = True
 # mini_batches is the number of divisions of the total collected data (ROLLOUT_STEPS * NUM_ENVS)
 cfg["mini_batches"] = 4
 
-cfg["experiment"]["directory"] = "runs/PPO_Walker"          # type: ignore
+cfg["experiment"]["directory"] = "runs"                     # type: ignore
 cfg["experiment"]["write_interval"] = 50                    # type: ignore
 cfg["experiment"]["checkpoint_interval"] = 1000             # type: ignore
 cfg["experiment"]["experiment_name"] = EXPERIMENT_NAME      # type: ignore

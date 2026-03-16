@@ -13,11 +13,10 @@ from .model import ModelConfig, Model
 @dataclass(kw_only = True)
 class DribbleModelConfig(ModelConfig):
     terminate_range:        np.ndarray  = field(default_factory= \
-            lambda: np.array([12, 9], dtype=np.float32))
+            lambda: np.array([4.5, 3], dtype=np.float32))
     truncated_step_limit:   int         = 100
     control_y:              float       = 0.1
-    ball_loss_distance:     float       = 2.5
-    finished_distance:      float       = 2.0
+    finished_distance:      float       = 1.0
 
 
 class DribbleModel(Model):
@@ -51,16 +50,7 @@ class DribbleModel(Model):
             "ball_to_target_dis":       torch.zeros((num_envs, 1), dtype=torch.float, device=gs.device),
             "ball_to_target_unit":      torch.zeros((num_envs, 2), dtype=torch.float, device=gs.device),
         }
-        self.rewards = {
-            "rew_ball_toward_target":   torch.zeros((num_envs, 1), dtype=torch.float, device=gs.device),
-            "rew_ball_offset_target":   torch.zeros((num_envs, 1), dtype=torch.float, device=gs.device),
-            "reward_smooth_action":     torch.zeros((num_envs, 1), dtype=torch.float, device=gs.device),
-            "reward_larget_action":     torch.zeros((num_envs, 1), dtype=torch.float, device=gs.device),
-            "rew_close_to_ball":        torch.zeros((num_envs, 1), dtype=torch.float, device=gs.device),
-            "rew_not_lost_ball":        torch.zeros((num_envs, 1), dtype=torch.float, device=gs.device),
-            "rew_facing_target":        torch.zeros((num_envs, 1), dtype=torch.float, device=gs.device),
-            "rew_facing_to_ball":       torch.zeros((num_envs, 1), dtype=torch.float, device=gs.device),
-        }
+        self.rewards = {}
 
     
     def reset(self, envs_idx: torch.Tensor): 
@@ -112,9 +102,8 @@ class DribbleModel(Model):
         robot_fall        = (kwargs["body_pos"][:, 2] < 0.3).unsqueeze(1)
         ball_out_of_range = (torch.abs(ball_pos_2D) > self.terminate_range).any(dim=1).unsqueeze(1)
         body_out_of_range = (torch.abs(body_pos_2D) > self.terminate_range).any(dim=1).unsqueeze(1)
-        ball_lost         = ball_dis > self.cfg.ball_loss_distance
         finished          = self.cache["ball_to_target_dis"][envs_idx] < self.cfg.finished_distance
-        return robot_fall | ball_out_of_range | body_out_of_range | ball_lost | finished
+        return robot_fall | ball_out_of_range | body_out_of_range | finished
     
     def build_truncated(self, envs_idx, **kwargs) -> torch.Tensor:
         return self.time_steps[envs_idx] >= self.cfg.truncated_step_limit
@@ -158,17 +147,20 @@ class DribbleModel(Model):
 
         # finishing reward
         rew_finished = (self.cache["ball_to_target_dis"][envs_idx] < self.cfg.finished_distance).float()
+        rew_ball_out_of_range = (torch.abs(ball_pos_2D) > self.terminate_range) \
+                .any(dim=1).float().unsqueeze(1)
 
         self.rewards = {
-            "rew_ball_toward_target": rew_ball_toward_target * 6.0,
-            "rew_ball_offset_target": rew_ball_offset_target * 1.5,
-            "reward_smooth_action": reward_smooth_action * 0.2,
-            "reward_larger_action": reward_larger_action * 0.3,
-            "rew_close_to_ball": rew_close_to_ball * 4.0,
-            "rew_not_lost_ball": rew_not_lost_ball * 0.5,
-            "rew_facing_target": rew_facing_target * 1.0,
-            "rew_facing_to_ball": rew_facing_to_ball * 0.3,
-            "rew_finished": rew_finished * 30.0, # not included in reward normalization
+            "rew_ball_toward_target":   rew_ball_toward_target * 6.0,
+            "rew_ball_offset_target":   rew_ball_offset_target * 1.5,
+            "reward_smooth_action":     reward_smooth_action * 0.2,
+            "reward_larger_action":     reward_larger_action * 0.3,
+            "rew_close_to_ball":        rew_close_to_ball * 4.0,
+            "rew_not_lost_ball":        rew_not_lost_ball * 0.5,
+            "rew_facing_target":        rew_facing_target * 1.0,
+            "rew_facing_to_ball":       rew_facing_to_ball * 0.3,
+            "rew_finished":             rew_finished * 30.0, # not included in reward normalization
+            "rew_ball_out_of_range":    rew_ball_out_of_range * -30.0, # not included in reward normalization
         }
     
         return sum(self.rewards.values()) \
