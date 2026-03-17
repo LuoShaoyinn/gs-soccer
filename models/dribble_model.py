@@ -49,6 +49,8 @@ class DribbleModel(Model):
             "ball_to_target":           torch.zeros((num_envs, 2), dtype=torch.float, device=gs.device),
             "ball_to_target_dis":       torch.zeros((num_envs, 1), dtype=torch.float, device=gs.device),
             "ball_to_target_unit":      torch.zeros((num_envs, 2), dtype=torch.float, device=gs.device),
+            "failed":                   torch.zeros((num_envs, 1), dtype=torch.bool,  device=gs.device),
+            "finished":                 torch.zeros((num_envs, 1), dtype=torch.bool,  device=gs.device),
         }
         self.rewards = {}
 
@@ -96,14 +98,7 @@ class DribbleModel(Model):
 
     def build_terminated(self, envs_idx, **kwargs) -> torch.Tensor: # type: ignore[override]
         self.build_cache(envs_idx=envs_idx, **kwargs)
-        ball_pos_2D       = self.cache["ball_pos_2D"][envs_idx]
-        body_pos_2D       = self.cache["body_pos_2D"][envs_idx]
-        ball_dis          = self.cache["ball_dis"][envs_idx]
-        robot_fall        = (kwargs["body_pos"][:, 2] < 0.3).unsqueeze(1)
-        ball_out_of_range = (torch.abs(ball_pos_2D) > self.terminate_range).any(dim=1).unsqueeze(1)
-        body_out_of_range = (torch.abs(body_pos_2D) > self.terminate_range).any(dim=1).unsqueeze(1)
-        finished          = self.cache["ball_to_target_dis"][envs_idx] < self.cfg.finished_distance
-        return robot_fall | ball_out_of_range | body_out_of_range | finished
+        return self.cache["failed"][envs_idx] | self.cache["finished"][envs_idx]
     
     def build_truncated(self, envs_idx, **kwargs) -> torch.Tensor:
         return self.time_steps[envs_idx] >= self.cfg.truncated_step_limit
@@ -138,17 +133,16 @@ class DribbleModel(Model):
         reward_larger_action = 1.0 - torch.exp(-(1.0 - (cmd_now ** 2).sum(dim=1, keepdim=True)))
 
         # owning ball reward
-        rew_close_to_ball = dot_2D(ball_pos_rel, body_vel_2D) / ball_dis
-        rew_not_lost_ball = -(ball_pos_proj[:, 1].unsqueeze(1) / (ball_dis + 0.1)) ** 2
+        rew_close_to_ball  = dot_2D(ball_pos_rel, body_vel_2D) / ball_dis
+        rew_not_lost_ball  = -(ball_pos_proj[:, 1].unsqueeze(1) / (ball_dis + 0.1)) ** 2
         rew_facing_to_ball = dot_2D(body_heading, ball_pos_rel) / (ball_dis + 0.1)
-        rew_facing_target = torch.where(abs(ball_pos_proj[:,1:]) < self.cfg.control_y, 
+        rew_facing_target  = torch.where(abs(ball_pos_proj[:,1:]) < self.cfg.control_y, 
                                         dot_2D(body_heading, ball_to_target_unit), 
                                         0.0)
 
         # finishing reward
-        rew_finished = (self.cache["ball_to_target_dis"][envs_idx] < self.cfg.finished_distance).float()
-        rew_ball_out_of_range = (torch.abs(ball_pos_2D) > self.terminate_range) \
-                .any(dim=1).float().unsqueeze(1)
+        rew_finished    = self.cache["finished"][envs_idx].float()
+        rew_failed      = self.cache["failed"][envs_idx].float()
 
         self.rewards = {
             "rew_ball_toward_target":   rew_ball_toward_target * 6.0,
@@ -160,7 +154,7 @@ class DribbleModel(Model):
             "rew_facing_target":        rew_facing_target * 1.0,
             "rew_facing_to_ball":       rew_facing_to_ball * 0.3,
             "rew_finished":             rew_finished * 100.0, # not included in reward normalization
-            "rew_ball_out_of_range":    rew_ball_out_of_range * -100.0, # not included in reward normalization
+            "rew_ball_out_of_range":    rew_failed * -100.0, # not included in reward normalization
         }
     
         return sum(self.rewards.values()) \
@@ -224,3 +218,13 @@ class DribbleModel(Model):
                 self.cache["ball_to_target"][envs_idx].norm(dim=1, keepdim=True) + 1e-3 
         self.cache["ball_to_target_unit"][envs_idx] = \
                 self.cache["ball_to_target"][envs_idx] / self.cache["ball_to_target_dis"][envs_idx]
+        # reuse failed
+        ball_pos_2D       = self.cache["ball_pos_2D"][envs_idx]
+        body_pos_2D       = self.cache["body_pos_2D"][envs_idx]
+        ball_dis          = self.cache["ball_dis"][envs_idx]
+        robot_fall        = (body_pos[:, 2] < 0.3).unsqueeze(1)
+        ball_out_of_range = (torch.abs(ball_pos_2D) > self.terminate_range).any(dim=1).unsqueeze(1)
+        body_out_of_range = (torch.abs(body_pos_2D) > self.terminate_range).any(dim=1).unsqueeze(1)
+        finished          = self.cache["ball_to_target_dis"][envs_idx] < self.cfg.finished_distance
+        self.cache["failed"][envs_idx]   = body_out_of_range | ball_out_of_range | robot_fall
+        self.cache["finished"][envs_idx] = finished
