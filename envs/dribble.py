@@ -33,10 +33,10 @@ class DribbleEnvConfig(EnvConfig):
             lambda: np.array([0.0, 0.0], dtype=np.float32))
     ball_reset_noise:   float       = 0.5
     action_noise:       float       = 0.1
-    ball_mass:          float       = 0.014
-    ball_mass_noise:    float       = 0.005
-    ball_damping:       float       = 1e-5
-    ball_damping_noise: float       = 0.5   # add noise in log space
+    ball_mass:          float       = 0.200
+    ball_mass_noise:    float       = 0.100
+    ball_damping:       float       = 5e-4
+    ball_damping_noise: float       = 0.3   # add noise in log space
 
 
 class DribbleEnv(Env):
@@ -91,7 +91,7 @@ class DribbleEnv(Env):
         # Domain randomization
         ball_mass_shift = rand(0.0, self.cfg.ball_mass_noise, 1).squeeze(1)
         ball_damping = torch.exp(self.ball_damping_log + \
-                self.cfg.ball_damping_noise * torch.randn((6, ), dtype=torch.float, device=gs.device))
+                self.cfg.ball_damping_noise * torch.randn((3, ), dtype=torch.float, device=gs.device))
         # randomize reset position
         ball_pos =      rand(self.ball_reset_pos, self.cfg.ball_reset_noise, 2)
         self.field.reset(envs_idx=envs_idx, reset_pos=ball_pos, 

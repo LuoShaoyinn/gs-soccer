@@ -154,7 +154,7 @@ class DribbleModel(Model):
             "rew_ball_toward_target":   rew_ball_toward_target * 6.0,
             "rew_ball_offset_target":   rew_ball_offset_target * 1.5,
             "reward_smooth_action":     reward_smooth_action * 0.2,
-            "reward_larger_action":     reward_larger_action * 0.3,
+            "reward_larger_action":     reward_larger_action * 0.9,
             "rew_close_to_ball":        rew_close_to_ball * 4.0,
             "rew_not_lost_ball":        rew_not_lost_ball * 0.5,
             "rew_facing_target":        rew_facing_target * 1.0,
@@ -164,7 +164,7 @@ class DribbleModel(Model):
         }
     
         return sum(self.rewards.values()) \
-                / (6.0 + 1.5 + 0.2 + 0.3 + 4.0 + 0.5 + 1.0 + 0.3)  # type: ignore[operator]
+                / (6.0 + 1.5 + 0.2 + 0.9 + 4.0 + 0.5 + 1.0 + 0.3)  # type: ignore[operator]
  
     @torch.compiler.disable
     def build_info(self, envs_idx, **kwargs

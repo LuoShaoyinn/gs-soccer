@@ -23,13 +23,13 @@ class SoccerFieldConfig(FieldConfig):
     fence_color:        tuple = (0.9, 0.3, 0.9)
     red_goal_color:     tuple = (1.0, 0.3, 0.3)
     blue_goal_color:    tuple = (0.3, 0.3, 1.0)
-    ball_radius:        float = 0.06
+    ball_radius:        float = 0.08
     ball_init_pos:      np.ndarray = field(default_factory=\
             lambda: np.array([0.0, 0.0, 0.05], dtype=np.float32))
     field_friction:     float = 1.0
     ball_friction:      float = 1.0
-    ball_damping:       float = 1e-5
-    ball_mass:          float = 0.014
+    ball_damping:       float = 5e-4
+    ball_mass:          float = 0.200
 
 
 class SoccerField(Field):
@@ -113,7 +113,7 @@ class SoccerField(Field):
     @torch.compiler.disable
     def config(self):
         self.ball.set_mass(self.cfg.ball_mass)
-        self.ball.set_dofs_damping(self.cfg.ball_damping)
+        self.ball.set_dofs_damping(self.cfg.ball_damping, dofs_idx_local=(3, 4, 5))
         self.ball_init_pos = torch.from_numpy(self.cfg.ball_init_pos).to(gs.device)
 
 
@@ -129,7 +129,7 @@ class SoccerField(Field):
         if ball_mass_shift is not None:
             self.ball.set_mass_shift(envs_idx=envs_idx, mass_shift=ball_mass_shift)
         if ball_damping is not None:
-            self.ball.set_dofs_damping(ball_damping, envs_idx=envs_idx)
+            self.ball.set_dofs_damping(ball_damping, dofs_idx_local=(3, 4, 5), envs_idx=envs_idx)
         self.ball.set_pos(envs_idx=envs_idx, pos=ball_pos)
         self.ball.zero_all_dofs_velocity(envs_idx=envs_idx)
  

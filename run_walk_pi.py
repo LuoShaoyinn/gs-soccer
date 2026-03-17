@@ -10,6 +10,7 @@ from models.pi_walk_model import PIWalkModelConfig, PIWalkModel
 
 NUM_ENVS = 1
 MODEL_PATH = "models_ckpt/pi_policy.pt"
+COMPILE = False
 
 gs.init(
     backend=gs.gpu,  # type: ignore[unsolved-attribute]
@@ -63,6 +64,8 @@ env = WalkEnv(
 obs, info = env.reset()
 actions = torch.zeros((NUM_ENVS, 20), dtype=torch.float, device=gs.device)
 actor = torch.jit.load(MODEL_PATH).to(gs.device)
+if COMPILE:
+    actor = torch.compile(actor)
 while True:
     actions = actor(obs)
     obs, rew, terminated, truncated, info = env.step(actions)

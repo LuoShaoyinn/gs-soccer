@@ -12,6 +12,7 @@ from models.mos9_walk_model     import (MOS9WalkModelConfig,
 
 NUM_ENVS = 1
 MODEL_PATH = f"models_ckpt/walk_v3_t8.pt"
+COMPILE = False
 
 gs.init(backend=gs.gpu,  # type: ignore[unsolved-attribute]
         performance_mode=True, 
@@ -38,6 +39,8 @@ env = WalkEnv(WalkEnvConfig(
 obs, info = env.reset()
 actions = torch.zeros((NUM_ENVS, 12), dtype=torch.float, device=gs.device)
 actor = torch.jit.load(MODEL_PATH).to(gs.device)
+if COMPILE:
+    actor = torch.compile(actor)
 while True: 
     actions = actor(obs)
     obs, rew, terminated, truncated, info = env.step(actions) 
