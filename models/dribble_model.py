@@ -159,12 +159,12 @@ class DribbleModel(Model):
             "rew_not_lost_ball":        rew_not_lost_ball * 0.5,
             "rew_facing_target":        rew_facing_target * 1.0,
             "rew_facing_to_ball":       rew_facing_to_ball * 0.3,
-            "rew_finished":             rew_finished * 30.0, # not included in reward normalization
-            "rew_ball_out_of_range":    rew_ball_out_of_range * -30.0, # not included in reward normalization
+            "rew_finished":             rew_finished * 100.0, # not included in reward normalization
+            "rew_ball_out_of_range":    rew_ball_out_of_range * -100.0, # not included in reward normalization
         }
     
         return sum(self.rewards.values()) \
-                / (6.0 + 1.5 + 0.2 + 0.9 + 4.0 + 0.5 + 1.0 + 0.3)  # type: ignore[operator]
+                / (6.0 + 1.5 + 0.2 + 0.9 + 4.0 + 0.5 + 1.0 + 0.3) - 1.0 # type: ignore[operator]
  
     @torch.compiler.disable
     def build_info(self, envs_idx, **kwargs
