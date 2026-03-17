@@ -26,8 +26,8 @@ class SoccerFieldConfig(FieldConfig):
     ball_radius:        float = 0.08
     ball_init_pos:      np.ndarray = field(default_factory=\
             lambda: np.array([0.0, 0.0, 0.05], dtype=np.float32))
-    field_friction:     float = 1.0
-    ball_friction:      float = 1.0
+    field_friction:     float = 0.8
+    ball_friction:      float = 0.8
     ball_damping:       float = 5e-4
     ball_mass:          float = 0.200
 

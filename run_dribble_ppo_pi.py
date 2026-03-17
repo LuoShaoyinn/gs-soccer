@@ -18,7 +18,7 @@ EVAL = False
 DEVICE = "cuda"
 COMPILE = False
 RESUME_TRAINING = False
-EXPERIMENT_NAME = "dribble_PI_fix_ball_weight"
+EXPERIMENT_NAME = "dribble_PI_v4"
 CHECKPOINT_PATH = f"runs/{EXPERIMENT_NAME}/checkpoints/best_agent.pt"
 NUM_ENVS = 1 if EVAL else 8192
 ROLLOUT_STEPS = 32
@@ -103,7 +103,7 @@ agent_cfg["experiment"]["experiment_name"] = EXPERIMENT_NAME  # type: ignore
 
 algo_cfg = AlgorithmConfig(
     env_cfg=env_cfg,
-    env_class=DribbleEnv,
+    env_class=DribbleEnv, # type: ignore
     models=models,
     experiment_name=EXPERIMENT_NAME,
 )
