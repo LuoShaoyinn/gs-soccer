@@ -130,7 +130,7 @@ class DribbleModel(Model):
 
         # cmd_vel reward
         reward_smooth_action = torch.exp(-torch.norm(cmd_now - cmd_prev, dim=1, keepdim=True))
-        reward_larger_action = 1.0 - torch.exp(-(1.0 - (cmd_now ** 2).sum(dim=1, keepdim=True)))
+        reward_larger_action = torch.exp(-(1.0 - (cmd_now ** 2).sum(dim=1, keepdim=True)) ** 2)
 
         # owning ball reward
         rew_close_to_ball  = dot_2D(ball_pos_rel, body_vel_2D) / ball_dis
