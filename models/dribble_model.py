@@ -133,7 +133,7 @@ class DribbleModel(Model):
         reward_larger_action = torch.exp(-(1.0 - (cmd_now ** 2).sum(dim=1, keepdim=True)) ** 2)
 
         # owning ball reward
-        rew_close_to_ball  = dot_2D(ball_pos_rel, body_vel_2D) / ball_dis
+        rew_close_to_ball  = dot_2D(ball_pos_rel, body_vel_2D) / (ball_dis + 0.1)
         rew_not_lost_ball  = -(ball_pos_proj[:, 1].unsqueeze(1) / (ball_dis + 0.1)) ** 2
         rew_facing_to_ball = dot_2D(body_heading, ball_pos_rel) / (ball_dis + 0.1)
         rew_facing_target  = torch.where(abs(ball_pos_proj[:,1:]) < self.cfg.control_y, 

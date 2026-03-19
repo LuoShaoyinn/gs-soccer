@@ -64,8 +64,8 @@ class DribbleEnv(Env):
                         dict[str,torch.Tensor]]: 
         action = self.model.preprocess_action(action)
         for i in range(self.cfg.ctrl_freq_ratio):
-            action_noise = (torch.randn_like(action) - 0.5)
-            self.robot.step(action=action + action_noise * 2.0 * self.cfg.action_noise)
+            action_noise = 2.0 * (torch.rand_like(action) - 0.5)
+            self.robot.step(action=action + action_noise*self.cfg.action_noise)
             self.__gs_step()
         kwargs = self.get_state(envs_idx=self.all_envs_idx)
         next_observation    = self.model.build_observation(envs_idx=self.all_envs_idx, **kwargs)

@@ -42,6 +42,7 @@ class Policy(GaussianMixin, Model):
             nn.LayerNorm(256),
             nn.ELU(),
             layer_init(nn.Linear(256, self.num_actions), std=0.01),
+            nn.Tanh(),
         )
 
         # smaller initial std than zeros -> exp(0)=1.0
