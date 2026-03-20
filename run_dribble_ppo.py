@@ -1,106 +1,104 @@
+import argparse
 import numpy as np
 import genesis as gs
 
-from skrl.agents.torch.ppo import PPO_DEFAULT_CONFIG
-
-from algorithms.algorithm import AlgorithmConfig
-from algorithms.ppo import PPOAlgorithm
-from robots.mos9 import MOS9, MOS9Config
+from algorithms.ppo import PPOAlgorithm, PPOAlgorithmConfig
+from robots.pi import PI, PIConfig
 from robots.controlled_robot import ControlledRobotWrapper, ControlledRobotWrapperConfig
 from fields.soccer_field import SoccerField, SoccerFieldConfig
-from models.mos9_walk_model import MOS9WalkModelConfig, MOS9WalkModel
+from models.pi_walk_model import PIWalkModelConfig, PIWalkModel
 from models.dribble_model import DribbleModelConfig, DribbleModel
 from envs.dribble import DribbleEnv, DribbleEnvConfig
-from network import Policy, Value
 
-
-EVAL = False
-DEVICE = "cuda"
-COMPILE = False
-RESUME_TRAINING = False
-EXPERIMENT_NAME = "dribble_MOS9_v4"
-CHECKPOINT_PATH = f"runs/{EXPERIMENT_NAME}/checkpoints/best_agent.pt"
-NUM_ENVS = 1 if EVAL else 8192
-ROLLOUT_STEPS = 32
-
-gs.init(
-    backend=gs.gpu,  # type: ignore[unsolved-attribute]
-    performance_mode=True,
-    logging_level="warning",
+PI_TARGET_Q_OFFSET = np.array(
+    [
+        -0.25,
+        0.0,
+        -0.25,
+        0.0,
+        0.0,
+        0.2,
+        0.0,
+        -0.2,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.65,
+        -1.2,
+        0.65,
+        -1.2,
+        -0.4,
+        -0.4,
+        0.0,
+        0.0,
+    ],
+    dtype=np.float32,
 )
 
-env_cfg = DribbleEnvConfig(
-    robot_cfg=ControlledRobotWrapperConfig(
-        robot_cfg=MOS9Config(
-            initial_pos=np.array([-1.0, 0.0, 0.5], dtype=np.float32),
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--eval", action="store_true", help="Run evaluation mode")
+    parser.add_argument("--resume", action="store_true", help="Load checkpoint before train/eval")
+    parser.add_argument(
+        "--experiment-name",
+        default="dribble_PI_v4",
+        help="Experiment directory name under runs/",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    eval_mode = args.eval
+    resume = args.resume
+    experiment_name = args.experiment_name
+
+    gs.init(
+        backend=gs.gpu,  # type: ignore[unsolved-attribute]
+        performance_mode=True,
+        logging_level="warning",
+    )
+
+    algorithm = PPOAlgorithm(
+        DribbleEnv(
+            DribbleEnvConfig(
+                robot_cfg=ControlledRobotWrapperConfig(
+                    robot_cfg=PIConfig(
+                        initial_pos=np.array([-1.0, 0.0, 0.5], dtype=np.float32),
+                    ),
+                    robot_class=PI,
+                    ctrl_model_cfg=PIWalkModelConfig(
+                        n_dofs=20,
+                        target_q_offset=PI_TARGET_Q_OFFSET,
+                    ),
+                    ctrl_model_class=PIWalkModel,
+                    ctrl_policy_path="models_ckpt/pi_policy.pt",
+                ),
+                robot_class=ControlledRobotWrapper,
+                field_cfg=SoccerFieldConfig(),
+                field_class=SoccerField,
+                model_cfg=DribbleModelConfig(),
+                model_class=DribbleModel,
+                num_envs=1 if eval_mode else 8192,
+                show_viewer=eval_mode,
+                ctrl_freq_ratio=10,
+                policy_freq=50,
+                sim_freq=500,
+            )
         ),
-        robot_class=MOS9,
-        ctrl_model_cfg=MOS9WalkModelConfig(
-            n_dofs=12,
-            target_q_offset=np.array([0.0] * 12),
+        PPOAlgorithmConfig(
+            experiment_name=experiment_name,
+            timesteps = 30000, 
+            checkpoint_path=f"runs/{experiment_name}/checkpoints/best_agent.pt",
+            resume=resume or eval_mode,
         ),
-        ctrl_model_class=MOS9WalkModel,
-        ctrl_policy_path="models_ckpt/walk_v3_t8.pt",
-    ),
-    robot_class=ControlledRobotWrapper,
-    field_cfg=SoccerFieldConfig(),
-    field_class=SoccerField,
-    model_cfg=DribbleModelConfig(),
-    model_class=DribbleModel,
-    num_envs=NUM_ENVS,
-    show_viewer=EVAL,
-    ctrl_freq_ratio=10,
-    policy_freq=50,
-    sim_freq=500,
-)
+    )
+    if eval_mode:
+        algorithm.eval()
+    else:
+        algorithm.train()
 
-env = DribbleEnv(env_cfg)
-models = {
-    "policy": Policy(env.observation_space, env.action_space, DEVICE),
-    "value": Value(env.observation_space, env.action_space, DEVICE),
-}
 
-for model in models.values():
-    model.init_parameters(method_name="normal_", mean=0.0, std=0.1)
-
-agent_cfg = PPO_DEFAULT_CONFIG.copy()
-agent_cfg["rollouts"] = ROLLOUT_STEPS
-agent_cfg["discount_factor"] = 0.97
-agent_cfg["learning_epochs"] = 8
-agent_cfg["mixed_precision"] = True
-agent_cfg["mini_batches"] = 4
-
-agent_cfg["experiment"]["directory"] = "runs"  # type: ignore
-agent_cfg["experiment"]["write_interval"] = 50  # type: ignore
-agent_cfg["experiment"]["checkpoint_interval"] = 1000  # type: ignore
-agent_cfg["experiment"]["experiment_name"] = EXPERIMENT_NAME  # type: ignore
-
-algo_cfg = AlgorithmConfig(
-    env_cfg=env_cfg,
-    env_class=DribbleEnv,
-    models=models,
-    experiment_name=EXPERIMENT_NAME,
-)
-
-trainer_cfg = {
-    "timesteps": 30000,
-    "headless": True,
-    "environment_info": "extra",
-}
-
-algorithm = PPOAlgorithm(
-    cfg=algo_cfg,
-    env=env,
-    agent_cfg=agent_cfg,
-    models=models,
-    device=DEVICE,
-    rollout_steps=ROLLOUT_STEPS,
-    trainer_cfg=trainer_cfg,
-)
-
-algorithm.execute(
-    eval_mode=EVAL,
-    resume_training=RESUME_TRAINING,
-    checkpoint_path=CHECKPOINT_PATH,
-    compile_policy=COMPILE,
-)
+if __name__ == "__main__":
+    main()
