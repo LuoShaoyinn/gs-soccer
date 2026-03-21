@@ -14,7 +14,7 @@ from .model import ModelConfig, Model
 class DribbleModelConfig(ModelConfig):
     terminate_range:        np.ndarray  = field(default_factory= \
             lambda: np.array([4.5, 3], dtype=np.float32))
-    truncated_step_limit:   int         = 50
+    truncated_step_limit:   int         = 40
     control_y:              float       = 0.1
     finished_distance:      float       = 1.0
     action_scale:           float       = 2.0
@@ -125,8 +125,7 @@ class DribbleModel(Model):
             return a[:, 0:1] * b[:, 1:2] - a[:, 1:2] * b[:, 0:1]
 
         # ball movement reward
-        rew_ball_toward_target = 1.0 - torch.exp(-dot_2D(ball_to_target_unit, ball_vel_2D))
-        rew_ball_toward_target = torch.clamp(rew_ball_toward_target, min=0.0, max=1.0)
+        rew_ball_toward_target = dot_2D(ball_to_target_unit, ball_vel_2D)
         rew_ball_offset_target = -(cross_2D(ball_to_target_unit, ball_vel_2D) ** 2)
 
         # cmd_vel reward
@@ -149,17 +148,17 @@ class DribbleModel(Model):
             "rew_ball_toward_target":   rew_ball_toward_target * 6.0,
             "rew_ball_offset_target":   rew_ball_offset_target * 1.0,
             "reward_smooth_action":     reward_smooth_action * 0.2,
-            "reward_larger_action":     reward_larger_action * 1.5,
+            "reward_larger_action":     reward_larger_action * 2.0,
             "rew_close_to_ball":        rew_close_to_ball * 4.0,
             "rew_not_lost_ball":        rew_not_lost_ball * 0.5,
             "rew_facing_target":        rew_facing_target * 1.0,
             "rew_facing_to_ball":       rew_facing_to_ball * 0.3,
-            "rew_finished":             rew_finished * (30.0 - 0.5 * self.time_steps.float()), 
-            "rew_ball_out_of_range":    rew_failed * -20.0, 
+            "rew_finished":             rew_finished * (60.0 - self.time_steps.float()), 
+            "rew_ball_out_of_range":    rew_failed * -10.0, 
         }
     
         return sum(self.rewards.values()) \
-                / (6.0 + 1.0 + 0.2 + 1.5 + 4.0 + 0.5 + 1.0 + 0.3) # type: ignore[operator]
+                / (6.0 + 1.0 + 0.2 + 2.0 + 4.0 + 0.5 + 1.0 + 0.3) # type: ignore[operator]
  
     @torch.compiler.disable
     def build_info(self, envs_idx, **kwargs
