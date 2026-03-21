@@ -48,6 +48,7 @@ class ControlledRobotWrapper():
         self.robot.step(action=policy_action)
 
     def reset(self, envs_idx: torch.Tensor, **kwargs) -> None: # type: ignore
+        self.model.reset(envs_idx=envs_idx)
         self.robot.reset(envs_idx=envs_idx, **kwargs)
  
     def get_state(self, envs_idx: torch.Tensor) -> dict[str, torch.Tensor]:

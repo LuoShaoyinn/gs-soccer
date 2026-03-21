@@ -27,7 +27,7 @@ class DribbleEnvConfig(EnvConfig):
             lambda: np.array([4.5, 0.0], dtype=np.float32))
     robot_reset_dis:    float       = 1.2
     robot_reset_ang:    float       = np.pi
-    robot_reset_dis_noise:  float   = 0.6
+    robot_reset_dis_noise:  float   = 1.0
     robot_reset_ang_noise:  float   = np.pi
     ball_reset_pos:     np.ndarray  = field(default_factory= \
             lambda: np.array([0.0, 0.0], dtype=np.float32))

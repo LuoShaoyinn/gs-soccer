@@ -14,7 +14,7 @@ from .model import ModelConfig, Model
 class DribbleModelConfig(ModelConfig):
     terminate_range:        np.ndarray  = field(default_factory= \
             lambda: np.array([4.5, 3], dtype=np.float32))
-    truncated_step_limit:   int         = 40
+    timeout_steps_limit:    int         = 40
     control_y:              float       = 0.1
     finished_distance:      float       = 1.0
     action_scale:           float       = 2.0
@@ -52,6 +52,7 @@ class DribbleModel(Model):
             "ball_to_target_unit":      torch.zeros((num_envs, 2), dtype=torch.float, device=gs.device),
             "failed":                   torch.zeros((num_envs, 1), dtype=torch.bool,  device=gs.device),
             "finished":                 torch.zeros((num_envs, 1), dtype=torch.bool,  device=gs.device),
+            "timeout":                  torch.zeros((num_envs, 1), dtype=torch.bool,  device=gs.device),
         }
         self.rewards = {}
 
@@ -102,7 +103,7 @@ class DribbleModel(Model):
         return self.cache["failed"][envs_idx] | self.cache["finished"][envs_idx]
     
     def build_truncated(self, envs_idx, **kwargs) -> torch.Tensor:
-        return self.time_steps[envs_idx] >= self.cfg.truncated_step_limit
+        return torch.zeros((envs_idx.shape[0], 1), dtype=torch.bool, device=gs.device)
     
     def build_reward(self, envs_idx, **kwargs) -> torch.Tensor: # type: ignore[override]
         self.build_cache(envs_idx=envs_idx, **kwargs)
@@ -226,5 +227,6 @@ class DribbleModel(Model):
         ball_out_of_range = (torch.abs(ball_pos_2D) > self.terminate_range).any(dim=1).unsqueeze(1)
         body_out_of_range = (torch.abs(body_pos_2D) > self.terminate_range).any(dim=1).unsqueeze(1)
         finished          = self.cache["ball_to_target_dis"][envs_idx] < self.cfg.finished_distance
-        self.cache["failed"][envs_idx]   = body_out_of_range | ball_out_of_range | robot_fall
+        timeout           = self.time_steps[envs_idx] >= self.cfg.timeout_steps_limit
+        self.cache["failed"][envs_idx]   = body_out_of_range | ball_out_of_range | robot_fall | timeout
         self.cache["finished"][envs_idx] = finished
