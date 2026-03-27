@@ -12,15 +12,23 @@ from .robot import RobotConfig, Robot
 from models.model import ModelConfig, Model
 
 @dataclass(kw_only = True)
-class ControlledRobotWrapperConfig():
+class ControlledRobotWrapperConfig(RobotConfig):
     robot_cfg:          RobotConfig
     robot_class:        type[Robot]
     ctrl_model_cfg:     ModelConfig
     ctrl_model_class:   type[Model]
-    ctrl_policy_path:   str
+    ctrl_policy_path:   str 
+    # Override the following fields from RobotConfig
+    robot_URDF:     str | None          = None
+    base_link_name: str | None          = None
+    joint_names:    list[str] | None    = None
+    kp:             np.ndarray | None   = None
+    kv:             np.ndarray | None   = None
+    velocity_range: np.ndarray | None   = None
+    force_range:    np.ndarray | None   = None
 
 
-class ControlledRobotWrapper():
+class ControlledRobotWrapper(Robot):
     def __init__(self, cfg: ControlledRobotWrapperConfig, scene: gs.Scene):
         self.cfg = cfg
         self.scene = scene
