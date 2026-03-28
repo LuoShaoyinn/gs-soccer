@@ -21,10 +21,6 @@ metal = ["torch"]
 rocm = ["torch", "triton", "triton-kernels"]
 
 [tool.uv]
-override-dependencies = [
-    "quadrants>=0.4.2",
-]
-
 conflicts = [[{ extra = "cuda" }, { extra = "rocm" }],
              [{ extra = "metal" }, { extra = "rocm" }],
              [{ extra = "metal" }, { extra = "cuda" }]]
