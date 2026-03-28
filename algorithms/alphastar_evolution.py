@@ -37,26 +37,93 @@ class AlphaStarEvolutionConfig(AlgorithmConfig):
     max_league_size: int = 8
 
     learner_idx: int = 0
+    symmetric_selfplay: bool = True
     experiment_name: str = "soccer_1v1_alphastar"
 
 
 class LeagueEnvAdapter:
-    def __init__(self, game_env, learner_idx: int = 0):
+    def __init__(self, game_env, learner_idx: int = 0, symmetric_selfplay: bool = True):
         self.game_env = game_env
         self.learner_idx = learner_idx
         self.opponent_idx = 1 - learner_idx
+        self.symmetric_selfplay = symmetric_selfplay
+        self.team_names = ("red", "blue")
 
         self.num_envs = game_env.num_envs
         self.num_agents = 1
         self.is_vector_env = True
-        self.observation_space = game_env.observation_space[self.learner_idx]
-        self.action_space = game_env.action_space[self.learner_idx]
+        self.observation_space = game_env.observation_space[self.team_names[self.learner_idx]]
+        self.action_space = game_env.action_space[self.team_names[self.learner_idx]]
+        obs_dim = int(self.observation_space.shape[0])
+        action_dim = int(self.action_space.shape[0])
+        self._obs_mirror_sign = torch.ones((obs_dim,), dtype=torch.float, device=gs.device)
+        self._action_mirror_sign = torch.ones((action_dim,), dtype=torch.float, device=gs.device)
+        if hasattr(game_env, "model"):
+            model = game_env.model
+            if hasattr(model, "obs_mirror_sign"):
+                self._obs_mirror_sign = model.obs_mirror_sign.to(gs.device)
+            if hasattr(model, "action_mirror_sign"):
+                self._action_mirror_sign = model.action_mirror_sign.to(gs.device)
 
-        self._latest_obs: list[torch.Tensor] | None = None
+        self._latest_obs: dict[str, torch.Tensor] | None = None
         self._opponent_fn = self._default_opponent
+        self._learner_side_idx = torch.full(
+            (self.num_envs,),
+            fill_value=self.learner_idx,
+            dtype=torch.long,
+            device=gs.device,
+        )
 
     def set_opponent_sampler(self, sampler):
         self._opponent_fn = sampler
+
+    def _sample_learner_sides(self, envs_idx: torch.Tensor | None = None) -> None:
+        if envs_idx is None:
+            envs_idx = torch.arange(self.num_envs, dtype=torch.long, device=gs.device)
+        if self.symmetric_selfplay:
+            self._learner_side_idx[envs_idx] = torch.randint(
+                low=0,
+                high=2,
+                size=(envs_idx.shape[0],),
+                device=gs.device,
+            )
+        else:
+            self._learner_side_idx[envs_idx] = self.learner_idx
+
+    def _mirror_obs(self, obs: torch.Tensor) -> torch.Tensor:
+        return obs * self._obs_mirror_sign.unsqueeze(0)
+
+    def _canonical_to_env_action(self, action: torch.Tensor, side_idx: torch.Tensor) -> torch.Tensor:
+        env_action = action.clone()
+        side1_mask = side_idx == 1
+        if side1_mask.any():
+            env_action[side1_mask] = env_action[side1_mask] * self._action_mirror_sign.unsqueeze(0)
+        return env_action
+
+    @staticmethod
+    def _select_dict_by_side(values: dict[str, torch.Tensor], side_idx: torch.Tensor) -> torch.Tensor:
+        selected = values["red"].clone()
+        side1_mask = side_idx == 1
+        if side1_mask.any():
+            selected[side1_mask] = values["blue"][side1_mask]
+        return selected
+
+    def _canonical_obs_from_side(self, obs: dict[str, torch.Tensor], side_idx: torch.Tensor) -> torch.Tensor:
+        canonical = self._select_dict_by_side(obs, side_idx)
+        side1_mask = side_idx == 1
+        if side1_mask.any():
+            canonical[side1_mask] = self._mirror_obs(canonical[side1_mask])
+        return canonical
+
+    @staticmethod
+    def _merge_extra_info(extra: dict[str, dict]) -> dict:
+        if not isinstance(extra, dict) or "red" not in extra or "blue" not in extra:
+            return {}
+        keys = set(extra["red"].keys()) & set(extra["blue"].keys())
+        merged = {}
+        for key in keys:
+            merged[key] = 0.5 * (extra["red"][key] + extra["blue"][key])
+        return merged
 
     def _default_opponent(self, obs: torch.Tensor) -> torch.Tensor:
         action = torch.zeros((obs.shape[0], 3), dtype=torch.float, device=gs.device)
@@ -68,23 +135,42 @@ class LeagueEnvAdapter:
     def reset(self):
         obs, info = self.game_env.reset()
         self._latest_obs = obs
-        return obs[self.learner_idx], info
+        self._sample_learner_sides()
+        learner_obs = self._canonical_obs_from_side(obs, self._learner_side_idx)
+        return learner_obs, info
 
     def step(self, learner_action: torch.Tensor):
         if self._latest_obs is None:
             raise RuntimeError("Call reset() before step()")
-        opponent_obs = self._latest_obs[self.opponent_idx]
+        learner_side_idx = self._learner_side_idx.clone()
+        opponent_side_idx = 1 - learner_side_idx
+        opponent_obs = self._canonical_obs_from_side(self._latest_obs, opponent_side_idx)
         with torch.no_grad():
             opponent_action = self._opponent_fn(opponent_obs)
 
-        actions = [None, None]
-        actions[self.learner_idx] = learner_action
-        actions[self.opponent_idx] = opponent_action
-        obs, reward, terminated, truncated, info = self.game_env.step(actions)  # type: ignore[arg-type]
-        if "extra" in info and isinstance(info["extra"], list):
-            info["extra"] = info["extra"][self.learner_idx]
+        learner_action_env = self._canonical_to_env_action(learner_action, learner_side_idx)
+        opponent_action_env = self._canonical_to_env_action(opponent_action, opponent_side_idx)
+        learner_is_team_red = learner_side_idx == 0
+        actions = {
+            "red": torch.where(learner_is_team_red.unsqueeze(1), learner_action_env, opponent_action_env),
+            "blue": torch.where(learner_is_team_red.unsqueeze(1), opponent_action_env, learner_action_env),
+        }
+        obs, reward, terminated, truncated, info = self.game_env.step(actions)
+        learner_reward = self._select_dict_by_side(reward, learner_side_idx)
+        learner_terminated = self._select_dict_by_side(terminated, learner_side_idx)
+        learner_truncated = self._select_dict_by_side(truncated, learner_side_idx)
+        learner_done = torch.logical_or(learner_terminated, learner_truncated).squeeze(1)
+
+        if learner_done.any():
+            done_envs = torch.nonzero(learner_done, as_tuple=False).squeeze(1)
+            self._sample_learner_sides(done_envs)
+
+        if "extra" in info and isinstance(info["extra"], dict):
+            info["extra"] = self._merge_extra_info(info["extra"])
+        info["learner_side_idx"] = learner_side_idx
         self._latest_obs = obs
-        return obs[self.learner_idx], reward[self.learner_idx], terminated[self.learner_idx], truncated[self.learner_idx], info
+        learner_obs = self._canonical_obs_from_side(obs, self._learner_side_idx)
+        return learner_obs, learner_reward, learner_terminated, learner_truncated, info
 
     def close(self):
         self.game_env.close()
@@ -93,7 +179,11 @@ class LeagueEnvAdapter:
 class AlphaStarEvolutionAlgorithm(Algorithm):
     def __init__(self, env, cfg: AlphaStarEvolutionConfig):
         self.game_env = env
-        self.env_adapter = LeagueEnvAdapter(env, learner_idx=cfg.learner_idx)
+        self.env_adapter = LeagueEnvAdapter(
+            env,
+            learner_idx=cfg.learner_idx,
+            symmetric_selfplay=cfg.symmetric_selfplay,
+        )
         super().__init__(self.env_adapter, cfg)
         self.cfg = cfg
 
@@ -211,8 +301,19 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
                 done = torch.logical_or(terminated, truncated).squeeze(1)
                 if done.any():
                     mask = done
-                    goal_for = info["goal_team0"][mask].float() if self.cfg.learner_idx == 0 else info["goal_team1"][mask].float()
-                    goal_against = info["goal_team1"][mask].float() if self.cfg.learner_idx == 0 else info["goal_team0"][mask].float()
+                    learner_side = info["learner_side_idx"]
+                    goal_red = info["goal_team_red"]
+                    goal_blue = info["goal_team_blue"]
+                    goal_for = torch.where(
+                        learner_side.unsqueeze(1) == 0,
+                        goal_red,
+                        goal_blue,
+                    )[mask].float()
+                    goal_against = torch.where(
+                        learner_side.unsqueeze(1) == 0,
+                        goal_blue,
+                        goal_red,
+                    )[mask].float()
                     wins += float((goal_for > goal_against).float().sum().item())
                     games += float(mask.sum().item())
 

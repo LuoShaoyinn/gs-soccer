@@ -13,6 +13,7 @@ from models.model import Model, ModelConfig
 class GameModelConfig(ModelConfig):
     half_field_size: tuple[float, float] = (4.5, 3.0)
     goal_width: float = 1.9
+    num_robots_in_team: int = 1
 
     timeout_steps_limit: int = 600
     action_scale: float = 2.0
@@ -30,63 +31,88 @@ class GameModel(Model):
 
     def config(self):
         num_envs = self.scene.n_envs
+        self.team_names = ("red", "blue")
         self.num_agents = 2
         self.time_steps = torch.zeros((num_envs, 1), dtype=torch.float, device=gs.device)
-        self.cmd_vel = [torch.zeros((num_envs, 2, 3), dtype=torch.float, device=gs.device) for _ in range(self.num_agents)]
+        self.cmd_vel = {
+            "red": torch.zeros((num_envs, 2, 3), dtype=torch.float, device=gs.device),
+            "blue": torch.zeros((num_envs, 2, 3), dtype=torch.float, device=gs.device),
+        }
+        if self.cfg.num_robots_in_team < 1:
+            raise ValueError(f"num_robots_in_team must be >= 1, got {self.cfg.num_robots_in_team}")
+        self.obs_blocks = (
+            ("self_heading", 2, "vec2"),
+            ("self_vel_2d", 2 * self.cfg.num_robots_in_team, "vec2"),
+            ("self_ang_z", 1, "scalar"),
+            ("opp_rel_pos", 2, "vec2"),
+            ("opp_rel_vel", 2, "vec2"),
+            ("ball_rel_pos", 2, "vec2"),
+            ("ball_rel_vel", 2, "vec2"),
+            ("ball_to_goal", 2, "vec2"),
+            ("last_cmd", 3, "cmd3"),
+        )
+        self.obs_dim = int(sum(dim for _, dim, _ in self.obs_blocks))
+        self.obs_mirror_sign = self._build_obs_mirror_sign(self.obs_blocks).to(gs.device)
+        self.action_mirror_sign = torch.tensor([-1.0, -1.0, 1.0], dtype=torch.float, device=gs.device)
 
         half = torch.tensor(self.cfg.half_field_size, dtype=torch.float, device=gs.device)
         self.half_field_size = half.view(1, 2).broadcast_to((num_envs, 2))
         self.goal_width = torch.tensor([self.cfg.goal_width], dtype=torch.float, device=gs.device).view(1, 1).broadcast_to((num_envs, 1))
-        self.goal_pos = [
-            torch.tensor([self.cfg.half_field_size[0], 0.0], dtype=torch.float, device=gs.device).view(1, 2).broadcast_to((num_envs, 2)),
-            torch.tensor([-self.cfg.half_field_size[0], 0.0], dtype=torch.float, device=gs.device).view(1, 2).broadcast_to((num_envs, 2)),
-        ]
+        self.goal_pos = {
+            "red": torch.tensor([self.cfg.half_field_size[0], 0.0], dtype=torch.float, device=gs.device).view(1, 2).broadcast_to((num_envs, 2)),
+            "blue": torch.tensor([-self.cfg.half_field_size[0], 0.0], dtype=torch.float, device=gs.device).view(1, 2).broadcast_to((num_envs, 2)),
+        }
 
         self.cache_valid = torch.zeros((num_envs,), dtype=torch.bool, device=gs.device)
         self.cache: dict[str, torch.Tensor] = {
-            "team0_pos_2d": torch.zeros((num_envs, 2), dtype=torch.float, device=gs.device),
-            "team1_pos_2d": torch.zeros((num_envs, 2), dtype=torch.float, device=gs.device),
-            "team0_vel_2d": torch.zeros((num_envs, 2), dtype=torch.float, device=gs.device),
-            "team1_vel_2d": torch.zeros((num_envs, 2), dtype=torch.float, device=gs.device),
+            "red_pos_2d": torch.zeros((num_envs, 2), dtype=torch.float, device=gs.device),
+            "blue_pos_2d": torch.zeros((num_envs, 2), dtype=torch.float, device=gs.device),
+            "red_vel_2d": torch.zeros((num_envs, 2 * self.cfg.num_robots_in_team), dtype=torch.float, device=gs.device),
+            "blue_vel_2d": torch.zeros((num_envs, 2 * self.cfg.num_robots_in_team), dtype=torch.float, device=gs.device),
+            "red_main_vel_2d": torch.zeros((num_envs, 2), dtype=torch.float, device=gs.device),
+            "blue_main_vel_2d": torch.zeros((num_envs, 2), dtype=torch.float, device=gs.device),
             "ball_pos_2d": torch.zeros((num_envs, 2), dtype=torch.float, device=gs.device),
             "ball_vel_2d": torch.zeros((num_envs, 2), dtype=torch.float, device=gs.device),
-            "team0_heading": torch.zeros((num_envs, 2), dtype=torch.float, device=gs.device),
-            "team1_heading": torch.zeros((num_envs, 2), dtype=torch.float, device=gs.device),
-            "goal_team0": torch.zeros((num_envs, 1), dtype=torch.bool, device=gs.device),
-            "goal_team1": torch.zeros((num_envs, 1), dtype=torch.bool, device=gs.device),
+            "red_heading": torch.zeros((num_envs, 2), dtype=torch.float, device=gs.device),
+            "blue_heading": torch.zeros((num_envs, 2), dtype=torch.float, device=gs.device),
+            "goal_team_red": torch.zeros((num_envs, 1), dtype=torch.bool, device=gs.device),
+            "goal_team_blue": torch.zeros((num_envs, 1), dtype=torch.bool, device=gs.device),
             "ball_out": torch.zeros((num_envs, 1), dtype=torch.bool, device=gs.device),
             "terminated": torch.zeros((num_envs, 1), dtype=torch.bool, device=gs.device),
-            "out_reward_team0": torch.zeros((num_envs, 1), dtype=torch.float, device=gs.device),
-            "out_reward_team1": torch.zeros((num_envs, 1), dtype=torch.float, device=gs.device),
+            "out_reward_red": torch.zeros((num_envs, 1), dtype=torch.float, device=gs.device),
+            "out_reward_blue": torch.zeros((num_envs, 1), dtype=torch.float, device=gs.device),
         }
-        self.rewards: list[dict[str, torch.Tensor]] = [{}, {}]
+        self.rewards: dict[str, dict[str, torch.Tensor]] = {
+            "red": {},
+            "blue": {},
+        }
 
     def reset(self, envs_idx: torch.Tensor):
         self.cache_valid[envs_idx] = False
         self.time_steps[envs_idx] = 0.0
-        for idx in range(self.num_agents):
-            self.cmd_vel[idx][envs_idx] = 0.0
+        for name in self.team_names:
+            self.cmd_vel[name][envs_idx] = 0.0
 
-    def preprocess_action(self, action: list[torch.Tensor]
-                          ) -> list[torch.Tensor]: # type: ignore[override]
+    def preprocess_action(self, action: dict[str, torch.Tensor]
+                          ) -> dict[str, torch.Tensor]:  # type: ignore[override]
         self.cache_valid[:] = False
-        processed: list[torch.Tensor] = []
-        for idx in range(self.num_agents):
-            self.cmd_vel[idx] = torch.roll(self.cmd_vel[idx], shifts=-1, dims=1)
-            self.cmd_vel[idx][:, -1, :] = torch.clamp(action[idx], -1.0, 1.0)
-            processed.append(self.cmd_vel[idx].mean(dim=1) * self.cfg.action_scale)
+        processed: dict[str, torch.Tensor] = {}
+        for name in self.team_names:
+            self.cmd_vel[name] = torch.roll(self.cmd_vel[name], shifts=-1, dims=1)
+            self.cmd_vel[name][:, -1, :] = torch.clamp(action[name], -1.0, 1.0)
+            processed[name] = self.cmd_vel[name].mean(dim=1) * self.cfg.action_scale
         self.time_steps += 1.0
         return processed
 
     @property
-    def observation_space(self) -> list[gym.spaces.Box]:
-        space = gym.spaces.Box(low=-10.0, high=10.0, shape=(18,), dtype=np.float32)
-        return [space, space]
+    def observation_space(self) -> dict[str, gym.spaces.Box]:
+        space = gym.spaces.Box(low=-10.0, high=10.0, shape=(self.obs_dim,), dtype=np.float32)
+        return {"red": space, "blue": space}
 
     @property
-    def action_space(self) -> list[gym.spaces.Box]:
+    def action_space(self) -> dict[str, gym.spaces.Box]:
         space = gym.spaces.Box(low=-1.0, high=1.0, shape=(3,), dtype=np.float32)
-        return [space, space]
+        return {"red": space, "blue": space}
 
     def _heading2d(self, quat: torch.Tensor) -> torch.Tensor:
         w, x, y, z = quat[:, 0], quat[:, 1], quat[:, 2], quat[:, 3]
@@ -100,23 +126,56 @@ class GameModel(Model):
             return tensor[:, 0, :]
         return tensor
 
+    @staticmethod
+    def _build_obs_mirror_sign(obs_blocks: tuple[tuple[str, int, str], ...]) -> torch.Tensor:
+        signs: list[float] = []
+        for _, dim, mode in obs_blocks:
+            if mode == "vec2":
+                if dim % 2 != 0:
+                    raise ValueError(f"vec2 block dim must be even, got {dim}")
+                signs.extend([-1.0] * dim)
+            elif mode == "cmd3":
+                if dim != 3:
+                    raise ValueError("cmd3 block must have dim=3")
+                signs.extend([-1.0, -1.0, 1.0])
+            else:
+                signs.extend([1.0] * dim)
+        return torch.tensor(signs, dtype=torch.float)
+
+    def _team_vel2d(self, lin_vel: torch.Tensor) -> torch.Tensor:
+        if lin_vel.ndim == 2:
+            vel = lin_vel[:, 0:2].unsqueeze(1)
+        elif lin_vel.ndim == 3:
+            vel = lin_vel[:, :, 0:2]
+        else:
+            raise ValueError(f"Unsupported body_lin_vel shape: {tuple(lin_vel.shape)}")
+
+        n_envs = vel.shape[0]
+        n_src = vel.shape[1]
+        n_dst = self.cfg.num_robots_in_team
+        out = torch.zeros((n_envs, n_dst, 2), dtype=vel.dtype, device=vel.device)
+        n_copy = min(n_src, n_dst)
+        out[:, :n_copy, :] = vel[:, :n_copy, :]
+        return out.reshape(n_envs, 2 * n_dst)
+
     def _build_obs_from_perspective(
         self,
         self_pos_2d: torch.Tensor,
         self_vel_2d: torch.Tensor,
+        self_main_vel_2d: torch.Tensor,
         self_heading: torch.Tensor,
         self_ang_vel: torch.Tensor,
         opp_pos_2d: torch.Tensor,
-        opp_vel_2d: torch.Tensor,
+        opp_main_vel_2d: torch.Tensor,
         ball_pos_2d: torch.Tensor,
         ball_vel_2d: torch.Tensor,
         attack_goal_pos: torch.Tensor,
         last_cmd: torch.Tensor,
     ) -> torch.Tensor:
         opp_rel_pos = opp_pos_2d - self_pos_2d
-        opp_rel_vel = opp_vel_2d - self_vel_2d
+        opp_rel_vel = opp_main_vel_2d - self_main_vel_2d
         ball_rel_pos = ball_pos_2d - self_pos_2d
-        ball_rel_vel = ball_vel_2d - self_vel_2d
+        ball_rel_vel = ball_vel_2d - self_main_vel_2d
         ball_to_goal = attack_goal_pos - ball_pos_2d
         return torch.cat(
             [
@@ -136,10 +195,8 @@ class GameModel(Model):
     def _build_cache(
         self,
         envs_idx: torch.Tensor,
-        body_pos: list[torch.Tensor],
-        body_quat: list[torch.Tensor],
-        body_lin_vel: list[torch.Tensor],
-        body_ang_vel: list[torch.Tensor],
+        red: dict[str, torch.Tensor],
+        blue: dict[str, torch.Tensor],
         ball_pos: torch.Tensor,
         ball_vel: torch.Tensor,
         **kwargs,
@@ -148,36 +205,38 @@ class GameModel(Model):
             return
         self.cache_valid[envs_idx] = True
 
-        team0_pos = self._team_main(body_pos[0])
-        team1_pos = self._team_main(body_pos[1])
-        team0_quat = self._team_main(body_quat[0])
-        team1_quat = self._team_main(body_quat[1])
-        team0_lin_vel = self._team_main(body_lin_vel[0])
-        team1_lin_vel = self._team_main(body_lin_vel[1])
+        red_pos = self._team_main(red["body_pos"])
+        blue_pos = self._team_main(blue["body_pos"])
+        red_quat = self._team_main(red["body_quat"])
+        blue_quat = self._team_main(blue["body_quat"])
+        red_lin_vel = self._team_main(red["body_lin_vel"])
+        blue_lin_vel = self._team_main(blue["body_lin_vel"])
 
         ball_pos_2d = ball_pos[:, 0:2]
         ball_vel_2d = ball_vel[:, 0:2]
 
-        self.cache["team0_pos_2d"][envs_idx] = team0_pos[:, 0:2]
-        self.cache["team1_pos_2d"][envs_idx] = team1_pos[:, 0:2]
-        self.cache["team0_vel_2d"][envs_idx] = team0_lin_vel[:, 0:2]
-        self.cache["team1_vel_2d"][envs_idx] = team1_lin_vel[:, 0:2]
+        self.cache["red_pos_2d"][envs_idx] = red_pos[:, 0:2]
+        self.cache["blue_pos_2d"][envs_idx] = blue_pos[:, 0:2]
+        self.cache["red_vel_2d"][envs_idx] = self._team_vel2d(red["body_lin_vel"])
+        self.cache["blue_vel_2d"][envs_idx] = self._team_vel2d(blue["body_lin_vel"])
+        self.cache["red_main_vel_2d"][envs_idx] = red_lin_vel[:, 0:2]
+        self.cache["blue_main_vel_2d"][envs_idx] = blue_lin_vel[:, 0:2]
         self.cache["ball_pos_2d"][envs_idx] = ball_pos_2d
         self.cache["ball_vel_2d"][envs_idx] = ball_vel_2d
-        self.cache["team0_heading"][envs_idx] = self._heading2d(team0_quat)
-        self.cache["team1_heading"][envs_idx] = self._heading2d(team1_quat)
+        self.cache["red_heading"][envs_idx] = self._heading2d(red_quat)
+        self.cache["blue_heading"][envs_idx] = self._heading2d(blue_quat)
 
         half_x = self.half_field_size[envs_idx, 0:1]
         half_y = self.half_field_size[envs_idx, 1:2]
         goal_half = 0.5 * self.goal_width[envs_idx]
 
-        goal_team0 = (ball_pos_2d[:, 0:1] >= half_x) & (torch.abs(ball_pos_2d[:, 1:2]) <= goal_half)
-        goal_team1 = (ball_pos_2d[:, 0:1] <= -half_x) & (torch.abs(ball_pos_2d[:, 1:2]) <= goal_half)
+        goal_team_red = (ball_pos_2d[:, 0:1] >= half_x) & (torch.abs(ball_pos_2d[:, 1:2]) <= goal_half)
+        goal_team_blue = (ball_pos_2d[:, 0:1] <= -half_x) & (torch.abs(ball_pos_2d[:, 1:2]) <= goal_half)
         is_outside = (torch.abs(ball_pos_2d[:, 0:1]) > half_x) | (torch.abs(ball_pos_2d[:, 1:2]) > half_y)
 
-        ball_out = is_outside & ~(goal_team0 | goal_team1)
-        self.cache["goal_team0"][envs_idx] = goal_team0
-        self.cache["goal_team1"][envs_idx] = goal_team1
+        ball_out = is_outside & ~(goal_team_red | goal_team_blue)
+        self.cache["goal_team_red"][envs_idx] = goal_team_red
+        self.cache["goal_team_blue"][envs_idx] = goal_team_blue
         self.cache["ball_out"][envs_idx] = ball_out
 
         out_point = torch.stack(
@@ -188,53 +247,55 @@ class GameModel(Model):
             dim=1,
         )
         max_dist = torch.norm(2.0 * self.half_field_size[envs_idx], dim=1, keepdim=True).clamp_min(1e-6)
-        out_reward_team0 = self.cfg.out_of_field_reward_scale * (
-            1.0 - torch.norm(out_point - self.goal_pos[0][envs_idx], dim=1, keepdim=True) / max_dist
+        out_reward_red = self.cfg.out_of_field_reward_scale * (
+            1.0 - torch.norm(out_point - self.goal_pos["red"][envs_idx], dim=1, keepdim=True) / max_dist
         )
-        out_reward_team1 = self.cfg.out_of_field_reward_scale * (
-            1.0 - torch.norm(out_point - self.goal_pos[1][envs_idx], dim=1, keepdim=True) / max_dist
+        out_reward_blue = self.cfg.out_of_field_reward_scale * (
+            1.0 - torch.norm(out_point - self.goal_pos["blue"][envs_idx], dim=1, keepdim=True) / max_dist
         )
-        self.cache["out_reward_team0"][envs_idx] = torch.where(ball_out, out_reward_team0, torch.zeros_like(out_reward_team0))
-        self.cache["out_reward_team1"][envs_idx] = torch.where(ball_out, out_reward_team1, torch.zeros_like(out_reward_team1))
+        self.cache["out_reward_red"][envs_idx] = torch.where(ball_out, out_reward_red, torch.zeros_like(out_reward_red))
+        self.cache["out_reward_blue"][envs_idx] = torch.where(ball_out, out_reward_blue, torch.zeros_like(out_reward_blue))
 
-        team0_fall = team0_pos[:, 2:3] < self.cfg.fall_height
-        team1_fall = team1_pos[:, 2:3] < self.cfg.fall_height
+        red_fall = red_pos[:, 2:3] < self.cfg.fall_height
+        blue_fall = blue_pos[:, 2:3] < self.cfg.fall_height
         timeout = self.time_steps[envs_idx] >= self.cfg.timeout_steps_limit
-        self.cache["terminated"][envs_idx] = goal_team0 | goal_team1 | ball_out | team0_fall | team1_fall | timeout
+        self.cache["terminated"][envs_idx] = goal_team_red | goal_team_blue | ball_out | red_fall | blue_fall | timeout
 
     def build_observation(self, envs_idx: torch.Tensor, **kwargs
-                          ) -> list[torch.Tensor]:  # type: ignore[override]
+                          ) -> dict[str, torch.Tensor]:  # type: ignore[override]
         self._build_cache(envs_idx=envs_idx, **kwargs)
-        obs_team0 = self._build_obs_from_perspective(
-            self_pos_2d=self.cache["team0_pos_2d"][envs_idx],
-            self_vel_2d=self.cache["team0_vel_2d"][envs_idx],
-            self_heading=self.cache["team0_heading"][envs_idx],
-            self_ang_vel=self._team_main(kwargs["body_ang_vel"][0]),
-            opp_pos_2d=self.cache["team1_pos_2d"][envs_idx],
-            opp_vel_2d=self.cache["team1_vel_2d"][envs_idx],
+        obs_red = self._build_obs_from_perspective(
+            self_pos_2d=self.cache["red_pos_2d"][envs_idx],
+            self_vel_2d=self.cache["red_vel_2d"][envs_idx],
+            self_main_vel_2d=self.cache["red_main_vel_2d"][envs_idx],
+            self_heading=self.cache["red_heading"][envs_idx],
+            self_ang_vel=self._team_main(kwargs["red"]["body_ang_vel"]),
+            opp_pos_2d=self.cache["blue_pos_2d"][envs_idx],
+            opp_main_vel_2d=self.cache["blue_main_vel_2d"][envs_idx],
             ball_pos_2d=self.cache["ball_pos_2d"][envs_idx],
             ball_vel_2d=self.cache["ball_vel_2d"][envs_idx],
-            attack_goal_pos=self.goal_pos[0][envs_idx],
-            last_cmd=self.cmd_vel[0][envs_idx, -1, :],
+            attack_goal_pos=self.goal_pos["red"][envs_idx],
+            last_cmd=self.cmd_vel["red"][envs_idx, -1, :],
         )
-        obs_team1 = self._build_obs_from_perspective(
-            self_pos_2d=self.cache["team1_pos_2d"][envs_idx],
-            self_vel_2d=self.cache["team1_vel_2d"][envs_idx],
-            self_heading=self.cache["team1_heading"][envs_idx],
-            self_ang_vel=self._team_main(kwargs["body_ang_vel"][1]),
-            opp_pos_2d=self.cache["team0_pos_2d"][envs_idx],
-            opp_vel_2d=self.cache["team0_vel_2d"][envs_idx],
+        obs_blue = self._build_obs_from_perspective(
+            self_pos_2d=self.cache["blue_pos_2d"][envs_idx],
+            self_vel_2d=self.cache["blue_vel_2d"][envs_idx],
+            self_main_vel_2d=self.cache["blue_main_vel_2d"][envs_idx],
+            self_heading=self.cache["blue_heading"][envs_idx],
+            self_ang_vel=self._team_main(kwargs["blue"]["body_ang_vel"]),
+            opp_pos_2d=self.cache["red_pos_2d"][envs_idx],
+            opp_main_vel_2d=self.cache["red_main_vel_2d"][envs_idx],
             ball_pos_2d=self.cache["ball_pos_2d"][envs_idx],
             ball_vel_2d=self.cache["ball_vel_2d"][envs_idx],
-            attack_goal_pos=self.goal_pos[1][envs_idx],
-            last_cmd=self.cmd_vel[1][envs_idx, -1, :],
+            attack_goal_pos=self.goal_pos["blue"][envs_idx],
+            last_cmd=self.cmd_vel["blue"][envs_idx, -1, :],
         )
-        return [obs_team0, obs_team1]
+        return {"red": obs_red, "blue": obs_blue}
 
     def _team_reward(
         self,
         envs_idx: torch.Tensor,
-        team_idx: int,
+        team_name: str,
         attack_goal: torch.Tensor,
         own_pos: torch.Tensor,
         opp_pos: torch.Tensor,
@@ -252,8 +313,8 @@ class GameModel(Model):
         opp_ball_dis = torch.norm(ball_pos - opp_pos, dim=1, keepdim=True)
         rew_possession = opp_ball_dis - own_ball_dis
 
-        cmd_now = self.cmd_vel[team_idx][envs_idx, -1, :]
-        cmd_prev = self.cmd_vel[team_idx][envs_idx, 0, :]
+        cmd_now = self.cmd_vel[team_name][envs_idx, -1, :]
+        cmd_prev = self.cmd_vel[team_name][envs_idx, 0, :]
         rew_smooth = torch.exp(-torch.norm(cmd_now - cmd_prev, dim=1, keepdim=True))
 
         reward_parts = {
@@ -267,50 +328,56 @@ class GameModel(Model):
         return sum(reward_parts.values()), reward_parts # type: ignore[return-value]
 
     def build_reward(self, envs_idx: torch.Tensor, **kwargs
-                     ) -> list[torch.Tensor]:  # type: ignore[override]
+                     ) -> dict[str, torch.Tensor]:  # type: ignore[override]
         self._build_cache(envs_idx=envs_idx, **kwargs)
-        reward0, rew0 = self._team_reward(
+        reward_red, rew_red = self._team_reward(
             envs_idx,
-            0,
-            self.goal_pos[0][envs_idx],
-            self.cache["team0_pos_2d"][envs_idx],
-            self.cache["team1_pos_2d"][envs_idx],
-            self.cache["out_reward_team0"][envs_idx],
-            self.cache["goal_team0"][envs_idx],
-            self.cache["goal_team1"][envs_idx],
+            "red",
+            self.goal_pos["red"][envs_idx],
+            self.cache["red_pos_2d"][envs_idx],
+            self.cache["blue_pos_2d"][envs_idx],
+            self.cache["out_reward_red"][envs_idx],
+            self.cache["goal_team_red"][envs_idx],
+            self.cache["goal_team_blue"][envs_idx],
         )
-        reward1, rew1 = self._team_reward(
+        reward_blue, rew_blue = self._team_reward(
             envs_idx,
-            1,
-            self.goal_pos[1][envs_idx],
-            self.cache["team1_pos_2d"][envs_idx],
-            self.cache["team0_pos_2d"][envs_idx],
-            self.cache["out_reward_team1"][envs_idx],
-            self.cache["goal_team1"][envs_idx],
-            self.cache["goal_team0"][envs_idx],
+            "blue",
+            self.goal_pos["blue"][envs_idx],
+            self.cache["blue_pos_2d"][envs_idx],
+            self.cache["red_pos_2d"][envs_idx],
+            self.cache["out_reward_blue"][envs_idx],
+            self.cache["goal_team_blue"][envs_idx],
+            self.cache["goal_team_red"][envs_idx],
         )
-        self.rewards = [rew0, rew1]
-        return [reward0, reward1]
+        self.rewards = {
+            "red": rew_red,
+            "blue": rew_blue,
+        }
+        return {
+            "red": reward_red,
+            "blue": reward_blue,
+        }
 
     def build_terminated(self, envs_idx: torch.Tensor, **kwargs
-                         ) -> list[torch.Tensor]:  # type: ignore[override]
+                         ) -> dict[str, torch.Tensor]:  # type: ignore[override]
         self._build_cache(envs_idx=envs_idx, **kwargs)
         term = self.cache["terminated"][envs_idx]
-        return [term, term.clone()]
+        return {"red": term, "blue": term.clone()}
 
     def build_truncated(self, envs_idx: torch.Tensor, **kwargs
-                        ) -> list[torch.Tensor]:  # type: ignore[override]
+                        ) -> dict[str, torch.Tensor]:  # type: ignore[override]
         trunc = torch.zeros((envs_idx.shape[0], 1), dtype=torch.bool, device=gs.device)
-        return [trunc, trunc.clone()]
+        return {"red": trunc, "blue": trunc.clone()}
 
     @torch.compiler.disable
     def build_info(self, envs_idx: torch.Tensor, **kwargs):
         return {
-            "extra": [
-                {k: v.detach().mean().cpu() for k, v in self.rewards[0].items()},
-                {k: v.detach().mean().cpu() for k, v in self.rewards[1].items()},
-            ],
-            "goal_team0": self.cache["goal_team0"][envs_idx].detach(),
-            "goal_team1": self.cache["goal_team1"][envs_idx].detach(),
+            "extra": {
+                "red": {k: v.detach().mean().cpu() for k, v in self.rewards["red"].items()},
+                "blue": {k: v.detach().mean().cpu() for k, v in self.rewards["blue"].items()},
+            },
+            "goal_team_red": self.cache["goal_team_red"][envs_idx].detach(),
+            "goal_team_blue": self.cache["goal_team_blue"][envs_idx].detach(),
             "ball_out": self.cache["ball_out"][envs_idx].detach(),
         }

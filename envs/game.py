@@ -26,30 +26,32 @@ class GameEnvConfig(EnvConfig):
 class GameEnv(Env):
     cfg: GameEnvConfig
     def __init__(self, cfg: GameEnvConfig):
-        super().__init__(cfg)
-        assert self.cfg.robot_class.keys()      == {"red", "blue"}, \
+        assert cfg.robot_class.keys()      == {"red", "blue"}, \
                 "robot name must be 'red' and 'blue'"
-        assert self.cfg.robot_cfg.keys()        == {"red", "blue"}, \
+        assert cfg.robot_cfg.keys()        == {"red", "blue"}, \
                 "robot cfg must be 'red' and 'blue'"
-        assert self.cfg.robot_reset_pos.keys()  == {"red", "blue"}, \
+        assert cfg.robot_reset_pos.keys()  == {"red", "blue"}, \
                 "robot reset pos must be 'red' and 'blue'"
+        self.team_names = ("red", "blue")
+        super().__init__(cfg)
 
 
     def build(self):
         self.field = self.cfg.field_class(self.cfg.field_cfg, self.scene)
         self.model = self.cfg.model_class(self.cfg.model_cfg, self.scene)
         self.robots = {}
-        for (name, robot_class) in self.cfg.robot_class.items():
+        for name in self.team_names:
+            robot_class = self.cfg.robot_class[name]
             self.robots[name] = robot_class(self.cfg.robot_cfg[name], self.scene)
         self.field.build()
-        for (name, robot) in self.robots.items():
+        for robot in self.robots.values():
             robot.build()
         self.model.build()
 
 
     def config(self):
         self.field.config()
-        for (name, robot) in self.robots.items():
+        for robot in self.robots.values():
             robot.config()
         self.model.config()
 
@@ -70,11 +72,11 @@ class GameEnv(Env):
         action = self.model.preprocess_action(action) # type: ignore[arg-type]
 
         for _ in range(self.cfg.ctrl_freq_ratio):
-            for name in self.robots.keys():
+            for name in self.team_names:
                 action_noise = 2.0 * (torch.rand_like(action[name]) - 0.5)
                 action_noise = 1.0 + self.cfg.action_noise * action_noise
                 self.robots[name].step(action[name] * action_noise)
-            self.__gs_step()
+            self.gs_step()
 
         kwargs              = self.get_state(envs_idx=self.all_envs_idx)
         next_observation    = self.model.build_observation(envs_idx=self.all_envs_idx, **kwargs)
@@ -84,12 +86,12 @@ class GameEnv(Env):
         info                = self.model.build_info(envs_idx=self.all_envs_idx, **kwargs)
 
         need_reset = torch.zeros((self.num_envs,), dtype=torch.bool, device=gs.device)
-        for term_i, trunc_i in zip(terminated, truncated):
-            need_reset |= torch.logical_or(term_i, trunc_i).squeeze(1)
+        for name in self.team_names:
+            need_reset |= torch.logical_or(terminated[name], truncated[name]).squeeze(1)
         if need_reset.any():
             reset_idx = torch.nonzero(need_reset).squeeze(1)
-            reset_observation, reset_info = self.reset(reset_idx)
-            for name in self.robots.keys():
+            reset_observation, _ = self.reset(reset_idx)
+            for name in self.team_names:
                 next_observation[name][reset_idx] = reset_observation[name]
         return (next_observation, reward, terminated, truncated, info)
     
@@ -110,15 +112,18 @@ class GameEnv(Env):
                                 torch.sin(half_yaw)), dim=-1)
         
         # Reset ball and robot position
+        ball_reset_pos = self.ball_reset_pos[envs_idx]
         self.field.reset(envs_idx=envs_idx, 
-                         ball_pos=randomize(x=self.ball_reset_pos, 
+                         ball_pos=randomize(x=ball_reset_pos, 
                                                   noise=self.cfg.reset_pos_noise))
-        for name, robot in self.robots.items():
+        for name in self.team_names:
+            robot = self.robots[name]
+            robot_reset = self.robot_reset_pos[name][envs_idx]
             robot.reset(envs_idx=envs_idx, 
-                        reset_pos=randomize(x=self.robot_reset_pos[name][:,:2], 
+                        reset_pos=randomize(x=robot_reset[:, :2], 
                                             noise=self.cfg.reset_pos_noise), 
                         reset_quat=yaw_to_quat(\
-                                randomize(x=self.robot_reset_pos[name][:,2:], 
+                                randomize(x=robot_reset[:, 2:], 
                                           noise=self.cfg.reset_yaw_noise)))
 
         # Don't forget to reset the model
@@ -129,6 +134,6 @@ class GameEnv(Env):
 
 
     def get_state(self, envs_idx: torch.Tensor) -> dict[str, object]: # type: ignore[override]
-        ret = {name: robot.get_state(envs_idx=envs_idx) 
-                for name, robot in self.robots.items()}
+        ret = {name: self.robots[name].get_state(envs_idx=envs_idx)
+                for name in self.team_names}
         return ret | self.field.get_state(envs_idx=envs_idx)

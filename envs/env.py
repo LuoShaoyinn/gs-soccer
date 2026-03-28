@@ -28,6 +28,8 @@ class EnvConfig():
     num_envs:       int     = 1
     show_viewer:    bool    = True
     self_collision: bool    = True
+    max_collision_pairs: int = 150
+    multiplier_collision_broad_phase: int = 8
 
 
 class Env(ABC):
@@ -57,7 +59,8 @@ class Env(ABC):
             rigid_options=gs.options.RigidOptions(
                 enable_self_collision=self.cfg.self_collision,
                 tolerance=1e-6,
-                max_collision_pairs=20,
+                max_collision_pairs=self.cfg.max_collision_pairs,
+                multiplier_collision_broad_phase=self.cfg.multiplier_collision_broad_phase,
             ),
             show_viewer = self.cfg.show_viewer,
         )
@@ -84,7 +87,7 @@ class Env(ABC):
         self.action_space = self.model.action_space
 
     @torch.compiler.disable
-    def __gs_step(self):
+    def gs_step(self):
         self.scene.step()
     
     def step(self, action: torch.Tensor
@@ -92,7 +95,7 @@ class Env(ABC):
                         dict[str,torch.Tensor]]: 
         action = self.model.preprocess_action(action)
         self.robot.step(action=action)
-        self.__gs_step()
+        self.gs_step()
         kwargs = self.get_state(envs_idx=self.all_envs_idx)
         next_observation    = self.model.build_observation(envs_idx=self.all_envs_idx, **kwargs)
         reward              = self.model.build_reward(envs_idx=self.all_envs_idx, **kwargs)

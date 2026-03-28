@@ -3,10 +3,10 @@ import numpy as np
 import genesis as gs
 
 from algorithms.alphastar_evolution import AlphaStarEvolutionAlgorithm, AlphaStarEvolutionConfig
-from envs.game_env import GameEnv, GameEnvConfig
+from envs.game import GameEnv, GameEnvConfig
 from fields.soccer_field import SoccerField, SoccerFieldConfig
 from models.pi_walk_model import PIWalkModel, PIWalkModelConfig
-from models.soccer_1v1_model import Soccer1v1Model, Soccer1v1ModelConfig
+from models.game_model import GameModel, GameModelConfig
 from robots.controlled_robot import ControlledRobotWrapper, ControlledRobotWrapperConfig
 from robots.pi import PI, PIConfig
 
@@ -51,9 +51,9 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def make_robot_wrapper() -> ControlledRobotWrapperConfig:
+def make_robot_wrapper(initial_pos: np.ndarray) -> ControlledRobotWrapperConfig:
     return ControlledRobotWrapperConfig(
-        robot_cfg=PIConfig(initial_pos=np.array([0.0, 0.0, 0.5], dtype=np.float32)),
+        robot_cfg=PIConfig(initial_pos=initial_pos),
         robot_class=PI,
         ctrl_model_cfg=PIWalkModelConfig(n_dofs=20, target_q_offset=PI_TARGET_Q_OFFSET),
         ctrl_model_class=PIWalkModel,
@@ -72,29 +72,35 @@ def main() -> None:
         logging_level="warning",
     )
 
-    model_cfg = Soccer1v1ModelConfig(
+    model_cfg = GameModelConfig(
         half_field_size=SoccerFieldConfig().half_field_size,
         goal_width=SoccerFieldConfig().goal_width,
     )
 
     env = GameEnv(
         GameEnvConfig(
-            robot_cfg=make_robot_wrapper(),
-            robot_class=ControlledRobotWrapper,
+            robot_cfg={
+                "red": make_robot_wrapper(np.array([-1.5, 0.0, 0.5], dtype=np.float32)),
+                "blue": make_robot_wrapper(np.array([1.5, 0.0, 0.5], dtype=np.float32)),
+            },
+            robot_class={
+                "red": ControlledRobotWrapper,
+                "blue": ControlledRobotWrapper,
+            },
             field_cfg=SoccerFieldConfig(),
             field_class=SoccerField,
             model_cfg=model_cfg,
-            model_class=Soccer1v1Model,
+            model_class=GameModel,
             num_envs=1 if eval_mode else args.num_envs,
             show_viewer=show_viewer,
             env_spacing=0.0,
             policy_freq=50,
             sim_freq=500,
             ctrl_freq_ratio=10,
-            team_reset_pos=[
-                np.array([-1.5, 0.0], dtype=np.float32),
-                np.array([1.5, 0.0], dtype=np.float32),
-            ],
+            robot_reset_pos={
+                "red": np.array([-1.5, 0.0, 0.0], dtype=np.float32),
+                "blue": np.array([1.5, 0.0, np.pi], dtype=np.float32),
+            },
         )
     )
 

@@ -49,7 +49,7 @@ env = GameEnv(
         },
         robot_reset_pos = {
             "red": np.array([-2.0, 0.0, 0.0], dtype=np.float32),
-            "blue": np.array([2.0, 0.0, 0.0], dtype=np.float32),
+            "blue": np.array([2.0, 0.0, np.pi], dtype=np.float32),
         },
         field_cfg       = SoccerFieldConfig(
             half_field_size = HALF_FIELD_SIZE,

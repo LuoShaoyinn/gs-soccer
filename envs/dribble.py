@@ -52,11 +52,7 @@ class DribbleEnv(Env):
                                     .to(gs.device) \
                                     .broadcast_to((self.num_envs, 2))
         self.ball_damping_log = torch.log(torch.tensor(self.cfg.ball_damping, device=gs.device))
-
-    @torch.compiler.disable
-    def __gs_step(self):
-        self.scene.step()
-    
+ 
     @torch.no_grad()
     @torch.compile()
     def step(self, action: torch.Tensor
@@ -67,7 +63,7 @@ class DribbleEnv(Env):
             action_noise = 2.0 * (torch.rand_like(action) - 0.5)
             action_noise = 1.0 + self.cfg.action_noise * action_noise
             self.robot.step(action=action * action_noise)
-            self.__gs_step()
+            self.gs_step()
         kwargs = self.get_state(envs_idx=self.all_envs_idx)
         next_observation    = self.model.build_observation(envs_idx=self.all_envs_idx, **kwargs)
         reward              = self.model.build_reward(envs_idx=self.all_envs_idx, **kwargs)
