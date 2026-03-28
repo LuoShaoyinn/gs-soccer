@@ -25,13 +25,13 @@ class LeagueMember:
 
 @dataclass(kw_only=True)
 class AlphaStarEvolutionConfig(AlgorithmConfig):
-    rollout_steps: int = 64
-    learning_epochs: int = 6
-    mini_batches: int = 8
+    rollout_steps: int = 16
+    learning_epochs: int = 4
+    mini_batches: int = 16
 
     generations: int = 8
-    train_timesteps_per_generation: int = 4096
-    eval_episodes: int = 16
+    train_timesteps_per_generation: int = 131072
+    eval_episodes: int = 32
     snapshot_interval: int = 2
     promote_win_rate: float = 0.55
     max_league_size: int = 8

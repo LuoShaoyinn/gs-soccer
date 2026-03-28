@@ -43,10 +43,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval", action="store_true", help="Run evaluation mode")
     parser.add_argument("--resume", action="store_true", help="Resume from checkpoint")
     parser.add_argument("--experiment-name", default="soccer_1v1_alphastar", help="Experiment name under runs/")
-    parser.add_argument("--num-envs", type=int, default=1024, help="Number of vectorized envs")
+    parser.add_argument("--num-envs", type=int, default=8192, help="Number of vectorized envs")
     parser.add_argument("--generations", type=int, default=8, help="League training generations")
-    parser.add_argument("--timesteps-per-gen", type=int, default=4096, help="Training timesteps each generation")
-    parser.add_argument("--eval-episodes", type=int, default=16, help="Evaluation episodes per matchup")
+    parser.add_argument("--timesteps-per-gen", type=int, default=131072, help="Training timesteps each generation")
+    parser.add_argument("--eval-episodes", type=int, default=32, help="Evaluation episodes per matchup")
+    parser.add_argument("--rollout-steps", type=int, default=16, help="PPO rollout horizon")
+    parser.add_argument("--learning-epochs", type=int, default=4, help="PPO learning epochs")
+    parser.add_argument("--mini-batches", type=int, default=16, help="PPO mini-batches")
     parser.add_argument("--headless", action="store_true", help="Force headless mode")
     return parser.parse_args()
 
@@ -97,6 +100,8 @@ def main() -> None:
             policy_freq=50,
             sim_freq=500,
             ctrl_freq_ratio=10,
+            max_collision_pairs=400,
+            multiplier_collision_broad_phase=16,
             robot_reset_pos={
                 "red": np.array([-1.5, 0.0, 0.0], dtype=np.float32),
                 "blue": np.array([1.5, 0.0, np.pi], dtype=np.float32),
@@ -111,6 +116,9 @@ def main() -> None:
             generations=args.generations,
             train_timesteps_per_generation=args.timesteps_per_gen,
             eval_episodes=args.eval_episodes,
+            rollout_steps=args.rollout_steps,
+            learning_epochs=args.learning_epochs,
+            mini_batches=args.mini_batches,
             checkpoint_path=f"runs/{args.experiment_name}/checkpoints/best_agent.pt",
             resume=args.resume or eval_mode,
             compile_policy=False,
