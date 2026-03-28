@@ -233,7 +233,7 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
         self.best_eval_win_rate = -1.0
 
         if cfg.resume and cfg.checkpoint_path and Path(cfg.checkpoint_path).exists():
-            self.agent.policy.load_state_dict(torch.load(cfg.checkpoint_path, map_location=gs.device))  # type: ignore[union-attr]
+            self.agent.load(cfg.checkpoint_path)  # type: ignore[arg-type]
             print(f"Loaded learner from {cfg.checkpoint_path}")
 
         self._opponent_model = Policy(self.env.observation_space, self.env.action_space, cfg.device).to(gs.device)
@@ -378,7 +378,7 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
     def eval(self) -> None:
         checkpoint = self.cfg.checkpoint_path or str(self.checkpoint_dir / "best_agent.pt")
         if Path(checkpoint).exists():
-            self.agent.policy.load_state_dict(torch.load(checkpoint, map_location=gs.device))  # type: ignore[union-attr]
+            self.agent.load(checkpoint)  # type: ignore[arg-type]
             print(f"Loaded eval policy from {checkpoint}")
 
         if self.cfg.compile_policy:

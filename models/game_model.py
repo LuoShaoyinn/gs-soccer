@@ -21,8 +21,15 @@ class GameModelConfig(ModelConfig):
     reward_concede: float = -8.0
     reward_ball_progress: float = 1.5
     reward_possession: float = 0.4
+    reward_close_to_ball: float = 0.2
+    reward_facing_ball: float = 0.1
+    reward_ball_contact: float = 0.15
     reward_smooth: float = 0.05
+    reward_stall: float = 0.03
+    reward_timeout: float = 0.5
+    stall_ball_speed_threshold: float = 0.08
     out_of_field_reward_scale: float = 0.4
+    out_of_field_penalty: float = 0.3
     fall_height: float = 0.28
 
 
@@ -78,6 +85,7 @@ class GameModel(Model):
             "goal_team_red": torch.zeros((num_envs, 1), dtype=torch.bool, device=gs.device),
             "goal_team_blue": torch.zeros((num_envs, 1), dtype=torch.bool, device=gs.device),
             "ball_out": torch.zeros((num_envs, 1), dtype=torch.bool, device=gs.device),
+            "timeout": torch.zeros((num_envs, 1), dtype=torch.bool, device=gs.device),
             "terminated": torch.zeros((num_envs, 1), dtype=torch.bool, device=gs.device),
             "out_reward_red": torch.zeros((num_envs, 1), dtype=torch.float, device=gs.device),
             "out_reward_blue": torch.zeros((num_envs, 1), dtype=torch.float, device=gs.device),
@@ -259,6 +267,7 @@ class GameModel(Model):
         red_fall = red_pos[:, 2:3] < self.cfg.fall_height
         blue_fall = blue_pos[:, 2:3] < self.cfg.fall_height
         timeout = self.time_steps[envs_idx] >= self.cfg.timeout_steps_limit
+        self.cache["timeout"][envs_idx] = timeout
         self.cache["terminated"][envs_idx] = goal_team_red | goal_team_blue | ball_out | red_fall | blue_fall | timeout
 
     def build_observation(self, envs_idx: torch.Tensor, **kwargs
@@ -298,8 +307,12 @@ class GameModel(Model):
         team_name: str,
         attack_goal: torch.Tensor,
         own_pos: torch.Tensor,
+        own_main_vel: torch.Tensor,
+        own_heading: torch.Tensor,
         opp_pos: torch.Tensor,
-        out_reward: torch.Tensor,
+        out_adv_reward: torch.Tensor,
+        ball_out: torch.Tensor,
+        timeout: torch.Tensor,
         goal_for: torch.Tensor,
         goal_against: torch.Tensor,
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
@@ -312,31 +325,51 @@ class GameModel(Model):
         own_ball_dis = torch.norm(ball_pos - own_pos, dim=1, keepdim=True)
         opp_ball_dis = torch.norm(ball_pos - opp_pos, dim=1, keepdim=True)
         rew_possession = opp_ball_dis - own_ball_dis
+        ball_rel = ball_pos - own_pos
+        rew_close_to_ball = (ball_rel * own_main_vel).sum(dim=1, keepdim=True) / (own_ball_dis + 0.1)
+        rew_facing_ball = (own_heading * ball_rel).sum(dim=1, keepdim=True) / (own_ball_dis + 0.1)
+        rew_ball_contact = torch.exp(-own_ball_dis / 0.35)
 
         cmd_now = self.cmd_vel[team_name][envs_idx, -1, :]
         cmd_prev = self.cmd_vel[team_name][envs_idx, 0, :]
-        rew_smooth = torch.exp(-torch.norm(cmd_now - cmd_prev, dim=1, keepdim=True))
+        rew_smooth = -torch.norm(cmd_now - cmd_prev, dim=1, keepdim=True)
+        rew_ball_out_penalty = -ball_out.float() * self.cfg.out_of_field_penalty
+        ball_speed = torch.norm(ball_vel, dim=1, keepdim=True)
+        rew_stall = -(ball_speed < self.cfg.stall_ball_speed_threshold).float()
+        rew_timeout = -timeout.float()
 
         reward_parts = {
             "rew_goal": goal_for.float() * self.cfg.reward_goal,
             "rew_concede": goal_against.float() * self.cfg.reward_concede,
             "rew_ball_progress": rew_ball_progress * self.cfg.reward_ball_progress,
             "rew_possession": rew_possession * self.cfg.reward_possession,
+            "rew_close_to_ball": rew_close_to_ball * self.cfg.reward_close_to_ball,
+            "rew_facing_ball": rew_facing_ball * self.cfg.reward_facing_ball,
+            "rew_ball_contact": rew_ball_contact * self.cfg.reward_ball_contact,
             "rew_smooth": rew_smooth * self.cfg.reward_smooth,
-            "rew_ball_out_distance": out_reward,
+            "rew_ball_out_adv": out_adv_reward,
+            "rew_ball_out_penalty": rew_ball_out_penalty,
+            "rew_stall": rew_stall * self.cfg.reward_stall,
+            "rew_timeout": rew_timeout * self.cfg.reward_timeout,
         }
         return sum(reward_parts.values()), reward_parts # type: ignore[return-value]
 
     def build_reward(self, envs_idx: torch.Tensor, **kwargs
                      ) -> dict[str, torch.Tensor]:  # type: ignore[override]
         self._build_cache(envs_idx=envs_idx, **kwargs)
+        out_adv_red = self.cache["out_reward_red"][envs_idx] - self.cache["out_reward_blue"][envs_idx]
+        out_adv_blue = -out_adv_red
         reward_red, rew_red = self._team_reward(
             envs_idx,
             "red",
             self.goal_pos["red"][envs_idx],
             self.cache["red_pos_2d"][envs_idx],
+            self.cache["red_main_vel_2d"][envs_idx],
+            self.cache["red_heading"][envs_idx],
             self.cache["blue_pos_2d"][envs_idx],
-            self.cache["out_reward_red"][envs_idx],
+            out_adv_red,
+            self.cache["ball_out"][envs_idx],
+            self.cache["timeout"][envs_idx],
             self.cache["goal_team_red"][envs_idx],
             self.cache["goal_team_blue"][envs_idx],
         )
@@ -345,11 +378,30 @@ class GameModel(Model):
             "blue",
             self.goal_pos["blue"][envs_idx],
             self.cache["blue_pos_2d"][envs_idx],
+            self.cache["blue_main_vel_2d"][envs_idx],
+            self.cache["blue_heading"][envs_idx],
             self.cache["red_pos_2d"][envs_idx],
-            self.cache["out_reward_blue"][envs_idx],
+            out_adv_blue,
+            self.cache["ball_out"][envs_idx],
+            self.cache["timeout"][envs_idx],
             self.cache["goal_team_blue"][envs_idx],
             self.cache["goal_team_red"][envs_idx],
         )
+        competitive_dense_keys = (
+            "rew_ball_progress",
+            "rew_possession",
+            "rew_close_to_ball",
+            "rew_facing_ball",
+            "rew_ball_contact",
+            "rew_ball_out_adv",
+        )
+        for key in competitive_dense_keys:
+            adv = rew_red[key] - rew_blue[key]
+            rew_red[key] = 0.5 * adv
+            rew_blue[key] = -0.5 * adv
+
+        reward_red = sum(rew_red.values())
+        reward_blue = sum(rew_blue.values())
         self.rewards = {
             "red": rew_red,
             "blue": rew_blue,
