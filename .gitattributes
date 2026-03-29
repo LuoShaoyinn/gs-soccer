@@ -3,3 +3,8 @@
 *.png filter=lfs diff=lfs merge=lfs -text
 examples/checkpoints filter=lfs diff=lfs merge=lfs -text
 assets/PI/meshes/*.STL filter=lfs diff=lfs merge=lfs -text
+models_ckpt filter=lfs diff=lfs merge=lfs -text
+models_ckpt/pi_policy.pt filter=lfs diff=lfs merge=lfs -text
+models_ckpt/walk_v3_t8.pt filter=lfs diff=lfs merge=lfs -text
+models_ckpt/walk_v5_t5.pt filter=lfs diff=lfs merge=lfs -text
+models_ckpt/walk_v7_t5.pt filter=lfs diff=lfs merge=lfs -text
