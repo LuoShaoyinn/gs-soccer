@@ -50,6 +50,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rollout-steps", type=int, default=16, help="PPO rollout horizon")
     parser.add_argument("--learning-epochs", type=int, default=4, help="PPO learning epochs")
     parser.add_argument("--mini-batches", type=int, default=16, help="PPO mini-batches")
+    parser.add_argument(
+        "--scripted-opponent",
+        choices=("pid", "legacy"),
+        default="pid",
+        help="Scripted opponent used when league member is scripted_bot",
+    )
     parser.add_argument("--headless", action="store_true", help="Force headless mode")
     return parser.parse_args()
 
@@ -119,6 +125,7 @@ def main() -> None:
             rollout_steps=args.rollout_steps,
             learning_epochs=args.learning_epochs,
             mini_batches=args.mini_batches,
+            scripted_opponent=args.scripted_opponent,
             checkpoint_path=f"runs/{args.experiment_name}/checkpoints/best_agent.pt",
             resume=args.resume or eval_mode,
             compile_policy=False,

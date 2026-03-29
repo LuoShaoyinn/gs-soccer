@@ -13,6 +13,7 @@ from skrl.memories.torch import RandomMemory
 from skrl.trainers.torch import SequentialTrainer
 
 from algorithms.algorithm import Algorithm, AlgorithmConfig
+from policies import GoToBallPIDPolicy
 
 
 @dataclass(kw_only=True)
@@ -38,11 +39,18 @@ class AlphaStarEvolutionConfig(AlgorithmConfig):
 
     learner_idx: int = 0
     symmetric_selfplay: bool = True
+    scripted_opponent: str = "pid"
     experiment_name: str = "soccer_1v1_alphastar"
 
 
 class LeagueEnvAdapter:
-    def __init__(self, game_env, learner_idx: int = 0, symmetric_selfplay: bool = True):
+    def __init__(
+        self,
+        game_env,
+        learner_idx: int = 0,
+        symmetric_selfplay: bool = True,
+        scripted_opponent: str = "pid",
+    ):
         self.game_env = game_env
         self.learner_idx = learner_idx
         self.opponent_idx = 1 - learner_idx
@@ -66,6 +74,8 @@ class LeagueEnvAdapter:
                 self._action_mirror_sign = model.action_mirror_sign.to(gs.device)
 
         self._latest_obs: dict[str, torch.Tensor] | None = None
+        self._scripted_policy = GoToBallPIDPolicy(device=gs.device)
+        self._scripted_opponent = scripted_opponent
         self._opponent_fn = self._default_opponent
         self._learner_side_idx = torch.full(
             (self.num_envs,),
@@ -126,11 +136,16 @@ class LeagueEnvAdapter:
         return merged
 
     def _default_opponent(self, obs: torch.Tensor) -> torch.Tensor:
-        action = torch.zeros((obs.shape[0], 3), dtype=torch.float, device=gs.device)
-        ball_rel = obs[:, 9:11]
-        ball_to_goal = obs[:, 13:15]
-        action[:, 0:2] = torch.tanh(1.5 * ball_rel + 0.3 * ball_to_goal)
-        return action
+        if self._scripted_opponent == "legacy":
+            action = torch.zeros((obs.shape[0], 3), dtype=torch.float, device=gs.device)
+            vel_dim = obs.shape[1] - 16
+            ball_rel_start = 2 + vel_dim + 1 + 2 + 2
+            ball_to_goal_start = ball_rel_start + 2 + 2
+            ball_rel = obs[:, ball_rel_start : ball_rel_start + 2]
+            ball_to_goal = obs[:, ball_to_goal_start : ball_to_goal_start + 2]
+            action[:, 0:2] = torch.tanh(1.5 * ball_rel + 0.3 * ball_to_goal)
+            return action
+        return self._scripted_policy.act(obs)
 
     def reset(self):
         obs, info = self.game_env.reset()
@@ -183,6 +198,7 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
             env,
             learner_idx=cfg.learner_idx,
             symmetric_selfplay=cfg.symmetric_selfplay,
+            scripted_opponent=cfg.scripted_opponent,
         )
         super().__init__(self.env_adapter, cfg)
         self.cfg = cfg
