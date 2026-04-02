@@ -43,22 +43,38 @@ class GoToBallPIDPolicy:
         self._int_yaw: torch.Tensor | None = None
 
     def _ensure_state(self, num_envs: int, device: torch.device) -> None:
-        needs_reset = self._prev_forward is None or self._prev_forward.shape[0] != num_envs
+        needs_reset = (
+            self._prev_forward is None or self._prev_forward.shape[0] != num_envs
+        )
         if needs_reset:
-            self._prev_forward = torch.zeros((num_envs, 1), dtype=torch.float, device=device)
-            self._prev_lateral = torch.zeros((num_envs, 1), dtype=torch.float, device=device)
-            self._prev_yaw = torch.zeros((num_envs, 1), dtype=torch.float, device=device)
-            self._int_forward = torch.zeros((num_envs, 1), dtype=torch.float, device=device)
-            self._int_lateral = torch.zeros((num_envs, 1), dtype=torch.float, device=device)
+            self._prev_forward = torch.zeros(
+                (num_envs, 1), dtype=torch.float, device=device
+            )
+            self._prev_lateral = torch.zeros(
+                (num_envs, 1), dtype=torch.float, device=device
+            )
+            self._prev_yaw = torch.zeros(
+                (num_envs, 1), dtype=torch.float, device=device
+            )
+            self._int_forward = torch.zeros(
+                (num_envs, 1), dtype=torch.float, device=device
+            )
+            self._int_lateral = torch.zeros(
+                (num_envs, 1), dtype=torch.float, device=device
+            )
             self._int_yaw = torch.zeros((num_envs, 1), dtype=torch.float, device=device)
 
-    def _parse_obs(self, obs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def _parse_obs(
+        self, obs: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         # Observation layout follows GameModel block order:
         # [self_heading(2), self_vel_2d(2*n), self_ang_z(1), opp_rel_pos(2), opp_rel_vel(2),
         #  ball_rel_pos(2), ball_rel_vel(2), ball_to_goal(2), last_cmd(3)]
         vel_dim = obs.shape[1] - 16
         if vel_dim < 2 or vel_dim % 2 != 0:
-            raise RuntimeError(f"Unsupported observation dim={obs.shape[1]} for GameModel layout")
+            raise RuntimeError(
+                f"Unsupported observation dim={obs.shape[1]} for GameModel layout"
+            )
 
         idx = 0
         heading = obs[:, idx : idx + 2]
@@ -97,9 +113,15 @@ class GoToBallPIDPolicy:
         vel_lateral = -self_vel_world[:, 0:1] * hy + self_vel_world[:, 1:2] * hx
 
         # PID integrators (bounded).
-        self._int_forward = torch.clamp(self._int_forward + rel_forward, -self.integral_limit, self.integral_limit)
-        self._int_lateral = torch.clamp(self._int_lateral + rel_lateral, -self.integral_limit, self.integral_limit)
-        self._int_yaw = torch.clamp(self._int_yaw + yaw_err, -self.integral_limit, self.integral_limit)
+        self._int_forward = torch.clamp(
+            self._int_forward + rel_forward, -self.integral_limit, self.integral_limit
+        )
+        self._int_lateral = torch.clamp(
+            self._int_lateral + rel_lateral, -self.integral_limit, self.integral_limit
+        )
+        self._int_yaw = torch.clamp(
+            self._int_yaw + yaw_err, -self.integral_limit, self.integral_limit
+        )
 
         d_forward = rel_forward - self._prev_forward
         d_lateral = rel_lateral - self._prev_lateral
@@ -117,7 +139,9 @@ class GoToBallPIDPolicy:
             + self.kd_lateral * d_lateral
             - 0.25 * vel_lateral
         )
-        cmd_yaw = self.kp_yaw * yaw_err + self.ki_yaw * self._int_yaw + self.kd_yaw * d_yaw
+        cmd_yaw = (
+            self.kp_yaw * yaw_err + self.ki_yaw * self._int_yaw + self.kd_yaw * d_yaw
+        )
 
         # Near the ball: reduce lateral motion and keep heading stable to avoid orbiting.
         near_mask = (ball_dist < 0.22).float()
@@ -129,3 +153,6 @@ class GoToBallPIDPolicy:
 
         action = torch.cat([cmd_forward, cmd_lateral, cmd_yaw], dim=1)
         return torch.clamp(action, -self.max_cmd, self.max_cmd)
+
+
+Policy = GoToBallPIDPolicy

@@ -140,9 +140,10 @@ Currently always false (zeros) for soccer.
 - `GoToBallPIDPolicy`: orientation-aware go-to-ball policy using the same observation layout
 - used as scripted opponent in AlphaStar flow (`--scripted-opponent pid`)
 
-Legacy scripted baseline:
+`policies/advanced_dribble/`:
 
-- `--scripted-opponent legacy` uses previous heuristic from `ball_rel` + `ball_to_goal`
+- `AdvancedDribblePolicy`: non-RL dribble controller adapted from the mos-brain reference
+- consumes the same `GameModel` concatenated observation (currently hard-coded for 1 robot per team)
 
 ## How to run
 
@@ -165,8 +166,8 @@ python run_soccer_1v1_alphastar.py --eval --headless
 
 ```bash
 python run_soccer_1v1_policies.py \
-  --red-policy pid \
-  --blue-policy legacy \
+  --red-policy go_to_ball_pid \
+  --blue-policy advanced_dribble \
   --num-envs 1
 ```
 
