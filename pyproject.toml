@@ -8,7 +8,7 @@ requires-python = ">=3.12, <3.13"
 dependencies = [
     "torch",
     "gymnasium[classic-control]",
-    "genesis-world==0.4.0",
+    "genesis-world",
     "tensorboard>=2.20.0",
     "skrl[torch]>=1.4.3",
     "ipython>=9.10.0",
@@ -18,7 +18,10 @@ dependencies = [
 [project.optional-dependencies]
 cuda = ["torch", "triton"]
 metal = ["torch"]
-rocm = ["torch<=2.9.1", "triton<=3.6.0", "triton-kernels"]
+rocm = ["torch<=2.9.1", 
+        "triton<=3.6.0", 
+        "triton-kernels", 
+        "genesis-world==0.4.0"]
 
 [tool.uv]
 override-dependencies = [
