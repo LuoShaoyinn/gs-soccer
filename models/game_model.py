@@ -24,11 +24,6 @@ class GameModelConfig(ModelConfig):
     reward_close_to_ball: float = 0.2
     reward_facing_ball: float = 0.1
     reward_ball_contact: float = 0.15
-    reward_smooth: float = 0.05
-    reward_stall: float = 0.03
-    reward_timeout: float = 0.5
-    stall_ball_speed_threshold: float = 0.08
-    out_of_field_reward_scale: float = 0.4
     out_of_field_penalty: float = 0.3
     fall_height: float = 0.28
 
@@ -141,12 +136,6 @@ class GameModel(Model):
             "timeout": torch.zeros((num_envs, 1), dtype=torch.bool, device=gs.device),
             "terminated": torch.zeros(
                 (num_envs, 1), dtype=torch.bool, device=gs.device
-            ),
-            "out_reward_red": torch.zeros(
-                (num_envs, 1), dtype=torch.float, device=gs.device
-            ),
-            "out_reward_blue": torch.zeros(
-                (num_envs, 1), dtype=torch.float, device=gs.device
             ),
         }
         self.rewards: dict[str, dict[str, torch.Tensor]] = {
@@ -320,37 +309,6 @@ class GameModel(Model):
         self.cache["goal_team_blue"][envs_idx] = goal_team_blue
         self.cache["ball_out"][envs_idx] = ball_out
 
-        out_point = torch.stack(
-            [
-                torch.clamp(ball_pos_2d[:, 0], min=-half_x[:, 0], max=half_x[:, 0]),
-                torch.clamp(ball_pos_2d[:, 1], min=-half_y[:, 0], max=half_y[:, 0]),
-            ],
-            dim=1,
-        )
-        max_dist = torch.norm(
-            2.0 * self.half_field_size[envs_idx], dim=1, keepdim=True
-        ).clamp_min(1e-6)
-        out_reward_red = self.cfg.out_of_field_reward_scale * (
-            1.0
-            - torch.norm(
-                out_point - self.goal_pos["red"][envs_idx], dim=1, keepdim=True
-            )
-            / max_dist
-        )
-        out_reward_blue = self.cfg.out_of_field_reward_scale * (
-            1.0
-            - torch.norm(
-                out_point - self.goal_pos["blue"][envs_idx], dim=1, keepdim=True
-            )
-            / max_dist
-        )
-        self.cache["out_reward_red"][envs_idx] = torch.where(
-            ball_out, out_reward_red, torch.zeros_like(out_reward_red)
-        )
-        self.cache["out_reward_blue"][envs_idx] = torch.where(
-            ball_out, out_reward_blue, torch.zeros_like(out_reward_blue)
-        )
-
         red_fall = red_pos[:, 2:3] < self.cfg.fall_height
         blue_fall = blue_pos[:, 2:3] < self.cfg.fall_height
         timeout = self.time_steps[envs_idx] >= self.cfg.timeout_steps_limit
@@ -400,9 +358,7 @@ class GameModel(Model):
         own_main_vel: torch.Tensor,
         own_heading: torch.Tensor,
         opp_pos: torch.Tensor,
-        out_adv_reward: torch.Tensor,
         ball_out: torch.Tensor,
-        timeout: torch.Tensor,
         goal_for: torch.Tensor,
         goal_against: torch.Tensor,
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
@@ -425,14 +381,7 @@ class GameModel(Model):
             own_ball_dis + 0.1
         )
         rew_ball_contact = torch.exp(-own_ball_dis / 0.35)
-
-        cmd_now = self.cmd_vel[team_name][envs_idx, -1, :]
-        cmd_prev = self.cmd_vel[team_name][envs_idx, 0, :]
-        rew_smooth = -torch.norm(cmd_now - cmd_prev, dim=1, keepdim=True)
         rew_ball_out_penalty = -ball_out.float() * self.cfg.out_of_field_penalty
-        ball_speed = torch.norm(ball_vel, dim=1, keepdim=True)
-        rew_stall = -(ball_speed < self.cfg.stall_ball_speed_threshold).float()
-        rew_timeout = -timeout.float()
 
         reward_parts = {
             "rew_goal": goal_for.float() * self.cfg.reward_goal,
@@ -442,21 +391,12 @@ class GameModel(Model):
             "rew_close_to_ball": rew_close_to_ball * self.cfg.reward_close_to_ball,
             "rew_facing_ball": rew_facing_ball * self.cfg.reward_facing_ball,
             "rew_ball_contact": rew_ball_contact * self.cfg.reward_ball_contact,
-            "rew_smooth": rew_smooth * self.cfg.reward_smooth,
-            "rew_ball_out_adv": out_adv_reward,
             "rew_ball_out_penalty": rew_ball_out_penalty,
-            "rew_stall": rew_stall * self.cfg.reward_stall,
-            "rew_timeout": rew_timeout * self.cfg.reward_timeout,
         }
         return sum(reward_parts.values()), reward_parts  # type: ignore[return-value]
 
     def build_reward(self, envs_idx: torch.Tensor, **kwargs) -> dict[str, torch.Tensor]:  # type: ignore[override]
         self._build_cache(envs_idx=envs_idx, **kwargs)
-        out_adv_red = (
-            self.cache["out_reward_red"][envs_idx]
-            - self.cache["out_reward_blue"][envs_idx]
-        )
-        out_adv_blue = -out_adv_red
         reward_red, rew_red = self._team_reward(
             envs_idx,
             "red",
@@ -465,9 +405,7 @@ class GameModel(Model):
             self.cache["red_main_vel_2d"][envs_idx],
             self.cache["red_heading"][envs_idx],
             self.cache["blue_pos_2d"][envs_idx],
-            out_adv_red,
             self.cache["ball_out"][envs_idx],
-            self.cache["timeout"][envs_idx],
             self.cache["goal_team_red"][envs_idx],
             self.cache["goal_team_blue"][envs_idx],
         )
@@ -479,9 +417,7 @@ class GameModel(Model):
             self.cache["blue_main_vel_2d"][envs_idx],
             self.cache["blue_heading"][envs_idx],
             self.cache["red_pos_2d"][envs_idx],
-            out_adv_blue,
             self.cache["ball_out"][envs_idx],
-            self.cache["timeout"][envs_idx],
             self.cache["goal_team_blue"][envs_idx],
             self.cache["goal_team_red"][envs_idx],
         )
@@ -491,7 +427,6 @@ class GameModel(Model):
             "rew_close_to_ball",
             "rew_facing_ball",
             "rew_ball_contact",
-            "rew_ball_out_adv",
         )
         for key in competitive_dense_keys:
             adv = rew_red[key] - rew_blue[key]
@@ -536,4 +471,5 @@ class GameModel(Model):
             "goal_team_red": self.cache["goal_team_red"][envs_idx].detach(),
             "goal_team_blue": self.cache["goal_team_blue"][envs_idx].detach(),
             "ball_out": self.cache["ball_out"][envs_idx].detach(),
+            "timeout": self.cache["timeout"][envs_idx].detach(),
         }

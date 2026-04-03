@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any
 
 import genesis as gs
 import torch
@@ -48,6 +49,7 @@ class AlphaStarEvolutionConfig(AlgorithmConfig):
     cold_boot_steps: int = 400
     cold_boot_batch_size: int = 4096
     cold_boot_lr: float = 1e-3
+    baseline_policy: str = "advanced_dribble"
     experiment_name: str = "soccer_1v1_alphastar"
 
 
@@ -271,6 +273,7 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
         self.run_dir = Path(cfg.experiment_directory) / cfg.experiment_name
         self.checkpoint_dir = self.run_dir / "checkpoints"
         self.league_dir = self.run_dir / "league"
+        self.metrics_path = self.run_dir / "metrics.jsonl"
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
         self.league_dir.mkdir(parents=True, exist_ok=True)
 
@@ -444,6 +447,10 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
     def _save_learner_policy(self, path: Path) -> None:
         torch.save(self.agent.policy.state_dict(), path)
 
+    def _append_metrics(self, payload: dict[str, Any]) -> None:
+        with self.metrics_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(payload) + "\n")
+
     def _set_opponent(self, member: LeagueMember) -> None:
         if member.policy_module is not None:
             if member.policy_module not in self._policy_opponents:
@@ -489,13 +496,19 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
 
     def _eval_vs_opponent(
         self, opponent: LeagueMember, episodes: int
-    ) -> tuple[float, float]:
+    ) -> dict[str, float]:
         self._set_opponent(opponent)
         self.agent.policy.eval()  # type: ignore[union-attr]
 
         wins = 0.0
+        losses = 0.0
+        draws = 0.0
         games = 0.0
         rewards = 0.0
+        ball_out_count = 0.0
+        timeout_count = 0.0
+        goal_for_count = 0.0
+        goal_against_count = 0.0
         obs, _ = self.env.reset()
 
         with torch.no_grad():
@@ -519,12 +532,40 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
                         goal_blue,
                         goal_red,
                     )[mask].float()
+                    ball_out = info["ball_out"][mask].float()
+                    timeout = info["timeout"][mask].float()
+                    game_draw = (goal_for == goal_against).float()
                     wins += float((goal_for > goal_against).float().sum().item())
+                    losses += float((goal_for < goal_against).float().sum().item())
+                    draws += float(game_draw.sum().item())
+                    ball_out_count += float(ball_out.sum().item())
+                    timeout_count += float(timeout.sum().item())
+                    goal_for_count += float(goal_for.sum().item())
+                    goal_against_count += float(goal_against.sum().item())
                     games += float(mask.sum().item())
 
-        win_rate = wins / max(games, 1.0)
-        avg_reward = rewards / max(games, 1.0)
-        return win_rate, avg_reward
+        denom = max(games, 1.0)
+        return {
+            "win_rate": wins / denom,
+            "loss_rate": losses / denom,
+            "draw_rate": draws / denom,
+            "avg_reward": rewards / denom,
+            "ball_out_rate": ball_out_count / denom,
+            "timeout_rate": timeout_count / denom,
+            "goal_for_rate": goal_for_count / denom,
+            "goal_against_rate": goal_against_count / denom,
+            "games": games,
+        }
+
+    def _evaluate_scripted_baselines(self) -> dict[str, dict[str, float]]:
+        results: dict[str, dict[str, float]] = {}
+        for member in self.league:
+            if member.policy_module is None:
+                continue
+            results[member.policy_module] = self._eval_vs_opponent(
+                member, self.cfg.eval_episodes
+            )
+        return results
 
     def _update_elo(self, opponent: LeagueMember, win_rate: float) -> None:
         k = 24.0
@@ -573,10 +614,26 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
             trainer = self._trainer(self.cfg.train_timesteps_per_generation)
             trainer.train()
 
-            win_rate, avg_reward = self._eval_vs_opponent(
-                opponent, self.cfg.eval_episodes
-            )
+            eval_stats = self._eval_vs_opponent(opponent, self.cfg.eval_episodes)
+            win_rate = eval_stats["win_rate"]
             self._update_elo(opponent, win_rate)
+            baseline_stats = self._evaluate_scripted_baselines()
+            baseline_wr = baseline_stats.get(
+                self.cfg.baseline_policy,
+                {"win_rate": float("nan")},
+            )["win_rate"]
+
+            self._append_metrics(
+                {
+                    "generation": generation,
+                    "opponent": opponent.name,
+                    "opponent_eval": eval_stats,
+                    "baseline": self.cfg.baseline_policy,
+                    "baseline_win_rate": baseline_wr,
+                    "baselines": baseline_stats,
+                    "league_size": len(self.league),
+                }
+            )
 
             should_promote = (generation % self.cfg.snapshot_interval == 0) or (
                 win_rate >= self.cfg.promote_win_rate
@@ -587,13 +644,16 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
                 )
                 print(
                     f"[Gen {generation}] promoted={member.name} opponent={opponent.name} "
-                    f"win_rate={win_rate:.3f} avg_reward={avg_reward:.3f} league_size={len(self.league)}"
+                    f"win={eval_stats['win_rate']:.3f} draw={eval_stats['draw_rate']:.3f} "
+                    f"loss={eval_stats['loss_rate']:.3f} out={eval_stats['ball_out_rate']:.3f} "
+                    f"base({self.cfg.baseline_policy})={baseline_wr:.3f} league_size={len(self.league)}"
                 )
             else:
                 self._save_learner_policy(self.checkpoint_dir / "last_agent.pt")
                 print(
-                    f"[Gen {generation}] opponent={opponent.name} win_rate={win_rate:.3f} "
-                    f"avg_reward={avg_reward:.3f}"
+                    f"[Gen {generation}] opponent={opponent.name} win={eval_stats['win_rate']:.3f} "
+                    f"draw={eval_stats['draw_rate']:.3f} loss={eval_stats['loss_rate']:.3f} "
+                    f"out={eval_stats['ball_out_rate']:.3f} base({self.cfg.baseline_policy})={baseline_wr:.3f}"
                 )
 
     def eval(self) -> None:
@@ -608,7 +668,9 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
             self.agent.policy = torch.compile(self.agent.policy)  # type: ignore[assignment]
 
         opponent = self.league[0] if len(self.league) == 1 else self.league[-1]
-        win_rate, avg_reward = self._eval_vs_opponent(opponent, self.cfg.eval_episodes)
+        eval_stats = self._eval_vs_opponent(opponent, self.cfg.eval_episodes)
         print(
-            f"[Eval] opponent={opponent.name} win_rate={win_rate:.3f} avg_reward={avg_reward:.3f}"
+            f"[Eval] opponent={opponent.name} win={eval_stats['win_rate']:.3f} "
+            f"draw={eval_stats['draw_rate']:.3f} loss={eval_stats['loss_rate']:.3f} "
+            f"out={eval_stats['ball_out_rate']:.3f} avg_reward={eval_stats['avg_reward']:.3f}"
         )

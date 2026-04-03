@@ -92,6 +92,12 @@ def parse_args() -> argparse.Namespace:
         help="Explicit checkpoint path for IL warm start",
     )
     parser.add_argument(
+        "--baseline-policy",
+        choices=policy_modules,
+        default="advanced_dribble",
+        help="Scripted baseline to report win rate against each generation",
+    )
+    parser.add_argument(
         "--cold-boot-steps", type=int, default=400, help="Distillation rollout steps"
     )
     parser.add_argument("--headless", action="store_true", help="Force headless mode")
@@ -167,6 +173,7 @@ def main() -> None:
             cold_boot_experiment_name=args.cold_boot_experiment,
             cold_boot_checkpoint_path=args.cold_boot_checkpoint or None,
             cold_boot_steps=args.cold_boot_steps,
+            baseline_policy=args.baseline_policy,
             checkpoint_path=f"runs/{args.experiment_name}/checkpoints/best_agent.pt",
             resume=args.resume or eval_mode,
             compile_policy=False,
