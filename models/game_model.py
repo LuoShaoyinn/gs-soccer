@@ -166,7 +166,10 @@ class GameModel(Model):
         self.cache_valid[:] = False
         processed: dict[str, torch.Tensor] = {}
         for name in self.team_names:
-            cmd = torch.clamp(action[name], -1.0, 1.0)
+            cmd = action[name]
+            cmd_lin = torch.clamp(cmd[:, 0:2], -1.0, 1.0)
+            cmd_yaw = torch.clamp(cmd[:, 2:3], -1.0, 1.0)
+            cmd = torch.cat([cmd_lin, cmd_yaw], dim=1)
             self.cmd_vel[name][:, -1, :] = cmd
             processed[name] = cmd * self.action_scale
         self.time_steps += 1.0

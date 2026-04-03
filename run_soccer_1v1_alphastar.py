@@ -2,11 +2,15 @@ import argparse
 import numpy as np
 import genesis as gs
 
-from algorithms.alphastar_evolution import AlphaStarEvolutionAlgorithm, AlphaStarEvolutionConfig
+from algorithms.alphastar_evolution import (
+    AlphaStarEvolutionAlgorithm,
+    AlphaStarEvolutionConfig,
+)
 from envs.game import GameEnv, GameEnvConfig
 from fields.soccer_field import SoccerField, SoccerFieldConfig
 from models.pi_walk_model import PIWalkModel, PIWalkModelConfig
 from models.game_model import GameModel, GameModelConfig
+from policies import available_policy_modules
 from robots.controlled_robot import ControlledRobotWrapper, ControlledRobotWrapperConfig
 from robots.pi import PI, PIConfig
 
@@ -39,22 +43,56 @@ PI_TARGET_Q_OFFSET = np.array(
 
 
 def parse_args() -> argparse.Namespace:
+    policy_modules = available_policy_modules()
     parser = argparse.ArgumentParser()
     parser.add_argument("--eval", action="store_true", help="Run evaluation mode")
     parser.add_argument("--resume", action="store_true", help="Resume from checkpoint")
-    parser.add_argument("--experiment-name", default="soccer_1v1_alphastar", help="Experiment name under runs/")
-    parser.add_argument("--num-envs", type=int, default=8192, help="Number of vectorized envs")
-    parser.add_argument("--generations", type=int, default=8, help="League training generations")
-    parser.add_argument("--timesteps-per-gen", type=int, default=131072, help="Training timesteps each generation")
-    parser.add_argument("--eval-episodes", type=int, default=32, help="Evaluation episodes per matchup")
-    parser.add_argument("--rollout-steps", type=int, default=16, help="PPO rollout horizon")
-    parser.add_argument("--learning-epochs", type=int, default=4, help="PPO learning epochs")
+    parser.add_argument(
+        "--experiment-name",
+        default="soccer_1v1_alphastar",
+        help="Experiment name under runs/",
+    )
+    parser.add_argument(
+        "--num-envs", type=int, default=8192, help="Number of vectorized envs"
+    )
+    parser.add_argument(
+        "--generations", type=int, default=8, help="League training generations"
+    )
+    parser.add_argument(
+        "--timesteps-per-gen",
+        type=int,
+        default=131072,
+        help="Training timesteps each generation",
+    )
+    parser.add_argument(
+        "--eval-episodes", type=int, default=32, help="Evaluation episodes per matchup"
+    )
+    parser.add_argument(
+        "--rollout-steps", type=int, default=16, help="PPO rollout horizon"
+    )
+    parser.add_argument(
+        "--learning-epochs", type=int, default=4, help="PPO learning epochs"
+    )
     parser.add_argument("--mini-batches", type=int, default=16, help="PPO mini-batches")
     parser.add_argument(
-        "--scripted-opponent",
-        choices=("pid", "legacy"),
-        default="pid",
-        help="Scripted opponent used when league member is scripted_bot",
+        "--league-policies",
+        nargs="+",
+        choices=policy_modules,
+        default=["advanced_dribble", "go_to_ball_pid", "zero"],
+        help="Policy modules used as scripted league members",
+    )
+    parser.add_argument(
+        "--cold-boot-experiment",
+        default="dribble_1v1_il",
+        help="Experiment name under runs/ for IL warm start",
+    )
+    parser.add_argument(
+        "--cold-boot-checkpoint",
+        default="",
+        help="Explicit checkpoint path for IL warm start",
+    )
+    parser.add_argument(
+        "--cold-boot-steps", type=int, default=400, help="Distillation rollout steps"
     )
     parser.add_argument("--headless", action="store_true", help="Force headless mode")
     return parser.parse_args()
@@ -125,7 +163,10 @@ def main() -> None:
             rollout_steps=args.rollout_steps,
             learning_epochs=args.learning_epochs,
             mini_batches=args.mini_batches,
-            scripted_opponent=args.scripted_opponent,
+            league_policies=tuple(args.league_policies),
+            cold_boot_experiment_name=args.cold_boot_experiment,
+            cold_boot_checkpoint_path=args.cold_boot_checkpoint or None,
+            cold_boot_steps=args.cold_boot_steps,
             checkpoint_path=f"runs/{args.experiment_name}/checkpoints/best_agent.pt",
             resume=args.resume or eval_mode,
             compile_policy=False,

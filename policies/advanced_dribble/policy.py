@@ -21,6 +21,7 @@ class AdvancedDribblePolicy:
         dribble_dist: float = 0.20,
         max_linear: float = 1.0,
         max_angular: float = 1.0,
+        raw_speed_scale: float = 1.35,
         min_push_aligned: float = 0.75,
         min_creep_factor: float = 0.2,
         align_y_thresh: float = 0.10,
@@ -41,6 +42,7 @@ class AdvancedDribblePolicy:
         self.dribble_dist = dribble_dist
         self.max_linear = max_linear
         self.max_angular = max_angular
+        self.raw_speed_scale = raw_speed_scale
         self.min_push_aligned = min_push_aligned
         self.min_creep_factor = min_creep_factor
         self.align_y_thresh = align_y_thresh
@@ -180,6 +182,7 @@ class AdvancedDribblePolicy:
         lin_norm = torch.norm(lin, dim=1, keepdim=True).clamp_min(self.eps)
         scale = torch.clamp(self.max_linear / lin_norm, max=1.0)
         lin = lin * scale
+        lin = lin * self.raw_speed_scale
 
         cmd_w = torch.clamp(cmd_w, -self.max_angular, self.max_angular)
         raw_action = torch.cat([lin, cmd_w], dim=1)

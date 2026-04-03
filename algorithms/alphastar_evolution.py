@@ -6,6 +6,8 @@ from pathlib import Path
 
 import genesis as gs
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 from network import Policy, Value
 from skrl.agents.torch.ppo import PPO, PPO_DEFAULT_CONFIG
@@ -13,13 +15,14 @@ from skrl.memories.torch import RandomMemory
 from skrl.trainers.torch import SequentialTrainer
 
 from algorithms.algorithm import Algorithm, AlgorithmConfig
-from policies import GoToBallPIDPolicy
+from policies import build_policy
 
 
 @dataclass(kw_only=True)
 class LeagueMember:
     name: str
     checkpoint_path: str | None
+    policy_module: str | None = None
     elo: float = 1200.0
     games: int = 0
 
@@ -39,7 +42,12 @@ class AlphaStarEvolutionConfig(AlgorithmConfig):
 
     learner_idx: int = 0
     symmetric_selfplay: bool = True
-    scripted_opponent: str = "pid"
+    league_policies: tuple[str, ...] = ("advanced_dribble", "go_to_ball_pid", "zero")
+    cold_boot_experiment_name: str | None = None
+    cold_boot_checkpoint_path: str | None = None
+    cold_boot_steps: int = 400
+    cold_boot_batch_size: int = 4096
+    cold_boot_lr: float = 1e-3
     experiment_name: str = "soccer_1v1_alphastar"
 
 
@@ -49,7 +57,6 @@ class LeagueEnvAdapter:
         game_env,
         learner_idx: int = 0,
         symmetric_selfplay: bool = True,
-        scripted_opponent: str = "pid",
     ):
         self.game_env = game_env
         self.learner_idx = learner_idx
@@ -60,12 +67,18 @@ class LeagueEnvAdapter:
         self.num_envs = game_env.num_envs
         self.num_agents = 1
         self.is_vector_env = True
-        self.observation_space = game_env.observation_space[self.team_names[self.learner_idx]]
+        self.observation_space = game_env.observation_space[
+            self.team_names[self.learner_idx]
+        ]
         self.action_space = game_env.action_space[self.team_names[self.learner_idx]]
         obs_dim = int(self.observation_space.shape[0])
         action_dim = int(self.action_space.shape[0])
-        self._obs_mirror_sign = torch.ones((obs_dim,), dtype=torch.float, device=gs.device)
-        self._action_mirror_sign = torch.ones((action_dim,), dtype=torch.float, device=gs.device)
+        self._obs_mirror_sign = torch.ones(
+            (obs_dim,), dtype=torch.float, device=gs.device
+        )
+        self._action_mirror_sign = torch.ones(
+            (action_dim,), dtype=torch.float, device=gs.device
+        )
         if hasattr(game_env, "model"):
             model = game_env.model
             if hasattr(model, "obs_mirror_sign"):
@@ -74,8 +87,6 @@ class LeagueEnvAdapter:
                 self._action_mirror_sign = model.action_mirror_sign.to(gs.device)
 
         self._latest_obs: dict[str, torch.Tensor] | None = None
-        self._scripted_policy = GoToBallPIDPolicy(device=gs.device)
-        self._scripted_opponent = scripted_opponent
         self._opponent_fn = self._default_opponent
         self._learner_side_idx = torch.full(
             (self.num_envs,),
@@ -103,22 +114,30 @@ class LeagueEnvAdapter:
     def _mirror_obs(self, obs: torch.Tensor) -> torch.Tensor:
         return obs * self._obs_mirror_sign.unsqueeze(0)
 
-    def _canonical_to_env_action(self, action: torch.Tensor, side_idx: torch.Tensor) -> torch.Tensor:
+    def _canonical_to_env_action(
+        self, action: torch.Tensor, side_idx: torch.Tensor
+    ) -> torch.Tensor:
         env_action = action.clone()
         side1_mask = side_idx == 1
         if side1_mask.any():
-            env_action[side1_mask] = env_action[side1_mask] * self._action_mirror_sign.unsqueeze(0)
+            env_action[side1_mask] = env_action[
+                side1_mask
+            ] * self._action_mirror_sign.unsqueeze(0)
         return env_action
 
     @staticmethod
-    def _select_dict_by_side(values: dict[str, torch.Tensor], side_idx: torch.Tensor) -> torch.Tensor:
+    def _select_dict_by_side(
+        values: dict[str, torch.Tensor], side_idx: torch.Tensor
+    ) -> torch.Tensor:
         selected = values["red"].clone()
         side1_mask = side_idx == 1
         if side1_mask.any():
             selected[side1_mask] = values["blue"][side1_mask]
         return selected
 
-    def _canonical_obs_from_side(self, obs: dict[str, torch.Tensor], side_idx: torch.Tensor) -> torch.Tensor:
+    def _canonical_obs_from_side(
+        self, obs: dict[str, torch.Tensor], side_idx: torch.Tensor
+    ) -> torch.Tensor:
         canonical = self._select_dict_by_side(obs, side_idx)
         side1_mask = side_idx == 1
         if side1_mask.any():
@@ -136,16 +155,7 @@ class LeagueEnvAdapter:
         return merged
 
     def _default_opponent(self, obs: torch.Tensor) -> torch.Tensor:
-        if self._scripted_opponent == "legacy":
-            action = torch.zeros((obs.shape[0], 3), dtype=torch.float, device=gs.device)
-            vel_dim = obs.shape[1] - 16
-            ball_rel_start = 2 + vel_dim + 1 + 2 + 2
-            ball_to_goal_start = ball_rel_start + 2 + 2
-            ball_rel = obs[:, ball_rel_start : ball_rel_start + 2]
-            ball_to_goal = obs[:, ball_to_goal_start : ball_to_goal_start + 2]
-            action[:, 0:2] = torch.tanh(1.5 * ball_rel + 0.3 * ball_to_goal)
-            return action
-        return self._scripted_policy.act(obs)
+        return torch.zeros((obs.shape[0], 3), dtype=torch.float, device=gs.device)
 
     def reset(self):
         obs, info = self.game_env.reset()
@@ -159,22 +169,38 @@ class LeagueEnvAdapter:
             raise RuntimeError("Call reset() before step()")
         learner_side_idx = self._learner_side_idx.clone()
         opponent_side_idx = 1 - learner_side_idx
-        opponent_obs = self._canonical_obs_from_side(self._latest_obs, opponent_side_idx)
+        opponent_obs = self._canonical_obs_from_side(
+            self._latest_obs, opponent_side_idx
+        )
         with torch.no_grad():
             opponent_action = self._opponent_fn(opponent_obs)
 
-        learner_action_env = self._canonical_to_env_action(learner_action, learner_side_idx)
-        opponent_action_env = self._canonical_to_env_action(opponent_action, opponent_side_idx)
+        learner_action_env = self._canonical_to_env_action(
+            learner_action, learner_side_idx
+        )
+        opponent_action_env = self._canonical_to_env_action(
+            opponent_action, opponent_side_idx
+        )
         learner_is_team_red = learner_side_idx == 0
         actions = {
-            "red": torch.where(learner_is_team_red.unsqueeze(1), learner_action_env, opponent_action_env),
-            "blue": torch.where(learner_is_team_red.unsqueeze(1), opponent_action_env, learner_action_env),
+            "red": torch.where(
+                learner_is_team_red.unsqueeze(1),
+                learner_action_env,
+                opponent_action_env,
+            ),
+            "blue": torch.where(
+                learner_is_team_red.unsqueeze(1),
+                opponent_action_env,
+                learner_action_env,
+            ),
         }
         obs, reward, terminated, truncated, info = self.game_env.step(actions)
         learner_reward = self._select_dict_by_side(reward, learner_side_idx)
         learner_terminated = self._select_dict_by_side(terminated, learner_side_idx)
         learner_truncated = self._select_dict_by_side(truncated, learner_side_idx)
-        learner_done = torch.logical_or(learner_terminated, learner_truncated).squeeze(1)
+        learner_done = torch.logical_or(learner_terminated, learner_truncated).squeeze(
+            1
+        )
 
         if learner_done.any():
             done_envs = torch.nonzero(learner_done, as_tuple=False).squeeze(1)
@@ -198,14 +224,17 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
             env,
             learner_idx=cfg.learner_idx,
             symmetric_selfplay=cfg.symmetric_selfplay,
-            scripted_opponent=cfg.scripted_opponent,
         )
         super().__init__(self.env_adapter, cfg)
         self.cfg = cfg
 
         self.models = {
-            "policy": Policy(self.env.observation_space, self.env.action_space, cfg.device),
-            "value": Value(self.env.observation_space, self.env.action_space, cfg.device),
+            "policy": Policy(
+                self.env.observation_space, self.env.action_space, cfg.device
+            ),
+            "value": Value(
+                self.env.observation_space, self.env.action_space, cfg.device
+            ),
         }
         for model in self.models.values():
             model.init_parameters(
@@ -245,15 +274,155 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
         self.league_dir.mkdir(parents=True, exist_ok=True)
 
-        self.league: list[LeagueMember] = [LeagueMember(name="scripted_bot", checkpoint_path=None, elo=1000.0)]
+        self.league: list[LeagueMember] = [
+            LeagueMember(
+                name=f"policy:{module}",
+                checkpoint_path=None,
+                policy_module=module,
+                elo=1000.0,
+            )
+            for module in cfg.league_policies
+        ]
         self.best_eval_win_rate = -1.0
+        self._policy_opponents: dict[str, object] = {}
 
         if cfg.resume and cfg.checkpoint_path and Path(cfg.checkpoint_path).exists():
             self.agent.load(cfg.checkpoint_path)  # type: ignore[arg-type]
             print(f"Loaded learner from {cfg.checkpoint_path}")
 
-        self._opponent_model = Policy(self.env.observation_space, self.env.action_space, cfg.device).to(gs.device)
+        self._cold_boot_from_il_if_available()
+
+        self._opponent_model = Policy(
+            self.env.observation_space, self.env.action_space, cfg.device
+        ).to(gs.device)
         self._opponent_model.eval()
+
+    def _resolve_cold_boot_path(self) -> Path | None:
+        if self.cfg.cold_boot_checkpoint_path:
+            path = Path(self.cfg.cold_boot_checkpoint_path)
+            return path if path.exists() else None
+        if self.cfg.cold_boot_experiment_name:
+            path = (
+                Path(self.cfg.experiment_directory)
+                / self.cfg.cold_boot_experiment_name
+                / "checkpoints"
+                / "latest.pt"
+            )
+            return path if path.exists() else None
+        return None
+
+    @staticmethod
+    def _extract_policy_state_dict(ckpt_obj) -> dict[str, torch.Tensor] | None:
+        if isinstance(ckpt_obj, dict):
+            if all(
+                isinstance(k, str) and k.startswith("net.") for k in ckpt_obj.keys()
+            ):
+                return ckpt_obj
+            for key in ("policy", "policy_state_dict", "state_dict"):
+                value = ckpt_obj.get(key)
+                if isinstance(value, dict):
+                    return value
+        return None
+
+    def _cold_boot_from_il_if_available(self) -> None:
+        if self.cfg.resume:
+            return
+        path = self._resolve_cold_boot_path()
+        if path is None:
+            return
+
+        try:
+            ckpt = torch.load(path, map_location=gs.device)
+            policy_state = self._extract_policy_state_dict(ckpt)
+            if policy_state is not None:
+                try:
+                    missing, unexpected = self.agent.policy.load_state_dict(
+                        policy_state, strict=False
+                    )
+                    if len(missing) == 0 and len(unexpected) == 0:
+                        print(f"Cold boot: loaded policy weights from {path}")
+                        return
+                    print(
+                        "Cold boot: partial direct load from "
+                        f"{path} (missing={len(missing)}, unexpected={len(unexpected)}), running distillation"
+                    )
+                except Exception as exc:
+                    print(
+                        f"Cold boot: direct load failed ({exc}), running distillation"
+                    )
+            self._distill_from_checkpoint(path)
+        except Exception as exc:
+            print(f"Cold boot skipped: failed to load {path}: {exc}")
+
+    def _distill_from_checkpoint(self, path: Path) -> None:
+        class _TeacherBC(nn.Module):
+            def __init__(self, obs_dim: int, act_dim: int):
+                super().__init__()
+                self.net = nn.Sequential(
+                    nn.Linear(obs_dim, 256),
+                    nn.LayerNorm(256),
+                    nn.ELU(),
+                    nn.Linear(256, 256),
+                    nn.LayerNorm(256),
+                    nn.ELU(),
+                    nn.Linear(256, act_dim),
+                    nn.Tanh(),
+                )
+
+            def forward(self, obs: torch.Tensor) -> torch.Tensor:
+                return self.net(obs)
+
+        obs_dim = int(self.env.observation_space.shape[0])
+        act_dim = int(self.env.action_space.shape[0])
+        teacher = _TeacherBC(obs_dim=obs_dim, act_dim=act_dim).to(gs.device)
+        state = torch.load(path, map_location=gs.device)
+        teacher_state = self._extract_policy_state_dict(state)
+        if teacher_state is None:
+            raise RuntimeError("checkpoint does not contain BC-compatible state dict")
+        teacher.load_state_dict(teacher_state)
+        teacher.eval()
+
+        opponent_member = next(
+            (m for m in self.league if m.policy_module == "zero"),
+            self.league[0],
+        )
+        self._set_opponent(opponent_member)
+
+        optimizer = torch.optim.Adam(
+            self.agent.policy.parameters(), lr=self.cfg.cold_boot_lr
+        )
+        obs, _ = self.env.reset()
+        steps = max(1, int(self.cfg.cold_boot_steps))
+        batch_size = max(32, int(self.cfg.cold_boot_batch_size))
+
+        replay_obs = torch.zeros(
+            (steps * self.env.num_envs, obs_dim), dtype=torch.float, device=gs.device
+        )
+        replay_act = torch.zeros(
+            (steps * self.env.num_envs, act_dim), dtype=torch.float, device=gs.device
+        )
+        ptr = 0
+        with torch.no_grad():
+            for _ in range(steps):
+                teacher_act = teacher(obs)
+                replay_obs[ptr : ptr + obs.shape[0]] = obs
+                replay_act[ptr : ptr + obs.shape[0]] = teacher_act
+                obs, _, _, _, _ = self.env.step(teacher_act)
+                ptr += obs.shape[0]
+
+        updates = max(1, (ptr // batch_size) * 2)
+        self.agent.policy.train()  # type: ignore[union-attr]
+        for _ in range(updates):
+            idx = torch.randint(0, ptr, (batch_size,), device=gs.device)
+            batch_obs = replay_obs[idx]
+            batch_act = replay_act[idx]
+            pred = self.agent.policy.net(batch_obs)  # type: ignore[union-attr]
+            loss = F.mse_loss(pred, batch_act)
+            optimizer.zero_grad(set_to_none=True)
+            loss.backward()
+            optimizer.step()
+        self.agent.policy.eval()  # type: ignore[union-attr]
+        print(f"Cold boot: distilled learner from {path} with {updates} updates")
 
     def _trainer(self, timesteps: int) -> SequentialTrainer:
         trainer_cfg = {
@@ -268,12 +437,27 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
 
     def _save_league(self) -> None:
         payload = [asdict(member) for member in self.league]
-        self._league_meta_path().write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        self._league_meta_path().write_text(
+            json.dumps(payload, indent=2), encoding="utf-8"
+        )
 
     def _save_learner_policy(self, path: Path) -> None:
         torch.save(self.agent.policy.state_dict(), path)
 
     def _set_opponent(self, member: LeagueMember) -> None:
+        if member.policy_module is not None:
+            if member.policy_module not in self._policy_opponents:
+                self._policy_opponents[member.policy_module] = build_policy(
+                    member.policy_module, device=gs.device
+                )
+            policy_obj = self._policy_opponents[member.policy_module]
+
+            def opponent_fn(obs: torch.Tensor) -> torch.Tensor:
+                return policy_obj.act(obs)
+
+            self.env_adapter.set_opponent_sampler(opponent_fn)
+            return
+
         if member.checkpoint_path is None:
             self.env_adapter.set_opponent_sampler(self.env_adapter._default_opponent)
             return
@@ -294,13 +478,18 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
         learner_elo = 1200.0 + 15.0 * len(self.league)
         scores = []
         for member in self.league:
-            scores.append(torch.exp(torch.tensor(-abs(member.elo - learner_elo) / 350.0)).item() + 0.05)
+            scores.append(
+                torch.exp(torch.tensor(-abs(member.elo - learner_elo) / 350.0)).item()
+                + 0.05
+            )
         probs = torch.tensor(scores, dtype=torch.float)
         probs = probs / probs.sum()
         idx = torch.multinomial(probs, num_samples=1).item()
         return self.league[idx]
 
-    def _eval_vs_opponent(self, opponent: LeagueMember, episodes: int) -> tuple[float, float]:
+    def _eval_vs_opponent(
+        self, opponent: LeagueMember, episodes: int
+    ) -> tuple[float, float]:
         self._set_opponent(opponent)
         self.agent.policy.eval()  # type: ignore[union-attr]
 
@@ -347,14 +536,24 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
     def _promote_snapshot(self, generation: int, eval_win_rate: float) -> LeagueMember:
         path = self.league_dir / f"gen_{generation:04d}.pt"
         self._save_learner_policy(path)
-        member = LeagueMember(name=f"gen_{generation:04d}", checkpoint_path=str(path), elo=1200.0 + 8.0 * generation)
+        member = LeagueMember(
+            name=f"gen_{generation:04d}",
+            checkpoint_path=str(path),
+            elo=1200.0 + 8.0 * generation,
+        )
         self.league.append(member)
 
         if len(self.league) > self.cfg.max_league_size:
-            scripted = [member for member in self.league if member.checkpoint_path is None]
-            snapshots = [member for member in self.league if member.checkpoint_path is not None]
+            scripted = [
+                member for member in self.league if member.checkpoint_path is None
+            ]
+            snapshots = [
+                member for member in self.league if member.checkpoint_path is not None
+            ]
             snapshots.sort(key=lambda item: item.elo, reverse=True)
-            self.league = scripted + snapshots[: self.cfg.max_league_size - len(scripted)]
+            self.league = (
+                scripted + snapshots[: self.cfg.max_league_size - len(scripted)]
+            )
 
         if eval_win_rate > self.best_eval_win_rate:
             self.best_eval_win_rate = eval_win_rate
@@ -374,12 +573,18 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
             trainer = self._trainer(self.cfg.train_timesteps_per_generation)
             trainer.train()
 
-            win_rate, avg_reward = self._eval_vs_opponent(opponent, self.cfg.eval_episodes)
+            win_rate, avg_reward = self._eval_vs_opponent(
+                opponent, self.cfg.eval_episodes
+            )
             self._update_elo(opponent, win_rate)
 
-            should_promote = (generation % self.cfg.snapshot_interval == 0) or (win_rate >= self.cfg.promote_win_rate)
+            should_promote = (generation % self.cfg.snapshot_interval == 0) or (
+                win_rate >= self.cfg.promote_win_rate
+            )
             if should_promote:
-                member = self._promote_snapshot(generation=generation, eval_win_rate=win_rate)
+                member = self._promote_snapshot(
+                    generation=generation, eval_win_rate=win_rate
+                )
                 print(
                     f"[Gen {generation}] promoted={member.name} opponent={opponent.name} "
                     f"win_rate={win_rate:.3f} avg_reward={avg_reward:.3f} league_size={len(self.league)}"
@@ -392,7 +597,9 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
                 )
 
     def eval(self) -> None:
-        checkpoint = self.cfg.checkpoint_path or str(self.checkpoint_dir / "best_agent.pt")
+        checkpoint = self.cfg.checkpoint_path or str(
+            self.checkpoint_dir / "best_agent.pt"
+        )
         if Path(checkpoint).exists():
             self.agent.load(checkpoint)  # type: ignore[arg-type]
             print(f"Loaded eval policy from {checkpoint}")
@@ -402,4 +609,6 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
 
         opponent = self.league[0] if len(self.league) == 1 else self.league[-1]
         win_rate, avg_reward = self._eval_vs_opponent(opponent, self.cfg.eval_episodes)
-        print(f"[Eval] opponent={opponent.name} win_rate={win_rate:.3f} avg_reward={avg_reward:.3f}")
+        print(
+            f"[Eval] opponent={opponent.name} win_rate={win_rate:.3f} avg_reward={avg_reward:.3f}"
+        )

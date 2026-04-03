@@ -244,7 +244,7 @@ def main() -> None:
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
-    gs.init(backend=gs.gpu, performance_mode=True, logging_level="warning")
+    gs.init(backend=gs.cpu, performance_mode=True, logging_level="warning")
 
     eval_mode = args.eval
     env = make_env(
