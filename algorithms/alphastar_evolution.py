@@ -150,11 +150,7 @@ class LeagueEnvAdapter:
     def _merge_extra_info(extra: dict[str, dict]) -> dict:
         if not isinstance(extra, dict) or "red" not in extra or "blue" not in extra:
             return {}
-        keys = set(extra["red"].keys()) & set(extra["blue"].keys())
-        merged = {}
-        for key in keys:
-            merged[key] = 0.5 * (extra["red"][key] + extra["blue"][key])
-        return merged
+        return dict(extra["red"])
 
     def _default_opponent(self, obs: torch.Tensor) -> torch.Tensor:
         return torch.zeros((obs.shape[0], 3), dtype=torch.float, device=gs.device)
