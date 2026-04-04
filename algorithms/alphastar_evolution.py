@@ -287,7 +287,9 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
             for module in cfg.league_policies
         ]
         self.best_eval_win_rate = -1.0
+        self.best_baseline_win_rate = -1.0
         self._policy_opponents: dict[str, object] = {}
+        self._reward_terms_logged = False
 
         if cfg.resume and cfg.checkpoint_path and Path(cfg.checkpoint_path).exists():
             self.agent.load(cfg.checkpoint_path)  # type: ignore[arg-type]
@@ -299,6 +301,12 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
             self.env.observation_space, self.env.action_space, cfg.device
         ).to(gs.device)
         self._opponent_model.eval()
+
+        if any(self.run_dir.glob("events.out.tfevents.*")):
+            print(
+                "[Metrics] Existing TensorBoard event files found; old reward tags may still appear. "
+                "Use a new --experiment-name for clean charts."
+            )
 
     def _resolve_cold_boot_path(self) -> Path | None:
         if self.cfg.cold_boot_checkpoint_path:
@@ -510,12 +518,19 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
         goal_for_count = 0.0
         goal_against_count = 0.0
         obs, _ = self.env.reset()
+        reward_keys: list[str] = []
 
         with torch.no_grad():
             while games < episodes:
                 actions, _, _ = self.agent.act(obs, timestep=0, timesteps=0)
                 obs, rew, terminated, truncated, info = self.env.step(actions)
                 rewards += float(rew.mean().item())
+                if (
+                    not self._reward_terms_logged
+                    and "extra" in info
+                    and isinstance(info["extra"], dict)
+                ):
+                    reward_keys = sorted(list(info["extra"].keys()))
                 done = torch.logical_or(terminated, truncated).squeeze(1)
                 if done.any():
                     mask = done
@@ -545,6 +560,10 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
                     games += float(mask.sum().item())
 
         denom = max(games, 1.0)
+        if (not self._reward_terms_logged) and reward_keys:
+            self._reward_terms_logged = True
+            print(f"[Metrics] active reward terms: {', '.join(reward_keys)}")
+            self._append_metrics({"event": "reward_terms", "terms": reward_keys})
         return {
             "win_rate": wins / denom,
             "loss_rate": losses / denom,
@@ -577,6 +596,7 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
     def _promote_snapshot(self, generation: int, eval_win_rate: float) -> LeagueMember:
         path = self.league_dir / f"gen_{generation:04d}.pt"
         self._save_learner_policy(path)
+        print(f"[League] promote snapshot: gen={generation} path={path}")
         member = LeagueMember(
             name=f"gen_{generation:04d}",
             checkpoint_path=str(path),
@@ -592,14 +612,25 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
                 member for member in self.league if member.checkpoint_path is not None
             ]
             snapshots.sort(key=lambda item: item.elo, reverse=True)
+            prev_names = [m.name for m in self.league]
             self.league = (
                 scripted + snapshots[: self.cfg.max_league_size - len(scripted)]
             )
+            kept = {m.name for m in self.league}
+            dropped = [name for name in prev_names if name not in kept]
+            if dropped:
+                print(f"[League] prune snapshots: {', '.join(dropped)}")
+                self._append_metrics(
+                    {
+                        "event": "league_prune",
+                        "generation": generation,
+                        "dropped": dropped,
+                    }
+                )
 
         if eval_win_rate > self.best_eval_win_rate:
             self.best_eval_win_rate = eval_win_rate
-            self._save_learner_policy(self.checkpoint_dir / "best_agent.pt")
-        self._save_learner_policy(self.checkpoint_dir / "last_agent.pt")
+            print(f"[Checkpoint] best(eval) updated: {eval_win_rate:.3f}")
         self._save_league()
         return member
 
@@ -623,6 +654,24 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
                 {"win_rate": float("nan")},
             )["win_rate"]
 
+            if (
+                not torch.isnan(torch.tensor(baseline_wr))
+                and baseline_wr > self.best_baseline_win_rate
+            ):
+                self.best_baseline_win_rate = baseline_wr
+                self._save_learner_policy(self.checkpoint_dir / "best_agent.pt")
+                print(
+                    f"[Checkpoint] best(baseline={self.cfg.baseline_policy}) updated: {baseline_wr:.3f}"
+                )
+                self._append_metrics(
+                    {
+                        "event": "best_checkpoint_update",
+                        "generation": generation,
+                        "baseline": self.cfg.baseline_policy,
+                        "baseline_win_rate": baseline_wr,
+                    }
+                )
+
             self._append_metrics(
                 {
                     "generation": generation,
@@ -630,6 +679,7 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
                     "opponent_eval": eval_stats,
                     "baseline": self.cfg.baseline_policy,
                     "baseline_win_rate": baseline_wr,
+                    "best_baseline_win_rate": self.best_baseline_win_rate,
                     "baselines": baseline_stats,
                     "league_size": len(self.league),
                 }
@@ -649,12 +699,13 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
                     f"base({self.cfg.baseline_policy})={baseline_wr:.3f} league_size={len(self.league)}"
                 )
             else:
-                self._save_learner_policy(self.checkpoint_dir / "last_agent.pt")
                 print(
                     f"[Gen {generation}] opponent={opponent.name} win={eval_stats['win_rate']:.3f} "
                     f"draw={eval_stats['draw_rate']:.3f} loss={eval_stats['loss_rate']:.3f} "
                     f"out={eval_stats['ball_out_rate']:.3f} base({self.cfg.baseline_policy})={baseline_wr:.3f}"
                 )
+
+            self._save_learner_policy(self.checkpoint_dir / "last_agent.pt")
 
     def eval(self) -> None:
         checkpoint = self.cfg.checkpoint_path or str(
