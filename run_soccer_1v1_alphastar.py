@@ -118,10 +118,11 @@ def main() -> None:
     args = parse_args()
     eval_mode = args.eval
     show_viewer = eval_mode and not args.headless
+    backend = gs.cpu if eval_mode else gs.gpu  # type: ignore[unsolved-attribute]
 
     gs.init(
-        backend=gs.gpu,  # type: ignore[unsolved-attribute]
-        performance_mode=True,
+        backend=backend,
+        performance_mode=not eval_mode,
         logging_level="warning",
     )
 

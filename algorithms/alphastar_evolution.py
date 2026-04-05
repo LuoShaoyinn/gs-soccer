@@ -287,6 +287,9 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
         self._policy_opponents: dict[str, object] = {}
         self._reward_terms_logged = False
 
+        self._load_league_if_exists()
+        self._save_league()
+
         if cfg.resume and cfg.checkpoint_path and Path(cfg.checkpoint_path).exists():
             self.agent.load(cfg.checkpoint_path)  # type: ignore[arg-type]
             print(f"Loaded learner from {cfg.checkpoint_path}")
@@ -442,6 +445,33 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
     def _league_meta_path(self) -> Path:
         return self.league_dir / "league.json"
 
+    def _load_league_if_exists(self) -> None:
+        path = self._league_meta_path()
+        if not path.exists():
+            return
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(payload, list):
+                return
+            loaded: list[LeagueMember] = []
+            for item in payload:
+                if not isinstance(item, dict):
+                    continue
+                loaded.append(
+                    LeagueMember(
+                        name=str(item.get("name", "unknown")),
+                        checkpoint_path=item.get("checkpoint_path"),
+                        policy_module=item.get("policy_module"),
+                        elo=float(item.get("elo", 1200.0)),
+                        games=int(item.get("games", 0)),
+                    )
+                )
+            if loaded:
+                self.league = loaded
+                print(f"[League] loaded {len(self.league)} members from {path}")
+        except Exception as exc:
+            print(f"[League] failed to load {path}: {exc}")
+
     def _save_league(self) -> None:
         payload = [asdict(member) for member in self.league]
         self._league_meta_path().write_text(
@@ -513,6 +543,9 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
         timeout_count = 0.0
         goal_for_count = 0.0
         goal_against_count = 0.0
+        better_out_count = 0.0
+        worse_out_count = 0.0
+        fall_loss_count = 0.0
         obs, _ = self.env.reset()
         reward_keys: list[str] = []
 
@@ -545,14 +578,46 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
                     )[mask].float()
                     ball_out = info["ball_out"][mask].float()
                     timeout = info["timeout"][mask].float()
-                    game_draw = (goal_for == goal_against).float()
-                    wins += float((goal_for > goal_against).float().sum().item())
-                    losses += float((goal_for < goal_against).float().sum().item())
-                    draws += float(game_draw.sum().item())
+                    learner_fall = torch.where(
+                        learner_side.unsqueeze(1) == 0,
+                        info["red_fall"],
+                        info["blue_fall"],
+                    )[mask].float()
+                    opp_fall = torch.where(
+                        learner_side.unsqueeze(1) == 0,
+                        info["blue_fall"],
+                        info["red_fall"],
+                    )[mask].float()
+
+                    ball_x = info["ball_pos_2d"][mask, 0:1]
+                    signed_x = torch.where(
+                        learner_side[mask].unsqueeze(1) == 0,
+                        ball_x,
+                        -ball_x,
+                    )
+                    out_margin = 0.05
+                    better_out = (ball_out > 0.5) & (signed_x > out_margin)
+                    worse_out = (ball_out > 0.5) & (signed_x < -out_margin)
+
+                    win_mask = goal_for > goal_against
+                    loss_mask = goal_for < goal_against
+                    draw_mask = goal_for == goal_against
+                    fall_loss_mask = draw_mask & (learner_fall > 0.5) & (opp_fall < 0.5)
+                    fall_win_mask = draw_mask & (opp_fall > 0.5) & (learner_fall < 0.5)
+                    win_mask = win_mask | fall_win_mask
+                    loss_mask = loss_mask | fall_loss_mask
+                    draw_mask = draw_mask & (~fall_loss_mask) & (~fall_win_mask)
+
+                    wins += float(win_mask.float().sum().item())
+                    losses += float(loss_mask.float().sum().item())
+                    draws += float(draw_mask.float().sum().item())
                     ball_out_count += float(ball_out.sum().item())
                     timeout_count += float(timeout.sum().item())
                     goal_for_count += float(goal_for.sum().item())
                     goal_against_count += float(goal_against.sum().item())
+                    better_out_count += float(better_out.float().sum().item())
+                    worse_out_count += float(worse_out.float().sum().item())
+                    fall_loss_count += float(fall_loss_mask.float().sum().item())
                     games += float(mask.sum().item())
 
         denom = max(games, 1.0)
@@ -560,6 +625,11 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
             self._reward_terms_logged = True
             print(f"[Metrics] active reward terms: {', '.join(reward_keys)}")
             self._append_metrics({"event": "reward_terms", "terms": reward_keys})
+
+        edge_rate = (better_out_count - worse_out_count) / denom
+        selection_score = (
+            wins + 0.5 * draws + 0.25 * (better_out_count - worse_out_count)
+        ) / denom
         return {
             "win_rate": wins / denom,
             "loss_rate": losses / denom,
@@ -569,6 +639,11 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
             "timeout_rate": timeout_count / denom,
             "goal_for_rate": goal_for_count / denom,
             "goal_against_rate": goal_against_count / denom,
+            "better_out_rate": better_out_count / denom,
+            "worse_out_rate": worse_out_count / denom,
+            "fall_loss_rate": fall_loss_count / denom,
+            "edge_rate": edge_rate,
+            "selection_score": selection_score,
             "games": games,
         }
 
@@ -642,8 +717,8 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
             trainer.train()
 
             eval_stats = self._eval_vs_opponent(opponent, self.cfg.eval_episodes)
-            win_rate = eval_stats["win_rate"]
-            self._update_elo(opponent, win_rate)
+            selection_score = eval_stats["selection_score"]
+            self._update_elo(opponent, selection_score)
             baseline_stats = self._evaluate_scripted_baselines()
             baseline_wr = baseline_stats.get(
                 self.cfg.baseline_policy,
@@ -682,23 +757,27 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
             )
 
             should_promote = (generation % self.cfg.snapshot_interval == 0) or (
-                win_rate >= self.cfg.promote_win_rate
+                selection_score >= self.cfg.promote_win_rate
             )
             if should_promote:
                 member = self._promote_snapshot(
-                    generation=generation, eval_win_rate=win_rate
+                    generation=generation, eval_win_rate=selection_score
                 )
                 print(
                     f"[Gen {generation}] promoted={member.name} opponent={opponent.name} "
                     f"win={eval_stats['win_rate']:.3f} draw={eval_stats['draw_rate']:.3f} "
                     f"loss={eval_stats['loss_rate']:.3f} out={eval_stats['ball_out_rate']:.3f} "
-                    f"base({self.cfg.baseline_policy})={baseline_wr:.3f} league_size={len(self.league)}"
+                    f"edge={eval_stats['edge_rate']:.3f} fall_loss={eval_stats['fall_loss_rate']:.3f} "
+                    f"score={selection_score:.3f} base({self.cfg.baseline_policy})={baseline_wr:.3f} "
+                    f"league_size={len(self.league)}"
                 )
             else:
                 print(
                     f"[Gen {generation}] opponent={opponent.name} win={eval_stats['win_rate']:.3f} "
                     f"draw={eval_stats['draw_rate']:.3f} loss={eval_stats['loss_rate']:.3f} "
-                    f"out={eval_stats['ball_out_rate']:.3f} base({self.cfg.baseline_policy})={baseline_wr:.3f}"
+                    f"out={eval_stats['ball_out_rate']:.3f} edge={eval_stats['edge_rate']:.3f} "
+                    f"fall_loss={eval_stats['fall_loss_rate']:.3f} score={selection_score:.3f} "
+                    f"base({self.cfg.baseline_policy})={baseline_wr:.3f}"
                 )
 
             self._save_learner_policy(self.checkpoint_dir / "last_agent.pt")
@@ -719,5 +798,7 @@ class AlphaStarEvolutionAlgorithm(Algorithm):
         print(
             f"[Eval] opponent={opponent.name} win={eval_stats['win_rate']:.3f} "
             f"draw={eval_stats['draw_rate']:.3f} loss={eval_stats['loss_rate']:.3f} "
-            f"out={eval_stats['ball_out_rate']:.3f} avg_reward={eval_stats['avg_reward']:.3f}"
+            f"out={eval_stats['ball_out_rate']:.3f} edge={eval_stats['edge_rate']:.3f} "
+            f"fall_loss={eval_stats['fall_loss_rate']:.3f} score={eval_stats['selection_score']:.3f} "
+            f"avg_reward={eval_stats['avg_reward']:.3f}"
         )

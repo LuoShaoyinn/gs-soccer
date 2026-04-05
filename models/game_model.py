@@ -126,6 +126,8 @@ class GameModel(Model):
             "blue_heading": torch.zeros(
                 (num_envs, 2), dtype=torch.float, device=gs.device
             ),
+            "red_fall": torch.zeros((num_envs, 1), dtype=torch.bool, device=gs.device),
+            "blue_fall": torch.zeros((num_envs, 1), dtype=torch.bool, device=gs.device),
             "goal_team_red": torch.zeros(
                 (num_envs, 1), dtype=torch.bool, device=gs.device
             ),
@@ -311,6 +313,8 @@ class GameModel(Model):
 
         red_fall = red_pos[:, 2:3] < self.cfg.fall_height
         blue_fall = blue_pos[:, 2:3] < self.cfg.fall_height
+        self.cache["red_fall"][envs_idx] = red_fall
+        self.cache["blue_fall"][envs_idx] = blue_fall
         timeout = self.time_steps[envs_idx] >= self.cfg.timeout_steps_limit
         self.cache["timeout"][envs_idx] = timeout
         self.cache["terminated"][envs_idx] = (
@@ -472,4 +476,7 @@ class GameModel(Model):
             "goal_team_blue": self.cache["goal_team_blue"][envs_idx].detach(),
             "ball_out": self.cache["ball_out"][envs_idx].detach(),
             "timeout": self.cache["timeout"][envs_idx].detach(),
+            "red_fall": self.cache["red_fall"][envs_idx].detach(),
+            "blue_fall": self.cache["blue_fall"][envs_idx].detach(),
+            "ball_pos_2d": self.cache["ball_pos_2d"][envs_idx].detach(),
         }
