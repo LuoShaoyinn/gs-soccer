@@ -15,6 +15,12 @@ from robots.robot import RobotConfig, Robot
 from fields.field import FieldConfig, Field
 from models.model import ModelConfig, Model
 
+NON_FOOT_LINK_NAMES = [
+    "Rhip", "Lhip", "Rlap", "Llap",
+    "Rleg1", "Lleg1", "Rleg2", "Lleg2",
+    "Rankle", "Lankle",
+]
+
 @dataclass(kw_only = True)
 class WalkEnvConfig(EnvConfig):
     num_envs:       int     = 1
@@ -29,7 +35,12 @@ class WalkEnv(Env):
     def config(self):
         super().config()
         self.cmd_vel = torch.rand((self.num_envs, 3)) * 2.0 - 1.0
-     
+        self._non_foot_links = [
+            self.robot.robot.get_link(n) for n in NON_FOOT_LINK_NAMES
+        ]
+        self._kp = torch.from_numpy(self.robot.cfg.kp).to(gs.device)
+        self._kv = torch.from_numpy(self.robot.cfg.kv).to(gs.device)
+
     def reset(self, envs_idx: torch.Tensor | None = None
               ) -> tuple[torch.Tensor, dict]:
         if envs_idx is None:
@@ -38,8 +49,22 @@ class WalkEnv(Env):
                                              dtype=torch.float, 
                                              device=gs.device) * 2.0 - 1.0)
         return super().reset(envs_idx)
-    
+
+    @torch.compiler.disable
+    def _get_non_foot_heights(self, envs_idx):
+        parts = []
+        for link in self._non_foot_links:
+            pos = link.get_pos(envs_idx=envs_idx)
+            parts.append(pos[:, 2:3])
+        return torch.cat(parts, dim=1)
 
     def get_state(self, envs_idx: torch.Tensor) -> dict[str, torch.Tensor]:
-        return {"cmd_vel": self.cmd_vel[envs_idx],
-                **super().get_state(envs_idx)}
+        state = {"cmd_vel": self.cmd_vel[envs_idx],
+                 **super().get_state(envs_idx)}
+        state["non_foot_heights"] = self._get_non_foot_heights(envs_idx)
+        target_q = self.model.ewma_action + self.model.target_q_offset
+        state["dofs_torque"] = (
+            self._kp * (target_q - state["dofs_pos"])
+            - self._kv * state["dofs_vel"]
+        )
+        return state

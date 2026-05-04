@@ -24,6 +24,13 @@ class MOS9WalkModelConfig(ModelConfig):
     body_eu_ang_noise:  float       = 0.12 * 0.6
     obs_clip:           tuple       = (-18.0, 18.0)
 
+    speed_reward_weight:    float   = 2.0
+    torque_penalty_weight:  float   = 1e-5
+    termination_body_height: float  = 0.2
+    termination_link_height: float  = 0.05
+    max_episode_length:     int     = 500
+    speed_chunk_length:     int     = 10
+
 
 class MOS9WalkModel(Model):
     cfg: MOS9WalkModelConfig
@@ -44,16 +51,27 @@ class MOS9WalkModel(Model):
         self.ewma_action = torch.zeros((self.scene.n_envs, self.cfg.n_dofs),
                                       dtype=torch.float, 
                                       device=gs.device)
+        self.speed_buffer = torch.zeros(
+            (self.scene.n_envs, self.cfg.speed_chunk_length),
+            dtype=torch.float, device=gs.device,
+        )
+        self.episode_steps = torch.zeros(
+            (self.scene.n_envs,), dtype=torch.long, device=gs.device,
+        )
+        self._log: dict[str, torch.Tensor] = {}
 
     def reset(self, envs_idx: torch.Tensor):
         self.time_steps[envs_idx]   = 0.0
         self.last_action[envs_idx]  = 0.0
         self.ewma_action[envs_idx]  = 0.0
         self.last_obs[envs_idx]     = 0.0
+        self.speed_buffer[envs_idx] = 0.0
+        self.episode_steps[envs_idx] = 0
     
     def preprocess_action(self, action: torch.Tensor):
         self.last_action = action
         self.time_steps += 1.0
+        self.episode_steps += 1
         self.ewma_action *= self.cfg.step_ewma_factor
         self.ewma_action += self.cfg.action_scale * (1.0 - self.cfg.step_ewma_factor) * action
         return self.ewma_action + self.target_q_offset
@@ -143,3 +161,47 @@ class MOS9WalkModel(Model):
         self.last_obs = torch.roll(self.last_obs, shifts=-1, dims=1)
         self.last_obs[:, -1, :] = obs_single_frame
         return self.last_obs.reshape(n_envs, -1)
+
+    def build_reward(
+        self, envs_idx, body_lin_vel, dofs_torque, cmd_vel, **kwargs
+    ) -> torch.Tensor:
+        forward_speed = body_lin_vel[:, 0:1]
+        self.speed_buffer = torch.roll(self.speed_buffer, shifts=-1, dims=1)
+        self.speed_buffer[:, -1:] = forward_speed
+        chunk_speed = self.speed_buffer.mean(dim=1, keepdim=True)
+
+        speed_reward = chunk_speed * cmd_vel[:, 0:1]
+        torque_penalty = (dofs_torque ** 2).sum(dim=1, keepdim=True)
+
+        self._log = {
+            "speed_reward":       speed_reward * self.cfg.speed_reward_weight,
+            "torque_penalty":     torque_penalty * self.cfg.torque_penalty_weight,
+            "forward_speed":      forward_speed,
+            "chunk_speed":        chunk_speed,
+            "torque_sum_sq":      torque_penalty,
+        }
+        return (
+            self.cfg.speed_reward_weight * speed_reward
+            - self.cfg.torque_penalty_weight * torque_penalty
+        )
+
+    def build_terminated(
+        self, envs_idx, body_pos, non_foot_heights, **kwargs
+    ) -> torch.Tensor:
+        body_down = body_pos[:, 2:3] < self.cfg.termination_body_height
+        link_down = (non_foot_heights < self.cfg.termination_link_height).any(
+            dim=1, keepdim=True,
+        )
+        return body_down | link_down
+
+    def build_truncated(self, envs_idx, **kwargs) -> torch.Tensor:
+        return (
+            self.episode_steps[envs_idx] >= self.cfg.max_episode_length
+        ).unsqueeze(1)
+
+    @torch.compiler.disable
+    def build_info(self, envs_idx, **kwargs) -> dict[str, dict[str, torch.Tensor]]:
+        return {"extra": {
+            k: v.detach().mean().cpu()
+            for k, v in self._log.items()
+        }}
