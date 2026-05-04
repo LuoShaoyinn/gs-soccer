@@ -111,56 +111,43 @@ class MOS9WalkModel(Model):
             return torch.stack([roll, pitch, yaw], dim=-1)
         def add_noise(x: torch.Tensor, scale: float):
             return x + (torch.randn_like(x) * scale)
-        n_envs = self.scene.n_envs
+        n = envs_idx.shape[0]
 
-        # 1. Phase Observations (Sin/Cos)
-        phase = self.time_steps * (2.0 * torch.pi * self.cfg.step_dt / self.cfg.cycle_time)
-        obs_sin_phase = torch.sin(phase).reshape((n_envs, 1))
-        obs_cos_phase = torch.cos(phase).reshape((n_envs, 1))
+        phase = self.time_steps[envs_idx] * (2.0 * torch.pi * self.cfg.step_dt / self.cfg.cycle_time)
+        obs_sin_phase = torch.sin(phase).reshape((n, 1))
+        obs_cos_phase = torch.cos(phase).reshape((n, 1))
 
-        # 2. Command Velocity (vx, vy, az)
-        obs_cmd_vel = cmd_vel.reshape((n_envs, 3))
+        obs_cmd_vel = cmd_vel.reshape((n, 3))
 
-        # 3. DOF Position: (q - offset) * scale
-        # The snippet uses 1.0 as the scale for dof_pos
         obs_dofs_pos = (dofs_pos - self.target_q_offset) * self.cfg.dofs_pos_scale
         
-        # 4. DOF Velocity: dq * scale
-        # The snippet uses 0.05 as the scale for dof_vel
         obs_dofs_vel = dofs_vel * self.cfg.dofs_vel_scale
 
-        # 5. Last Action (n_dofs dims)
         obs_last_action = self.last_action[envs_idx]
 
-        # 6. Base Angular Velocity + Noise
-        # The snippet uses noise scale: 0.12 * 0.6
         obs_body_ang_vel = add_noise(body_ang_vel, self.cfg.body_ang_vel_noise)
 
-        # 7. Euler Angles + Noise 
         eu_ang = quaternion_to_euler_array(body_quat)
-        # Normalize euler angles if they exceed pi
         eu_ang = torch.where(eu_ang > np.pi, eu_ang - 2 * np.pi, eu_ang)
         obs_eu_ang = add_noise(eu_ang, self.cfg.body_eu_ang_noise)
 
-        # Concatenate in the exact order found in the sim-to-sim script:
-        # [sin, cos, vx, vy, az, dof_pos, dof_vel, action, omega, rpy]
         obs_single_frame = torch.cat((
-            obs_sin_phase,      # 1
-            obs_cos_phase,      # 1
-            obs_cmd_vel,        # 3
-            obs_dofs_pos,       # 12
-            obs_dofs_vel,       # 12
-            obs_last_action,    # 12
-            obs_body_ang_vel,   # 3
-            obs_eu_ang          # 3
-        ), dim=-1) # Total = 47
-        obs_single_frame = torch.clip(obs_single_frame, 
+            obs_sin_phase,      
+            obs_cos_phase,      
+            obs_cmd_vel,        
+            obs_dofs_pos,       
+            obs_dofs_vel,       
+            obs_last_action,    
+            obs_body_ang_vel,   
+            obs_eu_ang          
+        ), dim=-1)
+        obs_single_frame = torch.clip(obs_single_frame.float(), 
                                       self.cfg.obs_clip[0], 
                                       self.cfg.obs_clip[1])
 
-        self.last_obs = torch.roll(self.last_obs, shifts=-1, dims=1)
-        self.last_obs[:, -1, :] = obs_single_frame
-        return self.last_obs.reshape(n_envs, -1)
+        self.last_obs[envs_idx] = torch.roll(self.last_obs[envs_idx], shifts=-1, dims=1)
+        self.last_obs[envs_idx, -1, :] = obs_single_frame
+        return self.last_obs[envs_idx].reshape(n, -1)
 
     def build_reward(
         self, envs_idx, body_lin_vel, dofs_torque, cmd_vel, **kwargs

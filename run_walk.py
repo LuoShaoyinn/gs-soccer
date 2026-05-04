@@ -16,6 +16,8 @@ def parse_args():
     parser.add_argument("--experiment-name", default="mos9_gait_sac")
     parser.add_argument("--expert-path", default="models_ckpt/walk_v3_t8.pt")
     parser.add_argument("--expert-steps", type=int, default=1000)
+    parser.add_argument("--timesteps", type=int, default=30000)
+    parser.add_argument("--num-envs", type=int, default=4096)
     return parser.parse_args()
 
 
@@ -44,13 +46,13 @@ def main():
                 sim_freq=500,
                 model_class=MOS9WalkModel,
                 env_spacing=2.0,
-                num_envs=1 if eval_mode else 4096,
+                num_envs=1 if eval_mode else args.num_envs,
                 show_viewer=eval_mode,
             )
         ),
         SACAlgorithmConfig(
             experiment_name=args.experiment_name,
-            timesteps=30000,
+            timesteps=args.timesteps,
             checkpoint_path=f"runs/{args.experiment_name}/checkpoints/best_agent.pt",
             resume=args.resume or eval_mode,
             memory_size=500000,

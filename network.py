@@ -25,7 +25,7 @@ class Policy(GaussianMixin, Model):
         min_log_std=-5,
         max_log_std=2,
     ):
-        Model.__init__(self, observation_space, action_space, device)
+        Model.__init__(self, observation_space=observation_space, action_space=action_space, device=device)
         GaussianMixin.__init__(
             self,
             clip_actions=clip_actions,
@@ -55,8 +55,8 @@ class Policy(GaussianMixin, Model):
 
 class QNetwork(DeterministicMixin, Model):
     def __init__(self, observation_space, action_space, device, clip_actions=False):
-        Model.__init__(self, observation_space, action_space, device)
-        DeterministicMixin.__init__(self, clip_actions)
+        Model.__init__(self, observation_space=observation_space, action_space=action_space, device=device)
+        DeterministicMixin.__init__(self, clip_actions=clip_actions)
 
         self.net = nn.Sequential(
             layer_init(nn.Linear(self.num_observations + self.num_actions, 512), std=1.0),
@@ -76,8 +76,8 @@ class QNetwork(DeterministicMixin, Model):
 
 class Value(DeterministicMixin, Model):
     def __init__(self, observation_space, action_space, device, clip_actions=False):
-        Model.__init__(self, observation_space, action_space, device)
-        DeterministicMixin.__init__(self, clip_actions)
+        Model.__init__(self, observation_space=observation_space, action_space=action_space, device=device)
+        DeterministicMixin.__init__(self, clip_actions=clip_actions)
 
         self.net = nn.Sequential(
             layer_init(nn.Linear(self.num_observations, 512), std=1.0),
