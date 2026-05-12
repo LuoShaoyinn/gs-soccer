@@ -32,9 +32,15 @@ class WalkEnvConfig(EnvConfig):
 class WalkEnv(Env): 
     cfg: WalkEnvConfig
 
+    def _sample_cmd_vel(self, n_envs: int) -> torch.Tensor:
+        # Easier curriculum: forward-only command. Lateral and yaw are zero.
+        cmd_vel = torch.zeros((n_envs, 3), dtype=torch.float, device=gs.device)
+        cmd_vel[:, 0] = 0.2 + 0.8 * torch.rand((n_envs,), dtype=torch.float, device=gs.device)
+        return cmd_vel
+
     def config(self):
         super().config()
-        self.cmd_vel = torch.rand((self.num_envs, 3)) * 2.0 - 1.0
+        self.cmd_vel = self._sample_cmd_vel(self.num_envs)
         self._non_foot_links = [
             self.robot.robot.get_link(n) for n in NON_FOOT_LINK_NAMES
         ]
@@ -45,9 +51,7 @@ class WalkEnv(Env):
               ) -> tuple[torch.Tensor, dict]:
         if envs_idx is None:
             envs_idx = self.all_envs_idx
-        self.cmd_vel[envs_idx] = (torch.rand((envs_idx.shape[0], 3), 
-                                             dtype=torch.float, 
-                                             device=gs.device) * 2.0 - 1.0)
+        self.cmd_vel[envs_idx] = self._sample_cmd_vel(envs_idx.shape[0])
         return super().reset(envs_idx)
 
     @torch.compiler.disable

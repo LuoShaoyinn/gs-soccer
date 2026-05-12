@@ -19,7 +19,7 @@ from .algorithm import Algorithm, AlgorithmConfig
 
 @dataclass(kw_only=True)
 class SACAlgorithmConfig(AlgorithmConfig):
-    memory_size: int = 262144
+    memory_size: int = 256
     timesteps: int = 30000
 
     experiment_name: str = "mos9_gait_sac"

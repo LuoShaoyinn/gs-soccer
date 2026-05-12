@@ -21,11 +21,13 @@ class MOS9WalkModelConfig(ModelConfig):
     dofs_vel_scale:     float       = 0.05
     action_scale:       float       = 0.25
     body_ang_vel_noise: float       = 0.12 * 0.6
-    body_eu_ang_noise:  float       = 0.12 * 0.6
+    proj_gravity_noise: float       = 0.12 * 0.6
     obs_clip:           tuple       = (-18.0, 18.0)
 
     speed_reward_weight:    float   = 2.0
     torque_penalty_weight:  float   = 1e-5
+    alive_reward_weight:    float   = 0.2
+    upright_reward_weight:  float   = 0.5
     termination_body_height: float  = 0.2
     termination_link_height: float  = 0.05
     max_episode_length:     int     = 500
@@ -79,9 +81,9 @@ class MOS9WalkModel(Model):
 
     @property
     def observation_space(self) -> gym.spaces.Box:
-        # [sin, cos, vx, vy, az, 
-        #  dof_pos(12), dof_vel(12), action(12), 
-        #  omega(3), rpy(3)]
+        # [sin, cos, vx, vy, az,
+        #  dof_pos(12), dof_vel(12), action(12),
+        #  body_ang_vel(3), projected_gravity(3)]
         return gym.spaces.Box(
             low   = self.cfg.obs_clip[0], high = self.cfg.obs_clip[1], 
             shape = (self.dim_observations * self.cfg.history_frames,),
@@ -90,25 +92,24 @@ class MOS9WalkModel(Model):
     
     @property
     def action_space(self) -> gym.spaces.Box:
-        return gym.spaces.Box(low   = -np.pi, high  = np.pi, 
+        return gym.spaces.Box(low   = -1.0, high  = 1.0, 
                               shape = (self.cfg.n_dofs,), 
                               dtype = np.float32)
 
 
     def build_observation(self, envs_idx, body_lin_vel, body_ang_vel, body_quat, 
                           cmd_vel, dofs_pos, dofs_vel, **kwargs) -> torch.Tensor: # type: ignore
-        def quaternion_to_euler_array(quat):
-            w, x, y, z = quat[:, 0], quat[:, 1], quat[:, 2], quat[:, 3]
-            t0 = +2.0 * (w * x + y * z)
-            t1 = +1.0 - 2.0 * (x * x + y * y)
-            roll = torch.atan2(t0, t1)
-            t2 = +2.0 * (w * y - z * x)
-            t2 = torch.clamp(t2, -1.0, 1.0)
-            pitch = torch.asin(t2)
-            t3 = +2.0 * (w * z + x * y)
-            t4 = +1.0 - 2.0 * (y * y + z * z)
-            yaw = torch.atan2(t3, t4) 
-            return torch.stack([roll, pitch, yaw], dim=-1)
+        def project_gravity(quat: torch.Tensor) -> torch.Tensor:
+            n = quat.shape[0]
+            gravity = torch.tensor([0.0, 0.0, -1.0], dtype=torch.float, device=gs.device)
+            gravity = gravity.broadcast_to((n, 3))
+            q_w = quat[:, 0:1]
+            q_vec = quat[:, 1:4]
+            return (
+                gravity * (2.0 * q_w * q_w - 1.0)
+                - torch.cross(q_vec, gravity, dim=1) * (2.0 * q_w)
+                + q_vec * (2.0 * (q_vec * gravity).sum(dim=1, keepdim=True))
+            )
         def add_noise(x: torch.Tensor, scale: float):
             return x + (torch.randn_like(x) * scale)
         n = envs_idx.shape[0]
@@ -127,9 +128,7 @@ class MOS9WalkModel(Model):
 
         obs_body_ang_vel = add_noise(body_ang_vel, self.cfg.body_ang_vel_noise)
 
-        eu_ang = quaternion_to_euler_array(body_quat)
-        eu_ang = torch.where(eu_ang > np.pi, eu_ang - 2 * np.pi, eu_ang)
-        obs_eu_ang = add_noise(eu_ang, self.cfg.body_eu_ang_noise)
+        obs_proj_gravity = add_noise(project_gravity(body_quat), self.cfg.proj_gravity_noise)
 
         obs_single_frame = torch.cat((
             obs_sin_phase,      
@@ -139,7 +138,7 @@ class MOS9WalkModel(Model):
             obs_dofs_vel,       
             obs_last_action,    
             obs_body_ang_vel,   
-            obs_eu_ang          
+            obs_proj_gravity
         ), dim=-1)
         obs_single_frame = torch.clip(obs_single_frame.float(), 
                                       self.cfg.obs_clip[0], 
@@ -150,8 +149,21 @@ class MOS9WalkModel(Model):
         return self.last_obs[envs_idx].reshape(n, -1)
 
     def build_reward(
-        self, envs_idx, body_lin_vel, dofs_torque, cmd_vel, **kwargs
+        self, envs_idx, body_lin_vel, body_quat, dofs_torque, cmd_vel, **kwargs
     ) -> torch.Tensor:
+        def quaternion_to_euler_array(quat):
+            w, x, y, z = quat[:, 0], quat[:, 1], quat[:, 2], quat[:, 3]
+            t0 = +2.0 * (w * x + y * z)
+            t1 = +1.0 - 2.0 * (x * x + y * y)
+            roll = torch.atan2(t0, t1)
+            t2 = +2.0 * (w * y - z * x)
+            t2 = torch.clamp(t2, -1.0, 1.0)
+            pitch = torch.asin(t2)
+            t3 = +2.0 * (w * z + x * y)
+            t4 = +1.0 - 2.0 * (y * y + z * z)
+            yaw = torch.atan2(t3, t4)
+            return torch.stack([roll, pitch, yaw], dim=-1)
+
         forward_speed = body_lin_vel[:, 0:1]
         self.speed_buffer = torch.roll(self.speed_buffer, shifts=-1, dims=1)
         self.speed_buffer[:, -1:] = forward_speed
@@ -159,18 +171,33 @@ class MOS9WalkModel(Model):
 
         speed_reward = chunk_speed * cmd_vel[:, 0:1]
         torque_penalty = (dofs_torque ** 2).sum(dim=1, keepdim=True)
+        euler = quaternion_to_euler_array(body_quat)
+        roll = euler[:, 0:1]
+        pitch = euler[:, 1:2]
+        upright_reward = torch.exp(-2.0 * (roll**2 + pitch**2))
+        alive_reward = torch.ones_like(speed_reward)
 
-        self._log = {
-            "speed_reward":       speed_reward * self.cfg.speed_reward_weight,
-            "torque_penalty":     torque_penalty * self.cfg.torque_penalty_weight,
-            "forward_speed":      forward_speed,
-            "chunk_speed":        chunk_speed,
-            "torque_sum_sq":      torque_penalty,
-        }
-        return (
-            self.cfg.speed_reward_weight * speed_reward
-            - self.cfg.torque_penalty_weight * torque_penalty
+        speed_term = self.cfg.speed_reward_weight * speed_reward
+        torque_term = self.cfg.torque_penalty_weight * torque_penalty
+        alive_term = self.cfg.alive_reward_weight * alive_reward
+        upright_term = self.cfg.upright_reward_weight * upright_reward
+        total_reward = (
+            speed_term
+            + alive_term
+            + upright_term
+            - torque_term
         )
+        self._log = {
+            "+speed": speed_term,
+            "+alive": alive_term,
+            "+upright": upright_term,
+            "-torque": -torque_term,
+            "+total": total_reward,
+            "state/forward_speed": forward_speed,
+            "state/chunk_speed": chunk_speed,
+            "state/torque_sum_sq": torque_penalty,
+        }
+        return total_reward
 
     def build_terminated(
         self, envs_idx, body_pos, non_foot_heights, **kwargs
@@ -189,6 +216,6 @@ class MOS9WalkModel(Model):
     @torch.compiler.disable
     def build_info(self, envs_idx, **kwargs) -> dict[str, dict[str, torch.Tensor]]:
         return {"extra": {
-            k: v.detach().mean().cpu()
+            f"Reward / {k}": v.detach().mean().cpu()
             for k, v in self._log.items()
         }}

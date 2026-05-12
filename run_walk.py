@@ -1,5 +1,11 @@
+import os
 import argparse
 import numpy as np
+
+# Force headless-safe backend before Genesis builds visualizer/rasterizer.
+os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
+os.environ.setdefault("PYGLET_HEADLESS", "true")
+
 import genesis as gs
 
 from algorithms.sac import SACAlgorithm, SACAlgorithmConfig
@@ -17,7 +23,12 @@ def parse_args():
     parser.add_argument("--timesteps", type=int, default=30000)
     parser.add_argument("--num-envs", type=int, default=1024)
     parser.add_argument("--batch-size", type=int, default=512)
-    parser.add_argument("--memory-size", type=int, default=262144)
+    parser.add_argument(
+        "--memory-size",
+        type=int,
+        default=256,
+        help="Replay memory size per environment (skrl uses shape [memory_size, num_envs, ...])",
+    )
     parser.add_argument("--learning-starts", type=int, default=1024)
     parser.add_argument("--random-timesteps", type=int, default=256)
     parser.add_argument("--gradient-steps", type=int, default=2)
