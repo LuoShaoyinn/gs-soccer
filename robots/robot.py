@@ -24,7 +24,9 @@ class RobotConfig:
             lambda: np.array([0.0, 0.0, 0.0], dtype=np.float32))
     initial_quat:   np.ndarray   = field(default_factory=\
             lambda: np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32))
-    decimate_aggressiveness: int = 8    # convexify
+    decimate: bool = True
+    decimate_face_num: int = 100
+    decimate_aggressiveness: int = 8
 
 
 class Robot(ABC):
@@ -46,6 +48,8 @@ class Robot(ABC):
             file = self.cfg.robot_URDF, \
             pos  = self.cfg.initial_pos, \
             quat = self.cfg.initial_quat, \
+            decimate = self.cfg.decimate, \
+            decimate_face_num = self.cfg.decimate_face_num, \
             decimate_aggressiveness = self.cfg.decimate_aggressiveness, \
             requires_jac_and_IK = False, \
         ), vis_mode='collision')
