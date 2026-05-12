@@ -14,8 +14,6 @@ def parse_args():
     parser.add_argument("--eval", action="store_true", help="Evaluation mode")
     parser.add_argument("--resume", action="store_true", help="Load checkpoint")
     parser.add_argument("--experiment-name", default="mos9_gait_sac")
-    parser.add_argument("--expert-path", default="")
-    parser.add_argument("--expert-steps", type=int, default=0)
     parser.add_argument("--timesteps", type=int, default=30000)
     parser.add_argument("--num-envs", type=int, default=1024)
     parser.add_argument("--batch-size", type=int, default=512)
@@ -65,9 +63,6 @@ def main():
             random_timesteps=args.random_timesteps,
             learning_starts=args.learning_starts,
             gradient_steps=args.gradient_steps,
-            expert_checkpoint_path=args.expert_path,
-            expert_collect_steps=args.expert_steps,
-            expert_sample_ratio=0.0,
         ),
     )
 

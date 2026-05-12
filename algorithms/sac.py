@@ -1,61 +1,20 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
-import os
+import itertools
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
-import torch.distributions as D
-import numpy as np
-from torch.utils.tensorboard import SummaryWriter
+
+from skrl import config
+from skrl.agents.torch.sac import SAC
+from skrl.memories.torch import RandomMemory
+from skrl.trainers.torch import SequentialTrainer
 
 from network import Policy, QNetwork
 
 from .algorithm import Algorithm, AlgorithmConfig
-
-
-class ReplayBuffer:
-    def __init__(self, capacity: int, obs_dim: int, act_dim: int, device: str):
-        self.obs = torch.zeros((capacity, obs_dim), device=device)
-        self.act = torch.zeros((capacity, act_dim), device=device)
-        self.rew = torch.zeros((capacity, 1), device=device)
-        self.nobs = torch.zeros((capacity, obs_dim), device=device)
-        self.done = torch.zeros((capacity, 1), device=device)
-        self.ptr = 0
-        self.cap = capacity
-        self.full = False
-
-    def add(self, obs, act, rew, nobs, done):
-        n = obs.shape[0]
-        if n >= self.cap:
-            s = n - self.cap
-            self.obs[:], self.act[:] = obs[s:], act[s:]
-            self.rew[:], self.nobs[:], self.done[:] = rew[s:], nobs[s:], done[s:]
-            self.ptr, self.full = 0, True
-            return
-        e = self.ptr + n
-        if e <= self.cap:
-            self.obs[self.ptr:e] = obs;  self.act[self.ptr:e] = act
-            self.rew[self.ptr:e] = rew;  self.nobs[self.ptr:e] = nobs
-            self.done[self.ptr:e] = done
-        else:
-            f = self.cap - self.ptr
-            self.obs[self.ptr:] = obs[:f];  self.act[self.ptr:] = act[:f]
-            self.rew[self.ptr:] = rew[:f];  self.nobs[self.ptr:] = nobs[:f]
-            self.done[self.ptr:] = done[:f]
-            r = n - f
-            self.obs[:r] = obs[f:];  self.act[:r] = act[f:]
-            self.rew[:r] = rew[f:];  self.nobs[:r] = nobs[f:]
-            self.done[:r] = done[f:];  self.full = True
-        self.ptr = e % self.cap
-        if self.ptr == 0:
-            self.full = True
-
-    def size(self) -> int:
-        return self.cap if self.full else self.ptr
-
-    def sample(self, bs: int):
-        idx = torch.randint(0, self.size(), (bs,), device=self.obs.device)
-        return self.obs[idx], self.act[idx], self.rew[idx], self.nobs[idx], self.done[idx]
 
 
 @dataclass(kw_only=True)
@@ -74,208 +33,226 @@ class SACAlgorithmConfig(AlgorithmConfig):
     tau: float = 0.005
     lr: float = 3e-4
     alpha_lr: float = 3e-4
+    initial_entropy_value: float = 0.2
 
-    expert_checkpoint_path: str = ""
-    expert_collect_steps: int = 0
-    expert_sample_ratio: float = 0.0
+
+class TrackedSAC(SAC):
+    def update(self, *, timestep: int, timesteps: int) -> None:
+        for _ in range(self.cfg.gradient_steps):
+            (
+                sampled_observations,
+                sampled_states,
+                sampled_actions,
+                sampled_rewards,
+                sampled_next_observations,
+                sampled_next_states,
+                sampled_terminated,
+            ) = self.memory.sample(names=self._tensors_names, batch_size=self.cfg.batch_size)[0]
+
+            with torch.autocast(device_type=self._device_type, enabled=self.cfg.mixed_precision):
+                inputs = {
+                    "observations": self._observation_preprocessor(sampled_observations, train=True),
+                    "states": self._state_preprocessor(sampled_states, train=True),
+                }
+                next_inputs = {
+                    "observations": self._observation_preprocessor(sampled_next_observations, train=True),
+                    "states": self._state_preprocessor(sampled_next_states, train=True),
+                }
+
+                with torch.no_grad():
+                    next_actions, outputs = self.policy.act(next_inputs, role="policy")
+                    next_log_prob = outputs["log_prob"]
+
+                    target_q1_values, _ = self.target_critic_1.act(
+                        {**next_inputs, "taken_actions": next_actions}, role="target_critic_1"
+                    )
+                    target_q2_values, _ = self.target_critic_2.act(
+                        {**next_inputs, "taken_actions": next_actions}, role="target_critic_2"
+                    )
+                    target_q_values = (
+                        torch.min(target_q1_values, target_q2_values)
+                        - self._entropy_coefficient * next_log_prob
+                    )
+                    target_values = (
+                        sampled_rewards
+                        + self.cfg.discount_factor
+                        * sampled_terminated.logical_not()
+                        * target_q_values
+                    )
+
+                critic_1_values, _ = self.critic_1.act(
+                    {**inputs, "taken_actions": sampled_actions}, role="critic_1"
+                )
+                critic_2_values, _ = self.critic_2.act(
+                    {**inputs, "taken_actions": sampled_actions}, role="critic_2"
+                )
+                critic_loss = (
+                    F.mse_loss(critic_1_values, target_values)
+                    + F.mse_loss(critic_2_values, target_values)
+                ) / 2
+
+            self.critic_optimizer.zero_grad()
+            self.scaler.scale(critic_loss).backward()
+            if config.torch.is_distributed:
+                self.critic_1.reduce_parameters()
+                self.critic_2.reduce_parameters()
+            if self.cfg.grad_norm_clip > 0:
+                self.scaler.unscale_(self.critic_optimizer)
+                nn.utils.clip_grad_norm_(
+                    itertools.chain(self.critic_1.parameters(), self.critic_2.parameters()),
+                    self.cfg.grad_norm_clip,
+                )
+            self.scaler.step(self.critic_optimizer)
+
+            with torch.autocast(device_type=self._device_type, enabled=self.cfg.mixed_precision):
+                actions, outputs = self.policy.act(inputs, role="policy")
+                log_prob = outputs["log_prob"]
+                critic_1_values, _ = self.critic_1.act(
+                    {**inputs, "taken_actions": actions}, role="critic_1"
+                )
+                critic_2_values, _ = self.critic_2.act(
+                    {**inputs, "taken_actions": actions}, role="critic_2"
+                )
+                policy_loss = (
+                    self._entropy_coefficient * log_prob
+                    - torch.min(critic_1_values, critic_2_values)
+                ).mean()
+
+            self.policy_optimizer.zero_grad()
+            self.scaler.scale(policy_loss).backward()
+            if config.torch.is_distributed:
+                self.policy.reduce_parameters()
+            if self.cfg.grad_norm_clip > 0:
+                self.scaler.unscale_(self.policy_optimizer)
+                nn.utils.clip_grad_norm_(self.policy.parameters(), self.cfg.grad_norm_clip)
+            self.scaler.step(self.policy_optimizer)
+
+            entropy_loss = torch.zeros((), device=self.device)
+            if self.cfg.learn_entropy:
+                with torch.autocast(device_type=self._device_type, enabled=self.cfg.mixed_precision):
+                    entropy_loss = -(
+                        self.log_entropy_coefficient
+                        * (log_prob + self._target_entropy).detach()
+                    ).mean()
+
+                self.entropy_optimizer.zero_grad()
+                self.scaler.scale(entropy_loss).backward()
+                self.scaler.step(self.entropy_optimizer)
+                self._entropy_coefficient = torch.exp(self.log_entropy_coefficient.detach())
+
+            self.scaler.update()
+
+            self.target_critic_1.update_parameters(self.critic_1, polyak=self.cfg.polyak)
+            self.target_critic_2.update_parameters(self.critic_2, polyak=self.cfg.polyak)
+
+            if self.policy_scheduler:
+                self.policy_scheduler.step()
+            if self.critic_scheduler:
+                self.critic_scheduler.step()
+
+            if self.write_interval > 0:
+                total_loss = policy_loss.detach() + critic_loss.detach() + entropy_loss.detach()
+                self.track_data("Loss / Total loss", total_loss.item())
+                self.track_data("Loss / Policy loss", policy_loss.item())
+                self.track_data("Loss / Critic loss", critic_loss.item())
+                if self.cfg.learn_entropy:
+                    self.track_data("Loss / Entropy loss", entropy_loss.item())
+
+                self.track_data("Q-network / Q1 (max)", torch.max(critic_1_values).item())
+                self.track_data("Q-network / Q1 (min)", torch.min(critic_1_values).item())
+                self.track_data("Q-network / Q1 (mean)", torch.mean(critic_1_values).item())
+                self.track_data("Q-network / Q2 (max)", torch.max(critic_2_values).item())
+                self.track_data("Q-network / Q2 (min)", torch.min(critic_2_values).item())
+                self.track_data("Q-network / Q2 (mean)", torch.mean(critic_2_values).item())
+                self.track_data("Target / Target (max)", torch.max(target_values).item())
+                self.track_data("Target / Target (min)", torch.min(target_values).item())
+                self.track_data("Target / Target (mean)", torch.mean(target_values).item())
+                self.track_data("Coefficient / Entropy coefficient", self._entropy_coefficient.item())
+
+                if self.policy_scheduler:
+                    self.track_data("Learning / Policy learning rate", self.policy_scheduler.get_last_lr()[0])
+                if self.critic_scheduler:
+                    self.track_data("Learning / Critic learning rate", self.critic_scheduler.get_last_lr()[0])
 
 
 class SACAlgorithm(Algorithm):
     def __init__(self, env, cfg: SACAlgorithmConfig):
         super().__init__(env, cfg)
-        device = cfg.device
-        obs_space = env.observation_space
-        act_space = env.action_space
-        obs_dim = obs_space.shape[0]
-        act_dim = act_space.shape[0]
 
-        self.policy = Policy(obs_space, act_space, device)
-        self.critic_1 = QNetwork(obs_space, act_space, device)
-        self.critic_2 = QNetwork(obs_space, act_space, device)
-        self.critic_tgt_1 = QNetwork(obs_space, act_space, device)
-        self.critic_tgt_2 = QNetwork(obs_space, act_space, device)
-        for m in (self.policy, self.critic_1, self.critic_2,
-                  self.critic_tgt_1, self.critic_tgt_2):
-            m.init_parameters(method_name=cfg.init_method_name,
-                              mean=cfg.init_mean, std=cfg.init_std)
-        self.critic_tgt_1.load_state_dict(self.critic_1.state_dict())
-        self.critic_tgt_2.load_state_dict(self.critic_2.state_dict())
+        self.models = {
+            "policy": Policy(env.observation_space, env.action_space, cfg.device),
+            "critic_1": QNetwork(env.observation_space, env.action_space, cfg.device),
+            "critic_2": QNetwork(env.observation_space, env.action_space, cfg.device),
+            "target_critic_1": QNetwork(env.observation_space, env.action_space, cfg.device),
+            "target_critic_2": QNetwork(env.observation_space, env.action_space, cfg.device),
+        }
+        for model in self.models.values():
+            model.init_parameters(
+                method_name=cfg.init_method_name,
+                mean=cfg.init_mean,
+                std=cfg.init_std,
+            )
 
-        self.log_alpha = torch.zeros(1, requires_grad=True, device=device)
-        self.target_entropy = -act_dim
+        agent_cfg = {
+            "gradient_steps": cfg.gradient_steps,
+            "batch_size": cfg.batch_size,
+            "discount_factor": cfg.discount_factor,
+            "polyak": cfg.tau,
+            "learning_rate": (cfg.lr, cfg.lr, cfg.alpha_lr),
+            "random_timesteps": cfg.random_timesteps,
+            "learning_starts": cfg.learning_starts,
+            "mixed_precision": cfg.mixed_precision,
+            "initial_entropy_value": cfg.initial_entropy_value,
+            "experiment": {
+                "directory": cfg.experiment_directory,
+                "write_interval": cfg.write_interval,
+                "checkpoint_interval": cfg.checkpoint_interval,
+                "experiment_name": cfg.experiment_name,
+            },
+        }
 
-        self.policy_opt = torch.optim.Adam(self.policy.parameters(), lr=cfg.lr)
-        self.critic_opt = torch.optim.Adam(
-            list(self.critic_1.parameters()) + list(self.critic_2.parameters()),
-            lr=cfg.lr,
+        self.agent = TrackedSAC(
+            models=self.models,
+            memory=RandomMemory(
+                memory_size=cfg.memory_size,
+                num_envs=self.env.num_envs,
+                device=cfg.device,
+            ),
+            cfg=agent_cfg,
+            observation_space=self.env.observation_space,
+            action_space=self.env.action_space,
+            device=cfg.device,
         )
-        self.alpha_opt = torch.optim.Adam([self.log_alpha], lr=cfg.alpha_lr)
 
-        self.online_buf = ReplayBuffer(cfg.memory_size, obs_dim, act_dim, device)
-        self.expert_buf = ReplayBuffer(cfg.memory_size, obs_dim, act_dim, device)
+        trainer_cfg = {
+            "timesteps": cfg.timesteps,
+            "headless": cfg.headless,
+            "environment_info": cfg.environment_info,
+            "disable_progressbar": False,
+        }
+        self.trainer = SequentialTrainer(cfg=trainer_cfg, env=self.env, agents=[self.agent])
+        if self.cfg.resume:
+            self.agent.load(self.cfg.checkpoint_path)  # type: ignore[arg-type]
+            print(f"Model loaded from {self.cfg.checkpoint_path}")
 
-        if cfg.resume and cfg.checkpoint_path and os.path.exists(cfg.checkpoint_path):
-            self._load_checkpoint(cfg.checkpoint_path)
-
-    def _collect_expert_data(self) -> None:
-        cfg: SACAlgorithmConfig = self.cfg
-        if not cfg.expert_checkpoint_path or cfg.expert_collect_steps <= 0:
-            return
-        if not os.path.exists(cfg.expert_checkpoint_path):
-            print(f"Expert not found: {cfg.expert_checkpoint_path}")
-            return
-
-        print(f"Collecting expert data: {cfg.expert_collect_steps} steps "
-              f"from {cfg.expert_checkpoint_path}")
-        expert = torch.jit.load(cfg.expert_checkpoint_path).to(cfg.device)
-
-        obs, _ = self.env.reset()
-        for i in range(cfg.expert_collect_steps):
-            with torch.no_grad():
-                action = expert(obs)
-            next_obs, reward, terminated, truncated, info = self.env.step(action)
-            done = (terminated | truncated).float()
-            self.expert_buf.add(obs, action, reward, next_obs, done)
-            obs = next_obs
-            if (i + 1) % 200 == 0:
-                print(f"  expert {i+1}/{cfg.expert_collect_steps}, "
-                      f"buf={self.expert_buf.size()}")
-
-        print(f"Expert buffer: {self.expert_buf.size()} transitions")
-        self.env.reset()
-
-    def _sac_update(self, obs, act, rew, nobs, done):
-        alpha = self.log_alpha.exp()
-
-        with torch.no_grad():
-            nm = self.policy.net(nobs)
-            ns = self.policy.log_std_parameter.exp().expand_as(nm)
-            nd = D.Normal(nm, ns)
-            na = nd.sample()
-            nlp = nd.log_prob(na).sum(-1, keepdim=True)
-            q1t = self.critic_tgt_1.net(torch.cat([nobs, na], -1))
-            q2t = self.critic_tgt_2.net(torch.cat([nobs, na], -1))
-            qt = torch.min(q1t, q2t) - alpha * nlp
-            y = rew + (1.0 - done) * self.cfg.discount_factor * qt
-
-        q1 = self.critic_1.net(torch.cat([obs, act], -1))
-        q2 = self.critic_2.net(torch.cat([obs, act], -1))
-        c_loss = F.mse_loss(q1, y) + F.mse_loss(q2, y)
-        self.critic_opt.zero_grad()
-        c_loss.backward()
-        self.critic_opt.step()
-
-        pm = self.policy.net(obs)
-        ps = self.policy.log_std_parameter.exp().expand_as(pm)
-        pd = D.Normal(pm, ps)
-        pa = pd.rsample()
-        plp = pd.log_prob(pa).sum(-1, keepdim=True)
-        q1p = self.critic_1.net(torch.cat([obs, pa], -1))
-        q2p = self.critic_2.net(torch.cat([obs, pa], -1))
-        qp = torch.min(q1p, q2p)
-        p_loss = (alpha.detach() * plp - qp).mean()
-        self.policy_opt.zero_grad()
-        p_loss.backward()
-        self.policy_opt.step()
-
-        a_loss = -(self.log_alpha * (plp + self.target_entropy).detach()).mean()
-        self.alpha_opt.zero_grad()
-        a_loss.backward()
-        self.alpha_opt.step()
-
-        tau = self.cfg.tau
-        for p, tp in zip(self.critic_1.parameters(), self.critic_tgt_1.parameters()):
-            tp.data.lerp_(p.data, tau)
-        for p, tp in zip(self.critic_2.parameters(), self.critic_tgt_2.parameters()):
-            tp.data.lerp_(p.data, tau)
+    def _maybe_compile_policy(self) -> None:
+        if self.cfg.compile_policy:
+            self.agent.policy = torch.compile(self.agent.policy)  # type: ignore[assignment]
 
     def train(self) -> None:
-        self._collect_expert_data()
-
-        run_dir = os.path.join(self.cfg.experiment_directory, self.cfg.experiment_name)
-        writer = SummaryWriter(log_dir=run_dir)
-
-        obs, _ = self.env.reset()
-        for step in range(self.cfg.timesteps):
-            if step < self.cfg.random_timesteps:
-                action = (torch.rand((self.env.num_envs,
-                                      self.env.action_space.shape[0]),
-                                     device=self.cfg.device) * 2 - 1) * np.pi
-            else:
-                with torch.no_grad():
-                    m = self.policy.net(obs)
-                    s = self.policy.log_std_parameter.exp().expand_as(m)
-                    action = D.Normal(m, s).sample().clamp(-np.pi, np.pi)
-
-            next_obs, reward, terminated, truncated, info = self.env.step(action)
-            done = (terminated | truncated).float()
-            self.online_buf.add(obs, action, reward, next_obs, done)
-            obs = next_obs
-
-            if step >= self.cfg.learning_starts and self.online_buf.size() >= self.cfg.batch_size // 2:
-                n_on = int(self.cfg.batch_size * (1 - self.cfg.expert_sample_ratio))
-                n_ex = self.cfg.batch_size - n_on
-                for _ in range(self.cfg.gradient_steps):
-                    bo, ba, br, bn, bd = self.online_buf.sample(n_on)
-                    if n_ex > 0 and self.expert_buf.size() >= n_ex:
-                        eo, ea, er, en, ed = self.expert_buf.sample(n_ex)
-                        bo = torch.cat([bo, eo])
-                        ba = torch.cat([ba, ea])
-                        br = torch.cat([br, er])
-                        bn = torch.cat([bn, en])
-                        bd = torch.cat([bd, ed])
-                    self._sac_update(bo, ba, br, bn, bd)
-
-            if step % self.cfg.write_interval == 0:
-                if "extra" in info:
-                    for k, v in info["extra"].items():
-                        writer.add_scalar(k, float(v), step)
-                writer.add_scalar("alpha", self.log_alpha.exp().item(), step)
-                writer.add_scalar("online_buf", self.online_buf.size(), step)
-
-            if step > 0 and step % self.cfg.checkpoint_interval == 0:
-                ckpt_dir = os.path.join(run_dir, "checkpoints")
-                os.makedirs(ckpt_dir, exist_ok=True)
-                self._save_checkpoint(os.path.join(ckpt_dir, f"step_{step}.pt"))
-
-        ckpt_dir = os.path.join(run_dir, "checkpoints")
-        os.makedirs(ckpt_dir, exist_ok=True)
-        self._save_checkpoint(os.path.join(ckpt_dir, "best_agent.pt"))
-        writer.close()
+        self._maybe_compile_policy()
+        self.trainer.train()
 
     def eval(self) -> None:
-        obs, _ = self.env.reset()
+        self._maybe_compile_policy()
+        self.agent.policy.eval()  # type: ignore[union-attr]
+        states, _ = self.env.reset()
         with torch.no_grad():
-            for _ in range(self.cfg.eval_steps):
-                mean = self.policy.net(obs)
-                obs, _, _, _, _ = self.env.step(mean)
-
-    def _save_checkpoint(self, path):
-        torch.save({
-            "policy": self.policy.state_dict(),
-            "critic_1": self.critic_1.state_dict(),
-            "critic_2": self.critic_2.state_dict(),
-            "critic_tgt_1": self.critic_tgt_1.state_dict(),
-            "critic_tgt_2": self.critic_tgt_2.state_dict(),
-            "log_alpha": self.log_alpha.detach().clone(),
-            "policy_opt": self.policy_opt.state_dict(),
-            "critic_opt": self.critic_opt.state_dict(),
-            "alpha_opt": self.alpha_opt.state_dict(),
-        }, path)
-        print(f"Saved: {path}")
-
-    def _load_checkpoint(self, path):
-        ckpt = torch.load(path, map_location=self.cfg.device, weights_only=False)
-        self.policy.load_state_dict(ckpt["policy"])
-        self.critic_1.load_state_dict(ckpt["critic_1"])
-        self.critic_2.load_state_dict(ckpt["critic_2"])
-        self.critic_tgt_1.load_state_dict(ckpt["critic_tgt_1"])
-        self.critic_tgt_2.load_state_dict(ckpt["critic_tgt_2"])
-        if "log_alpha" in ckpt:
-            self.log_alpha.data.copy_(ckpt["log_alpha"])
-        for k, opt in [("policy_opt", self.policy_opt),
-                       ("critic_opt", self.critic_opt),
-                       ("alpha_opt", self.alpha_opt)]:
-            if k in ckpt:
-                opt.load_state_dict(ckpt[k])
-        print(f"Loaded: {path}")
+            for timestep in range(self.cfg.eval_steps):
+                actions, outputs = self.agent.act(
+                    states,
+                    None,
+                    timestep=timestep,
+                    timesteps=self.cfg.eval_steps,
+                )
+                states, _, _, _, _ = self.env.step(outputs.get("mean_actions", actions))

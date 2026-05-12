@@ -49,8 +49,9 @@ class Policy(GaussianMixin, Model):
         self.log_std_parameter = nn.Parameter(torch.full((self.num_actions,), -2.0))
 
     def compute(self, inputs: Mapping[str, Union[torch.Tensor, Any]], role: str = ""):
-        mean_actions = self.net(inputs["states"])
-        return mean_actions, self.log_std_parameter, {}
+        x = inputs.get("observations", inputs.get("states"))
+        mean_actions = self.net(x)
+        return mean_actions, {"log_std": self.log_std_parameter}
 
 
 class QNetwork(DeterministicMixin, Model):
@@ -69,7 +70,8 @@ class QNetwork(DeterministicMixin, Model):
         )
 
     def compute(self, inputs: Mapping[str, Union[torch.Tensor, Any]], role: str = ""):
-        x = torch.cat([inputs["states"], inputs["taken_actions"]], dim=1)
+        observations = inputs.get("observations", inputs.get("states"))
+        x = torch.cat([observations, inputs["taken_actions"]], dim=1)
         q = self.net(x)
         return q, {}
 
@@ -90,5 +92,6 @@ class Value(DeterministicMixin, Model):
         )
 
     def compute(self, inputs: Mapping[str, Union[torch.Tensor, Any]], role: str = ""):
-        v = self.net(inputs["states"])
+        x = inputs.get("observations", inputs.get("states"))
+        v = self.net(x)
         return v, {}

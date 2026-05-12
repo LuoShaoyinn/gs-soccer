@@ -129,3 +129,6 @@ class Env(ABC):
 
     def render(self):
         pass
+
+    def state(self):
+        return None

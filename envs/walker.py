@@ -62,7 +62,7 @@ class WalkEnv(Env):
         state = {"cmd_vel": self.cmd_vel[envs_idx],
                  **super().get_state(envs_idx)}
         state["non_foot_heights"] = self._get_non_foot_heights(envs_idx)
-        target_q = self.model.ewma_action + self.model.target_q_offset
+        target_q = self.model.ewma_action[envs_idx] + self.model.target_q_offset
         state["dofs_torque"] = (
             self._kp * (target_q - state["dofs_pos"])
             - self._kv * state["dofs_vel"]
