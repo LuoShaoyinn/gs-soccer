@@ -24,10 +24,17 @@ class MOS9WalkModelConfig(ModelConfig):
     proj_gravity_noise: float       = 0.12 * 0.6
     obs_clip:           tuple       = (-18.0, 18.0)
 
-    speed_reward_weight:    float   = 2.0
-    torque_penalty_weight:  float   = 1e-5
+    tracking_sigma:         float   = 0.25
+    tracking_lin_vel_weight: float  = 1.5
+    tracking_ang_vel_weight: float  = 0.75
+    lin_vel_z_penalty_weight: float = 1.0
+    ang_vel_xy_penalty_weight: float = 0.05
+    orientation_penalty_weight: float = 1.0
+    torque_penalty_weight:  float   = 2e-5
+    dof_vel_penalty_weight: float   = 1e-4
+    dof_acc_penalty_weight: float   = 2.5e-7
+    action_rate_penalty_weight: float = 0.01
     alive_reward_weight:    float   = 0.2
-    upright_reward_weight:  float   = 0.5
     termination_body_height: float  = 0.2
     termination_link_height: float  = 0.05
     max_episode_length:     int     = 500
@@ -61,6 +68,12 @@ class MOS9WalkModel(Model):
             (self.scene.n_envs,), dtype=torch.long, device=gs.device,
         )
         self._log: dict[str, torch.Tensor] = {}
+        self.prev_action = torch.zeros(
+            (self.scene.n_envs, self.cfg.n_dofs), dtype=torch.float, device=gs.device,
+        )
+        self.last_dofs_vel = torch.zeros(
+            (self.scene.n_envs, self.cfg.n_dofs), dtype=torch.float, device=gs.device,
+        )
 
     def reset(self, envs_idx: torch.Tensor):
         self.time_steps[envs_idx]   = 0.0
@@ -69,8 +82,11 @@ class MOS9WalkModel(Model):
         self.last_obs[envs_idx]     = 0.0
         self.speed_buffer[envs_idx] = 0.0
         self.episode_steps[envs_idx] = 0
+        self.prev_action[envs_idx] = 0.0
+        self.last_dofs_vel[envs_idx] = 0.0
     
     def preprocess_action(self, action: torch.Tensor):
+        self.prev_action.copy_(self.last_action)
         self.last_action = action
         self.time_steps += 1.0
         self.episode_steps += 1
@@ -149,53 +165,89 @@ class MOS9WalkModel(Model):
         return self.last_obs[envs_idx].reshape(n, -1)
 
     def build_reward(
-        self, envs_idx, body_lin_vel, body_quat, dofs_torque, cmd_vel, **kwargs
+        self, envs_idx, body_lin_vel, body_ang_vel, body_quat, dofs_torque, dofs_vel, cmd_vel, **kwargs
     ) -> torch.Tensor:
-        def quaternion_to_euler_array(quat):
-            w, x, y, z = quat[:, 0], quat[:, 1], quat[:, 2], quat[:, 3]
-            t0 = +2.0 * (w * x + y * z)
-            t1 = +1.0 - 2.0 * (x * x + y * y)
-            roll = torch.atan2(t0, t1)
-            t2 = +2.0 * (w * y - z * x)
-            t2 = torch.clamp(t2, -1.0, 1.0)
-            pitch = torch.asin(t2)
-            t3 = +2.0 * (w * z + x * y)
-            t4 = +1.0 - 2.0 * (y * y + z * z)
-            yaw = torch.atan2(t3, t4)
-            return torch.stack([roll, pitch, yaw], dim=-1)
+        def project_gravity(quat: torch.Tensor) -> torch.Tensor:
+            n = quat.shape[0]
+            gravity = torch.tensor([0.0, 0.0, -1.0], dtype=torch.float, device=gs.device)
+            gravity = gravity.broadcast_to((n, 3))
+            q_w = quat[:, 0:1]
+            q_vec = quat[:, 1:4]
+            return (
+                gravity * (2.0 * q_w * q_w - 1.0)
+                - torch.cross(q_vec, gravity, dim=1) * (2.0 * q_w)
+                + q_vec * (2.0 * (q_vec * gravity).sum(dim=1, keepdim=True))
+            )
 
         forward_speed = body_lin_vel[:, 0:1]
+        lateral_speed = body_lin_vel[:, 1:2]
+        lin_vel_z = body_lin_vel[:, 2:3]
+        yaw_rate = body_ang_vel[:, 2:3]
+        ang_vel_xy_sq = (body_ang_vel[:, 0:2] ** 2).sum(dim=1, keepdim=True)
+        proj_gravity = project_gravity(body_quat)
+        orientation_sq = (proj_gravity[:, 0:2] ** 2).sum(dim=1, keepdim=True)
+
         self.speed_buffer = torch.roll(self.speed_buffer, shifts=-1, dims=1)
         self.speed_buffer[:, -1:] = forward_speed
         chunk_speed = self.speed_buffer.mean(dim=1, keepdim=True)
 
-        speed_reward = chunk_speed * cmd_vel[:, 0:1]
-        torque_penalty = (dofs_torque ** 2).sum(dim=1, keepdim=True)
-        euler = quaternion_to_euler_array(body_quat)
-        roll = euler[:, 0:1]
-        pitch = euler[:, 1:2]
-        upright_reward = torch.exp(-2.0 * (roll**2 + pitch**2))
-        alive_reward = torch.ones_like(speed_reward)
+        lin_err_sq = (chunk_speed - cmd_vel[:, 0:1]) ** 2 + (lateral_speed - cmd_vel[:, 1:2]) ** 2
+        tracking_lin_vel_reward = torch.exp(-lin_err_sq / self.cfg.tracking_sigma)
+        ang_err_sq = (yaw_rate - cmd_vel[:, 2:3]) ** 2
+        tracking_ang_vel_reward = torch.exp(-ang_err_sq / self.cfg.tracking_sigma)
 
-        speed_term = self.cfg.speed_reward_weight * speed_reward
+        torque_penalty = (dofs_torque ** 2).sum(dim=1, keepdim=True)
+        dof_vel_penalty = (dofs_vel ** 2).sum(dim=1, keepdim=True)
+        dof_acc = (dofs_vel - self.last_dofs_vel) / self.cfg.step_dt
+        dof_acc_penalty = (dof_acc ** 2).sum(dim=1, keepdim=True)
+        self.last_dofs_vel.copy_(dofs_vel)
+        action_rate_penalty = ((self.last_action - self.prev_action) ** 2).sum(dim=1, keepdim=True)
+        alive_reward = torch.ones_like(tracking_lin_vel_reward)
+
+        tracking_lin_term = self.cfg.tracking_lin_vel_weight * tracking_lin_vel_reward
+        tracking_ang_term = self.cfg.tracking_ang_vel_weight * tracking_ang_vel_reward
+        lin_vel_z_term = self.cfg.lin_vel_z_penalty_weight * lin_vel_z * lin_vel_z
+        ang_vel_xy_term = self.cfg.ang_vel_xy_penalty_weight * ang_vel_xy_sq
+        orientation_term = self.cfg.orientation_penalty_weight * orientation_sq
         torque_term = self.cfg.torque_penalty_weight * torque_penalty
+        dof_vel_term = self.cfg.dof_vel_penalty_weight * dof_vel_penalty
+        dof_acc_term = self.cfg.dof_acc_penalty_weight * dof_acc_penalty
+        action_rate_term = self.cfg.action_rate_penalty_weight * action_rate_penalty
         alive_term = self.cfg.alive_reward_weight * alive_reward
-        upright_term = self.cfg.upright_reward_weight * upright_reward
         total_reward = (
-            speed_term
+            tracking_lin_term
+            + tracking_ang_term
             + alive_term
-            + upright_term
             - torque_term
+            - lin_vel_z_term
+            - ang_vel_xy_term
+            - orientation_term
+            - dof_vel_term
+            - dof_acc_term
+            - action_rate_term
         )
         self._log = {
-            "+speed": speed_term,
+            "+tracking_lin_vel": tracking_lin_term,
+            "+tracking_ang_vel": tracking_ang_term,
             "+alive": alive_term,
-            "+upright": upright_term,
+            "-lin_vel_z": -lin_vel_z_term,
+            "-ang_vel_xy": -ang_vel_xy_term,
+            "-orientation": -orientation_term,
             "-torque": -torque_term,
+            "-dof_vel": -dof_vel_term,
+            "-dof_acc": -dof_acc_term,
+            "-action_rate": -action_rate_term,
             "+total": total_reward,
             "state/forward_speed": forward_speed,
+            "state/lateral_speed": lateral_speed,
+            "state/lin_vel_z": lin_vel_z,
+            "state/yaw_rate": yaw_rate,
+            "state/cmd_forward_speed": cmd_vel[:, 0:1],
+            "state/cmd_lateral_speed": cmd_vel[:, 1:2],
+            "state/cmd_yaw_rate": cmd_vel[:, 2:3],
             "state/chunk_speed": chunk_speed,
             "state/torque_sum_sq": torque_penalty,
+            "state/proj_gravity_xy_sq": orientation_sq,
         }
         return total_reward
 

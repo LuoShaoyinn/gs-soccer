@@ -6,11 +6,13 @@ import itertools
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import genesis as gs
 
 from skrl import config
 from skrl.agents.torch.sac import SAC
 from skrl.memories.torch import RandomMemory
 from skrl.trainers.torch import SequentialTrainer
+from skrl.resources.preprocessors.torch.running_standard_scaler import RunningStandardScaler
 
 from network import Policy, QNetwork
 
@@ -203,6 +205,8 @@ class SACAlgorithm(Algorithm):
             "learning_starts": cfg.learning_starts,
             "mixed_precision": cfg.mixed_precision,
             "initial_entropy_value": cfg.initial_entropy_value,
+            "observation_preprocessor": RunningStandardScaler,
+            "observation_preprocessor_kwargs": {"size": env.observation_space, "device": cfg.device},
             "experiment": {
                 "directory": cfg.experiment_directory,
                 "write_interval": cfg.write_interval,
@@ -255,4 +259,9 @@ class SACAlgorithm(Algorithm):
                     timestep=timestep,
                     timesteps=self.cfg.eval_steps,
                 )
-                states, _, _, _, _ = self.env.step(outputs.get("mean_actions", actions))
+                try:
+                    states, _, _, _, _ = self.env.step(outputs.get("mean_actions", actions))
+                except gs.GenesisException as exc:
+                    if "Viewer closed" in str(exc):
+                        break
+                    raise

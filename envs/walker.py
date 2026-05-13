@@ -35,7 +35,7 @@ class WalkEnv(Env):
     def _sample_cmd_vel(self, n_envs: int) -> torch.Tensor:
         # Easier curriculum: forward-only command. Lateral and yaw are zero.
         cmd_vel = torch.zeros((n_envs, 3), dtype=torch.float, device=gs.device)
-        cmd_vel[:, 0] = 0.2 + 0.8 * torch.rand((n_envs,), dtype=torch.float, device=gs.device)
+        cmd_vel[:, 0] = 0.05 + 0.30 * torch.rand((n_envs,), dtype=torch.float, device=gs.device)
         return cmd_vel
 
     def config(self):

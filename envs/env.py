@@ -125,7 +125,14 @@ class Env(ABC):
                 **self.field.get_state(envs_idx = envs_idx)} 
     
     def close(self):
-        pass
+        if getattr(self, "_closed", False):
+            return
+        self._closed = True
+        try:
+            self.scene.destroy()
+        except Exception:
+            # Avoid noisy shutdown failures from backend-specific GL context teardown.
+            pass
 
     def render(self):
         pass
