@@ -35,9 +35,12 @@ class MOS9WalkModelConfig(ModelConfig):
     reward_dof_pos_limits_weight: float = -5.0
     reward_hip_pos_weight: float = -1.0
     reward_undesired_contact_weight: float = -1.0
+    reward_feet_air_time_weight: float = 1.0
+    reward_feet_slide_weight: float = -0.2
 
     base_height_target: float = 0.5
     dof_pos_soft_limit: float = 0.9
+    feet_air_time_target: float = 0.35
     termination_body_height: float = 0.2
     termination_link_height: float = 0.05
     termination_tilt_limit_rad: float = 0.8
@@ -77,6 +80,8 @@ class MOS9WalkModel(Model):
         # compatibility with walker infra
         self.ewma_action = torch.zeros((self.scene.n_envs, self.cfg.n_dofs), dtype=torch.float, device=gs.device)
         self._cache_proj_gravity = torch.zeros((self.scene.n_envs, 3), dtype=torch.float, device=gs.device)
+        self.feet_air_time = torch.zeros((self.scene.n_envs, 2), dtype=torch.float, device=gs.device)
+        self.last_foot_contacts = torch.zeros((self.scene.n_envs, 2), dtype=torch.float, device=gs.device)
         self._log: dict[str, torch.Tensor] = {}
 
     def reset(self, envs_idx: torch.Tensor):
@@ -89,6 +94,8 @@ class MOS9WalkModel(Model):
         self.ewma_action[envs_idx] = 0.0
         self.target_q[envs_idx] = self.target_q_offset
         self._cache_proj_gravity[envs_idx] = 0.0
+        self.feet_air_time[envs_idx] = 0.0
+        self.last_foot_contacts[envs_idx] = 0.0
 
     def preprocess_action(self, action: torch.Tensor):
         self.prev_action.copy_(self.last_action)
@@ -144,6 +151,8 @@ class MOS9WalkModel(Model):
         dofs_pos,
         dofs_vel,
         dofs_torque,
+        foot_contacts,
+        foot_lin_speeds,
         non_foot_heights,
         **kwargs,
     ):
@@ -171,6 +180,18 @@ class MOS9WalkModel(Model):
         hip_idx = torch.tensor([0, 6], dtype=torch.long, device=gs.device)
         hip_pos = torch.sum(torch.abs(dof_pos_rel.index_select(dim=1, index=hip_idx)), dim=1, keepdim=True)
         undesired_contacts = (non_foot_heights < self.cfg.termination_link_height).float().mean(dim=1, keepdim=True)
+        # Feet air-time and feet slide (Unitree-like locomotion shaping)
+        self.feet_air_time += self.cfg.step_dt
+        contact_rise = (foot_contacts > 0.5) & (self.last_foot_contacts <= 0.5)
+        air_time_bonus = torch.where(
+            contact_rise,
+            torch.clamp(self.feet_air_time - self.cfg.feet_air_time_target, min=0.0),
+            torch.zeros_like(self.feet_air_time),
+        )
+        feet_air_time_reward = air_time_bonus.sum(dim=1, keepdim=True)
+        self.feet_air_time = torch.where(foot_contacts > 0.5, torch.zeros_like(self.feet_air_time), self.feet_air_time)
+        self.last_foot_contacts.copy_(foot_contacts)
+        feet_slide_penalty = (foot_contacts * foot_lin_speeds).sum(dim=1, keepdim=True)
 
         total = (
             self.cfg.reward_tracking_lin_weight * tracking_lin
@@ -187,6 +208,8 @@ class MOS9WalkModel(Model):
             + self.cfg.reward_dof_pos_limits_weight * dof_pos_limits
             + self.cfg.reward_hip_pos_weight * hip_pos
             + self.cfg.reward_undesired_contact_weight * undesired_contacts
+            + self.cfg.reward_feet_air_time_weight * feet_air_time_reward
+            + self.cfg.reward_feet_slide_weight * feet_slide_penalty
         )
         if self.cfg.only_positive_rewards:
             total = torch.clamp(total, min=0.0)
@@ -206,6 +229,8 @@ class MOS9WalkModel(Model):
             "-dof_pos_limits": self.cfg.reward_dof_pos_limits_weight * dof_pos_limits,
             "-hip_pos": self.cfg.reward_hip_pos_weight * hip_pos,
             "-undesired_contacts": self.cfg.reward_undesired_contact_weight * undesired_contacts,
+            "+feet_air_time": self.cfg.reward_feet_air_time_weight * feet_air_time_reward,
+            "-feet_slide": self.cfg.reward_feet_slide_weight * feet_slide_penalty,
             "+total": total,
             "state/body_height": body_pos[:, 2:3],
             "state/cmd_vx": cmd_vel[:, 0:1],
@@ -227,4 +252,3 @@ class MOS9WalkModel(Model):
     @torch.compiler.disable
     def build_info(self, envs_idx, **kwargs):
         return {"extra": {f"Reward / {k}": v.detach().mean().cpu() for k, v in self._log.items()}}
-
