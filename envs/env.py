@@ -121,11 +121,26 @@ class Env(ABC):
                 self.model.build_info(envs_idx=envs_idx, **kwargs))
   
     def get_state(self, envs_idx: torch.Tensor) -> dict[str, torch.Tensor]:
-        return {**self.robot.get_state(envs_idx = envs_idx), 
-                **self.field.get_state(envs_idx = envs_idx)} 
+        robot_state = self.robot.get_state(envs_idx=envs_idx)
+        field_state = self.field.get_state(envs_idx=envs_idx)
+        # Backward-compatible contract:
+        # - keep flat keys for existing models
+        # - provide a structured block for future extensions
+        return {
+            **robot_state,
+            **field_state,
+            "_state": {
+                "robot": robot_state,
+                "field": field_state,
+            },
+        }
     
     def close(self):
         pass
 
     def render(self):
         pass
+
+    def state(self):
+        # skrl trainer compatibility (single-observation envs)
+        return None

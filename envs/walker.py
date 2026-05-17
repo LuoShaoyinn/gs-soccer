@@ -59,12 +59,18 @@ class WalkEnv(Env):
         return torch.cat(parts, dim=1)
 
     def get_state(self, envs_idx: torch.Tensor) -> dict[str, torch.Tensor]:
-        state = {"cmd_vel": self.cmd_vel[envs_idx],
-                 **super().get_state(envs_idx)}
+        state = {"cmd_vel": self.cmd_vel[envs_idx], **super().get_state(envs_idx)}
         state["non_foot_heights"] = self._get_non_foot_heights(envs_idx)
-        target_q = self.model.ewma_action + self.model.target_q_offset
+        target_q = self.model.ewma_action[envs_idx] + self.model.target_q_offset
         state["dofs_torque"] = (
             self._kp * (target_q - state["dofs_pos"])
             - self._kv * state["dofs_vel"]
         )
+        if "_state" in state:
+            state["_state"]["commands"] = {"cmd_vel": state["cmd_vel"]}
+            state["_state"]["contacts"] = {"non_foot_heights": state["non_foot_heights"]}
+            state["_state"]["actuation"] = {
+                "target_q": target_q,
+                "dofs_torque": state["dofs_torque"],
+            }
         return state
