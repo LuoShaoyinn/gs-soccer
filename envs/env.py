@@ -96,7 +96,8 @@ class Env(ABC):
         action = self.model.preprocess_action(action)
         self.robot.step(action=action)
         self.gs_step()
-        kwargs = self.get_state(envs_idx=self.all_envs_idx)
+        state = self.get_state(envs_idx=self.all_envs_idx)
+        kwargs = self._flatten_state(state)
         next_observation    = self.model.build_observation(envs_idx=self.all_envs_idx, **kwargs)
         reward              = self.model.build_reward(envs_idx=self.all_envs_idx, **kwargs)
         terminated          = self.model.build_terminated(envs_idx=self.all_envs_idx, **kwargs)
@@ -116,23 +117,15 @@ class Env(ABC):
         self.robot.reset(envs_idx=envs_idx)
         self.field.reset(envs_idx=envs_idx)
         self.model.reset(envs_idx=envs_idx)
-        kwargs = self.get_state(envs_idx=envs_idx)
+        state = self.get_state(envs_idx=envs_idx)
+        kwargs = self._flatten_state(state)
         return (self.model.build_observation(envs_idx=envs_idx, **kwargs), 
                 self.model.build_info(envs_idx=envs_idx, **kwargs))
   
-    def get_state(self, envs_idx: torch.Tensor) -> dict[str, torch.Tensor]:
-        robot_state = self.robot.get_state(envs_idx=envs_idx)
-        field_state = self.field.get_state(envs_idx=envs_idx)
-        # Backward-compatible contract:
-        # - keep flat keys for existing models
-        # - provide a structured block for future extensions
+    def get_state(self, envs_idx: torch.Tensor) -> dict[str, dict[str, torch.Tensor]]:
         return {
-            **robot_state,
-            **field_state,
-            "_state": {
-                "robot": robot_state,
-                "field": field_state,
-            },
+            "robot": self.robot.get_state(envs_idx=envs_idx),
+            "field": self.field.get_state(envs_idx=envs_idx),
         }
     
     def close(self):
@@ -144,3 +137,18 @@ class Env(ABC):
     def state(self):
         # skrl trainer compatibility (single-observation envs)
         return None
+    @staticmethod
+    def _flatten_state(state: dict) -> dict[str, torch.Tensor]:
+        # Internal helper for model calls: consume structured state and expose flat tensors.
+        flat: dict[str, torch.Tensor] = {}
+        for key in ("robot", "field", "commands", "contacts", "actuation"):
+            block = state.get(key, None)
+            if isinstance(block, dict):
+                for k, v in block.items():
+                    if isinstance(v, torch.Tensor):
+                        flat[k] = v
+        # allow extra direct tensor keys if provided by a custom env
+        for k, v in state.items():
+            if isinstance(v, torch.Tensor):
+                flat[k] = v
+        return flat
