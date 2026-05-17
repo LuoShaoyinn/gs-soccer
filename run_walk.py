@@ -41,24 +41,9 @@ def main():
 
     from algorithms.ppo import PPOAlgorithm, PPOAlgorithmConfig
     from envs.walker import WalkEnv, WalkEnvConfig
-    from envs.env import Env
     from robots.mos9 import MOS9, MOS9Config
     from fields.field import Field, FieldConfig
     from models.mos9_walk_model import MOS9WalkModelConfig, MOS9WalkModel
-
-    class SkrlWalkEnv(WalkEnv):
-        # skrl trainer calls env.state()
-        def state(self):
-            return None
-
-        # main walker has a reset-index mismatch in target_q broadcasting.
-        # keep infra file untouched and patch behavior at entry layer.
-        def get_state(self, envs_idx):
-            state = {"cmd_vel": self.cmd_vel[envs_idx], **Env.get_state(self, envs_idx)}
-            state["non_foot_heights"] = self._get_non_foot_heights(envs_idx)
-            target_q = self.model.target_q[envs_idx]
-            state["dofs_torque"] = self._kp * (target_q - state["dofs_pos"]) - self._kv * state["dofs_vel"]
-            return state
 
     gs.init(
         backend=gs.gpu,  # type: ignore[unsolved-attribute]
@@ -67,7 +52,7 @@ def main():
     )
 
     algorithm = PPOAlgorithm(
-        SkrlWalkEnv(
+        WalkEnv(
             WalkEnvConfig(
                 robot_cfg=MOS9Config(),
                 robot_class=MOS9,
@@ -113,4 +98,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
