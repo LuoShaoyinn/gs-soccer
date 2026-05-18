@@ -81,6 +81,9 @@ class WalkEnv(Env):
 
     def get_state(self, envs_idx: torch.Tensor) -> dict[str, torch.Tensor]:
         state = {"cmd_vel": self.cmd_vel[envs_idx], **super().get_state(envs_idx)}
+        state["net_contact_force"] = torch.linalg.norm(
+            self.robot.robot.get_links_net_contact_force(envs_idx=envs_idx)[:, :-2, :], dim=2
+        )
         state["non_foot_heights"] = self._get_non_foot_heights(envs_idx)
         state["foot_heights"] = self._get_foot_heights(envs_idx)
         state["foot_lin_speeds"] = self._get_foot_lin_speeds(envs_idx)
