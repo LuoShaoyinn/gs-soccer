@@ -140,6 +140,7 @@ class MOS9Model(Model):
             "rew/upright": rew_upright.unsqueeze(1),
             "rew/height": rew_height.unsqueeze(1),
             "rew/smooth": rew_smooth.unsqueeze(1),
+            "rew/contact_peak": peak_contact.unsqueeze(1),
             "rew/collision_penalty_raw": collision_penalty_raw.unsqueeze(1),
             "rew/collision_penalty": collision_penalty.unsqueeze(1),
             "rew/total": reward,
@@ -168,4 +169,20 @@ class MOS9Model(Model):
 
     @torch.compiler.disable
     def build_info(self, envs_idx, **kwargs) -> dict[str, dict[str, torch.Tensor]]:
-        return {"extra": {f"Reward / {k}": v.detach().mean().cpu() for k, v in self._log.items()}}
+        extra = {f"Reward / {k}": v.detach().mean().cpu() for k, v in self._log.items()}
+        # Keep commonly-used aliases visible in one panel.
+        if "rew/total" in self._log:
+            extra["Reward / total"] = self._log["rew/total"].detach().mean().cpu()
+        if "rew/lin_vel" in self._log:
+            extra["Reward / tracking_lin"] = self._log["rew/lin_vel"].detach().mean().cpu()
+        if "rew/yaw" in self._log:
+            extra["Reward / tracking_yaw"] = self._log["rew/yaw"].detach().mean().cpu()
+        if "rew/upright" in self._log:
+            extra["Reward / upright"] = self._log["rew/upright"].detach().mean().cpu()
+        if "rew/height" in self._log:
+            extra["Reward / height"] = self._log["rew/height"].detach().mean().cpu()
+        if "rew/smooth" in self._log:
+            extra["Reward / smooth"] = self._log["rew/smooth"].detach().mean().cpu()
+        if "rew/collision_penalty" in self._log:
+            extra["Reward / collision_penalty"] = self._log["rew/collision_penalty"].detach().mean().cpu()
+        return {"extra": extra}
