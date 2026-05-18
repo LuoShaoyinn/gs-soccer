@@ -16,8 +16,8 @@ class MOS9ModelConfig(ModelConfig):
     timeout: float = 20.0
     field_range: float = 1.0
     omega: float = 2.0
-    collision_penalty_weight: float = 0.5
     obs_clip: tuple = (-1.0, 1.0)
+    history_frames: int = 10
 
 
 class MOS9Model(Model):
@@ -29,6 +29,11 @@ class MOS9Model(Model):
         self.last_action = torch.zeros((self.scene.n_envs, self.cfg.n_dofs), device=gs.device, dtype=torch.float)
         self.episode_time = torch.zeros((self.scene.n_envs, 1), device=gs.device, dtype=torch.float)
         self._log: dict[str, torch.Tensor] = {}
+        self.last_obs = torch.zeros(
+            (self.scene.n_envs, self.cfg.history_frames, self.dim_observations),
+            device=gs.device,
+            dtype=torch.float,
+        )
 
         # [qpos, qvel, ang_vel, projected_gravity, prev_action, cmd, sin, cos]
         self.dim_observations = self.cfg.n_dofs + self.cfg.n_dofs + 3 + 3 + self.cfg.n_dofs + 3 + 1 + 1
@@ -38,7 +43,7 @@ class MOS9Model(Model):
         return gym.spaces.Box(
             low=self.cfg.obs_clip[0],
             high=self.cfg.obs_clip[1],
-            shape=(self.dim_observations,),
+            shape=(self.dim_observations * self.cfg.history_frames,),
             dtype=np.float32,
         )
 
@@ -50,6 +55,7 @@ class MOS9Model(Model):
         self.ewma_action[envs_idx] = 0.0
         self.last_action[envs_idx] = 0.0
         self.episode_time[envs_idx] = 0.0
+        self.last_obs[envs_idx] = 0.0
 
     def preprocess_action(self, action: torch.Tensor) -> torch.Tensor:
         self.last_action.copy_(action)
@@ -76,7 +82,7 @@ class MOS9Model(Model):
         projected_gravity = self._project_gravity(body_quat)
         obs_sin = torch.sin(self.cfg.omega * self.episode_time[envs_idx])
         obs_cos = torch.cos(self.cfg.omega * self.episode_time[envs_idx])
-        obs = torch.cat(
+        obs_single = torch.cat(
             (
                 dofs_pos,
                 dofs_vel,
@@ -89,7 +95,10 @@ class MOS9Model(Model):
             ),
             dim=1,
         )
-        return torch.clamp(obs, self.cfg.obs_clip[0], self.cfg.obs_clip[1])
+        obs_single = torch.clamp(obs_single, self.cfg.obs_clip[0], self.cfg.obs_clip[1])
+        self.last_obs[envs_idx] = torch.roll(self.last_obs[envs_idx], shifts=-1, dims=1)
+        self.last_obs[envs_idx, -1, :] = obs_single
+        return self.last_obs[envs_idx].reshape(envs_idx.shape[0], -1)
 
     def build_reward(
         self,
@@ -129,7 +138,7 @@ class MOS9Model(Model):
             + 0.60 * rew_upright
             + 0.40 * rew_height
             + 0.20 * rew_smooth
-            - self.cfg.collision_penalty_weight * collision_penalty
+            - 0.50 * collision_penalty
             + 0.20
         )
         reward = torch.clamp(reward, min=0.0, max=3.0).unsqueeze(1)
@@ -170,19 +179,4 @@ class MOS9Model(Model):
     @torch.compiler.disable
     def build_info(self, envs_idx, **kwargs) -> dict[str, dict[str, torch.Tensor]]:
         extra = {f"Reward / {k}": v.detach().mean().cpu() for k, v in self._log.items()}
-        # Keep commonly-used aliases visible in one panel.
-        if "rew/total" in self._log:
-            extra["Reward / total"] = self._log["rew/total"].detach().mean().cpu()
-        if "rew/lin_vel" in self._log:
-            extra["Reward / tracking_lin"] = self._log["rew/lin_vel"].detach().mean().cpu()
-        if "rew/yaw" in self._log:
-            extra["Reward / tracking_yaw"] = self._log["rew/yaw"].detach().mean().cpu()
-        if "rew/upright" in self._log:
-            extra["Reward / upright"] = self._log["rew/upright"].detach().mean().cpu()
-        if "rew/height" in self._log:
-            extra["Reward / height"] = self._log["rew/height"].detach().mean().cpu()
-        if "rew/smooth" in self._log:
-            extra["Reward / smooth"] = self._log["rew/smooth"].detach().mean().cpu()
-        if "rew/collision_penalty" in self._log:
-            extra["Reward / collision_penalty"] = self._log["rew/collision_penalty"].detach().mean().cpu()
         return {"extra": extra}
