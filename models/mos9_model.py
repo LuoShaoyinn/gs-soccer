@@ -65,7 +65,14 @@ class MOS9Model(Model):
         a = torch.cross(q_vec, v.expand_as(q_vec), dim=-1) + w * v
         return v + 2.0 * torch.cross(q_vec, a, dim=-1)
 
-    def build_observation(self, envs_idx, dofs_pos, dofs_vel, body_ang_vel, body_quat, cmd_vel, **kwargs):
+    def build_observation(self, 
+                          envs_idx, 
+                          dofs_pos, 
+                          dofs_vel, 
+                          body_ang_vel, 
+                          body_quat, 
+                          cmd_vel, 
+                          **kwargs): # type: ignore
         projected_gravity = self._project_gravity(body_quat)
         obs_sin = torch.sin(self.cfg.omega * self.episode_time[envs_idx])
         obs_cos = torch.cos(self.cfg.omega * self.episode_time[envs_idx])
@@ -95,7 +102,7 @@ class MOS9Model(Model):
         dofs_vel: torch.Tensor,
         net_contact_force: torch.Tensor,
         **kwargs,
-    ) -> torch.Tensor:
+    ) -> torch.Tensor: # type: ignore
         lin_vel_error = torch.sum(torch.square(cmd_vel[:, :2] - body_lin_vel[:, :2]), dim=1)
         rew_lin_vel = torch.exp(-lin_vel_error / 0.25)
 
@@ -105,7 +112,7 @@ class MOS9Model(Model):
         tilt = torch.sum(torch.square(body_quat[:, 1:3]), dim=1)
         rew_upright = torch.exp(-tilt / 0.05)
 
-        height_error = torch.square(body_pos[:, 2] - 0.51)
+        height_error = torch.square(body_pos[:, 2] - 0.48)
         rew_height = torch.exp(-height_error / 0.02)
 
         dof_speed = torch.mean(torch.square(dofs_vel), dim=1)
@@ -139,7 +146,11 @@ class MOS9Model(Model):
         }
         return reward
 
-    def build_terminated(self, envs_idx, body_pos: torch.Tensor, body_quat: torch.Tensor, **kwargs) -> torch.Tensor:
+    def build_terminated(self, 
+                         envs_idx, 
+                         body_pos: torch.Tensor, 
+                         body_quat: torch.Tensor, 
+                         **kwargs) -> torch.Tensor: # type: ignore
         fallen = body_pos[:, 2] < 0.25
         tilted = torch.sum(torch.square(body_quat[:, 1:3]), dim=1) > 0.35
         terminated = (fallen | tilted).unsqueeze(1)
@@ -147,7 +158,10 @@ class MOS9Model(Model):
         self._log["terminated/tilted"] = tilted.float().unsqueeze(1)
         return terminated
 
-    def build_truncated(self, envs_idx, body_pos: torch.Tensor, **kwargs) -> torch.Tensor:
+    def build_truncated(self, 
+                        envs_idx, 
+                        body_pos: torch.Tensor, 
+                        **kwargs) -> torch.Tensor: # type: ignore
         out_of_field = (torch.abs(body_pos[:, :2]) > self.cfg.field_range).any(dim=1)
         out_of_time = self.episode_time[envs_idx].squeeze(1) > self.cfg.timeout
         return torch.logical_or(out_of_field, out_of_time).unsqueeze(1)

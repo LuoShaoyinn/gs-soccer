@@ -20,7 +20,11 @@ NON_FOOT_LINK_NAMES = [
     "Rleg1", "Lleg1", "Rleg2", "Lleg2",
     "Rankle", "Lankle",
 ]
-FOOT_LINK_NAMES = ["Rf", "Lf"]
+FOOT_LINK_CANDIDATES = [
+    ("Rfoot", "Lfoot"),
+    ("Rf", "Lf"),
+    ("right_foot", "left_foot"),
+]
 
 @dataclass(kw_only = True)
 class WalkEnvConfig(EnvConfig):
@@ -40,9 +44,21 @@ class WalkEnv(Env):
         self._non_foot_links = [
             self.robot.robot.get_link(n) for n in NON_FOOT_LINK_NAMES
         ]
-        self._foot_links = [
-            self.robot.robot.get_link(n) for n in FOOT_LINK_NAMES
-        ]
+        self._foot_links = None
+        for pair in FOOT_LINK_CANDIDATES:
+            try:
+                self._foot_links = [
+                    self.robot.robot.get_link(pair[0]),
+                    self.robot.robot.get_link(pair[1]),
+                ]
+                break
+            except Exception:
+                continue
+        if self._foot_links is None:
+            raise RuntimeError(
+                "Unable to resolve foot links. Tried: "
+                + ", ".join([f"{a}/{b}" for a, b in FOOT_LINK_CANDIDATES])
+            )
         self._kp = torch.from_numpy(self.robot.cfg.kp).to(gs.device)
         self._kv = torch.from_numpy(self.robot.cfg.kv).to(gs.device)
 
