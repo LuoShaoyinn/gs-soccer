@@ -14,10 +14,14 @@ from .robot import Robot, RobotConfig
 @dataclass(kw_only = True)
 class MOS9Config(RobotConfig):
     robot_URDF:     str         = 'assets/MOS9/MOS9_walk.urdf'
-    base_link_name: str         = "body"
+    base_link_name: str         = "base_link"
     joint_names:    list[str]   = field(default_factory=\
-            lambda: ['b_Lh','Lh_Ll','Ll_Ll1','Ll1_Ll2','Ll2_La','La_Lf', 
-                     'b_Rh','Rh_Rl','Rl_Rl1','Rl1_Rl2','Rl2_Ra','Ra_Rf'])
+            lambda: ['right_hip_pitch',     'left_hip_pitch',
+                     'right_hip_roll',      'left_hip_roll', 
+                     'right_hip_yaw',       'left_hip_yaw', 
+                     'right_knee',          'left_knee', 
+                     'right_ankle_pitch',   'left_ankle_pitch', 
+                     'right_ankle_roll',    'left_ankle_roll'])
     kp:             np.ndarray  = field(default_factory=\
             lambda: np.array([100.0, 100.0,100.0, 100.0, 50.0, 24.0,
                               100.0, 100.0,100.0, 100.0, 50.0, 24.0], 
