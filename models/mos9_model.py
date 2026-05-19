@@ -155,7 +155,7 @@ class MOS9Model(Model):
         swing_mask = 1.0 - foot_contacts
         swing_height_err = torch.square(foot_heights - self.cfg.feet_raise_height_target)
         rew_feet_raise_height = 0.25 * torch.exp(-torch.mean(swing_mask * swing_height_err, dim=1) / 0.01)
-        rew_action_l2 = -0.02 * torch.mean(torch.square(self.last_action[envs_idx]), dim=1)
+        rew_action_l2 = -1.0 * torch.mean(torch.square(self.last_action[envs_idx]), dim=1)
         rew_alive = torch.full_like(rew_lin_vel, 0.20)
 
         reward = rew_lin_vel + rew_yaw + rew_upright + rew_height + rew_smooth \
