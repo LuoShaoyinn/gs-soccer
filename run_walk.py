@@ -53,7 +53,6 @@ def main():
                 field_range=1.0,
                 timeout=20.0,
                 omega=2.0,
-                collision_penalty_weight=0.5,
             ),
             policy_freq=50,
             sim_freq=500,

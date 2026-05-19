@@ -6,7 +6,6 @@ import torch
 from skrl.agents.torch.ppo import PPO, PPO_CFG
 from skrl.memories.torch import RandomMemory
 from skrl.trainers.torch import SequentialTrainer
-from skrl.resources.preprocessors.torch.running_standard_scaler import RunningStandardScaler
 
 from network import Policy, Value
 from .algorithm import Algorithm, AlgorithmConfig
@@ -23,10 +22,10 @@ class PPOAlgorithmConfig(AlgorithmConfig):
     ratio_clip: float = 0.2
     value_clip: float = 0.2
     grad_norm_clip: float = 1.0
-    entropy_loss_scale: float = 0.01
+    entropy_loss_scale: float = 0.005
     value_loss_scale: float = 1.0
     kl_threshold: float = 0.01
-    initial_policy_log_std: float = 0.8
+    initial_policy_log_std: float = 0.4
 
 
 class PPOAlgorithm(Algorithm):
@@ -55,10 +54,6 @@ class PPOAlgorithm(Algorithm):
             value_loss_scale=cfg.value_loss_scale,
             kl_threshold=cfg.kl_threshold,
             mixed_precision=cfg.mixed_precision,
-            observation_preprocessor=RunningStandardScaler,
-            observation_preprocessor_kwargs={"size": env.observation_space, "device": cfg.device},
-            value_preprocessor=RunningStandardScaler,
-            value_preprocessor_kwargs={"size": 1, "device": cfg.device},
         )
         agent_cfg.experiment.directory = cfg.experiment_directory
         agent_cfg.experiment.experiment_name = cfg.experiment_name

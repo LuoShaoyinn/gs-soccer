@@ -18,25 +18,28 @@ class MOS9ModelConfig(ModelConfig):
     omega: float = 2.0
     obs_clip: tuple = (-1.0, 1.0)
     history_frames: int = 10
+    feet_raise_height_target: float = 0.15
 
 
 class MOS9Model(Model):
     cfg: MOS9ModelConfig
 
     def config(self):
+        # [qpos, qvel, ang_vel, projected_gravity, prev_action, cmd, sin, cos]
+        self.dim_observations = self.cfg.n_dofs + self.cfg.n_dofs + 3 + 3 + self.cfg.n_dofs + 3 + 1 + 1
         self.target_q_offset = torch.from_numpy(self.cfg.target_q_offset).to(gs.device)
         self.ewma_action = torch.zeros((self.scene.n_envs, self.cfg.n_dofs), device=gs.device, dtype=torch.float)
         self.last_action = torch.zeros((self.scene.n_envs, self.cfg.n_dofs), device=gs.device, dtype=torch.float)
+        self.prev_action = torch.zeros((self.scene.n_envs, self.cfg.n_dofs), device=gs.device, dtype=torch.float)
         self.episode_time = torch.zeros((self.scene.n_envs, 1), device=gs.device, dtype=torch.float)
+        self.feet_air_time = torch.zeros((self.scene.n_envs, 2), device=gs.device, dtype=torch.float)
+        self.last_foot_contacts = torch.zeros((self.scene.n_envs, 2), device=gs.device, dtype=torch.float)
         self._log: dict[str, torch.Tensor] = {}
         self.last_obs = torch.zeros(
             (self.scene.n_envs, self.cfg.history_frames, self.dim_observations),
             device=gs.device,
             dtype=torch.float,
         )
-
-        # [qpos, qvel, ang_vel, projected_gravity, prev_action, cmd, sin, cos]
-        self.dim_observations = self.cfg.n_dofs + self.cfg.n_dofs + 3 + 3 + self.cfg.n_dofs + 3 + 1 + 1
 
     @property
     def observation_space(self) -> gym.spaces.Box:
@@ -54,10 +57,14 @@ class MOS9Model(Model):
     def reset(self, envs_idx: torch.Tensor):
         self.ewma_action[envs_idx] = 0.0
         self.last_action[envs_idx] = 0.0
+        self.prev_action[envs_idx] = 0.0
         self.episode_time[envs_idx] = 0.0
+        self.feet_air_time[envs_idx] = 0.0
+        self.last_foot_contacts[envs_idx] = 0.0
         self.last_obs[envs_idx] = 0.0
 
     def preprocess_action(self, action: torch.Tensor) -> torch.Tensor:
+        self.prev_action.copy_(self.last_action)
         self.last_action.copy_(action)
         self.ewma_action = action * self.cfg.action_scale
         self.episode_time += self.cfg.step_dt
@@ -110,49 +117,66 @@ class MOS9Model(Model):
         body_ang_vel: torch.Tensor,
         dofs_vel: torch.Tensor,
         net_contact_force: torch.Tensor,
+        foot_contacts: torch.Tensor,
+        foot_heights: torch.Tensor,
         **kwargs,
     ) -> torch.Tensor: # type: ignore
         lin_vel_error = torch.sum(torch.square(cmd_vel[:, :2] - body_lin_vel[:, :2]), dim=1)
-        rew_lin_vel = torch.exp(-lin_vel_error / 0.25)
+        rew_lin_vel = 2.20 * torch.exp(-lin_vel_error / 0.25)
 
         yaw_rate_error = torch.square(cmd_vel[:, 2] - body_ang_vel[:, 2])
-        rew_yaw = torch.exp(-yaw_rate_error / 0.25)
+        rew_yaw = 1.0 * torch.exp(-yaw_rate_error / 0.25)
 
         tilt = torch.sum(torch.square(body_quat[:, 1:3]), dim=1)
-        rew_upright = torch.exp(-tilt / 0.05)
+        rew_upright = 0.60 * torch.exp(-tilt / 0.05)
 
         height_error = torch.square(body_pos[:, 2] - 0.48)
-        rew_height = torch.exp(-height_error / 0.02)
+        rew_height = 0.40 * torch.exp(-height_error / 0.02)
 
         dof_speed = torch.mean(torch.square(dofs_vel), dim=1)
-        rew_smooth = torch.exp(-dof_speed / 25.0)
+        action_delta = torch.mean(torch.square(self.last_action[envs_idx] - self.prev_action[envs_idx]), dim=1)
+        rew_smooth = 0.20 * torch.exp(-(dof_speed / 25.0 + action_delta / 0.25))
 
         peak_contact = net_contact_force.max(dim=1).values
         collision_penalty_raw = torch.clamp((peak_contact - 3000.0) / 7000.0, min=0.0, max=1.0)
         upright_gate = (rew_upright > 0.8).float()
-        collision_penalty = collision_penalty_raw * upright_gate
+        collision_penalty = -0.50 * (collision_penalty_raw * upright_gate)
 
-        reward = (
-            1.20 * rew_lin_vel
-            + 0.30 * rew_yaw
-            + 0.60 * rew_upright
-            + 0.40 * rew_height
-            + 0.20 * rew_smooth
-            - 0.50 * collision_penalty
-            + 0.20
-        )
+        self.feet_air_time += self.cfg.step_dt
+        contact_rise = (foot_contacts > 0.5) & (self.last_foot_contacts <= 0.5)
+        rew_feet_air_time = 0.25 * torch.where(
+            contact_rise,
+            self.feet_air_time,
+            torch.zeros_like(self.feet_air_time),
+        ).sum(dim=1)
+        self.feet_air_time = torch.where(foot_contacts > 0.5, torch.zeros_like(self.feet_air_time), self.feet_air_time)
+        self.last_foot_contacts.copy_(foot_contacts)
+
+        swing_mask = 1.0 - foot_contacts
+        swing_height_err = torch.square(foot_heights - self.cfg.feet_raise_height_target)
+        rew_feet_raise_height = 0.25 * torch.exp(-torch.mean(swing_mask * swing_height_err, dim=1) / 0.01)
+        rew_action_l2 = -0.02 * torch.mean(torch.square(self.last_action[envs_idx]), dim=1)
+        rew_alive = torch.full_like(rew_lin_vel, 0.20)
+
+        reward = rew_lin_vel + rew_yaw + rew_upright + rew_height + rew_smooth \
+            + rew_feet_air_time + rew_feet_raise_height + collision_penalty + rew_action_l2 + rew_alive
         reward = torch.clamp(reward, min=0.0, max=3.0).unsqueeze(1)
 
+        # Store scaled reward terms directly in log (weighted/signed contributions).
         self._log = {
             "rew/lin_vel": rew_lin_vel.unsqueeze(1),
             "rew/yaw": rew_yaw.unsqueeze(1),
             "rew/upright": rew_upright.unsqueeze(1),
             "rew/height": rew_height.unsqueeze(1),
             "rew/smooth": rew_smooth.unsqueeze(1),
-            "rew/contact_peak": peak_contact.unsqueeze(1),
-            "rew/collision_penalty_raw": collision_penalty_raw.unsqueeze(1),
+            "rew/feet_air_time": rew_feet_air_time.unsqueeze(1),
+            "rew/feet_raise_height": rew_feet_raise_height.unsqueeze(1),
             "rew/collision_penalty": collision_penalty.unsqueeze(1),
-            "rew/total": reward,
+            "rew/action_l2": rew_action_l2.unsqueeze(1),
+            "rew/alive": rew_alive.unsqueeze(1),
+            # Keep diagnostics unscaled
+            "diag/contact_peak": peak_contact.unsqueeze(1),
+            "diag/collision_penalty_raw": collision_penalty_raw.unsqueeze(1),
         }
         return reward
 
