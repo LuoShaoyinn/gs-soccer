@@ -11,6 +11,7 @@ def parse_args():
     parser.add_argument("--head-camera", action="store_true")
     parser.add_argument("--head-camera-gui", action="store_true")
     parser.add_argument("--head-camera-res", type=int, nargs=2, metavar=("WIDTH", "HEIGHT"))
+    parser.add_argument("--textured", action="store_true")
     return parser.parse_args()
 
 
@@ -25,7 +26,7 @@ def main() -> None:
 
     import genesis as gs
 
-    from fields.field import Field, FieldConfig
+    from fields.soccer_field import SoccerField, SoccerFieldConfig
     from robots.floating_camera import FloatingCameraConfig, FloatingCameraRobot
     from robots.mos9 import MOS9, MOS9Config
 
@@ -59,7 +60,7 @@ def main() -> None:
         show_viewer=args.viewer,
     )
 
-    field = Field(FieldConfig(), scene)
+    field = SoccerField(SoccerFieldConfig(textured=args.textured), scene)
     robot = MOS9(MOS9Config(), scene)
     camera_robot = None
     if args.head_camera:

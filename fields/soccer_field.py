@@ -32,6 +32,7 @@ class SoccerFieldConfig(FieldConfig):
     ball_friction: float = 0.08
     ball_mass: float = 0.200
     ball_damping: float = 2.0
+    textured: bool = False
 
 
 class SoccerField(Field):
@@ -39,20 +40,58 @@ class SoccerField(Field):
 
     @torch.compiler.disable
     def build(self):
-        # Only field and ball have collision
+        self._textures = None
+        if self.cfg.textured:
+            from .textures import ensure_textures
+            self._textures = ensure_textures()
+
         self.field = self.scene.add_entity(
             morph=gs.morphs.Plane(),
             surface=gs.surfaces.Rough(color=self.cfg.field_color),
             material=gs.materials.Rigid(friction=self.cfg.field_friction),
         )
-        self.ball = self.scene.add_entity(
-            morph=gs.morphs.Sphere(
-                radius=self.cfg.ball_radius,
-                pos=(0, 0, 1.0),
-            ),
-            surface=gs.surfaces.Rough(),
-            material=gs.materials.Rigid(friction=self.cfg.ball_friction),
-        )
+
+        if self._textures:
+            from .meshes import field_obj_path, sphere_obj_path
+            half_l, half_w = self.cfg.half_field_size
+            self.field_visual = self.scene.add_entity(
+                morph=gs.morphs.Mesh(
+                    file=field_obj_path(half_l, half_w),
+                    fixed=True,
+                    collision=False,
+                    decimate=False,
+                ),
+                surface=gs.surfaces.Rough(
+                    diffuse_texture=gs.textures.ImageTexture(
+                        image_path=self._textures["field"],
+                        encoding="srgb",
+                    ),
+                ),
+            )
+
+            self.ball = self.scene.add_entity(
+                morph=gs.morphs.Mesh(
+                    file=sphere_obj_path(self.cfg.ball_radius, 24, 12),
+                    pos=(0, 0, 1.0),
+                ),
+                surface=gs.surfaces.Rough(
+                    diffuse_texture=gs.textures.ImageTexture(
+                        image_path=self._textures["ball"],
+                        encoding="srgb",
+                    ),
+                ),
+                material=gs.materials.Rigid(friction=self.cfg.ball_friction),
+            )
+        else:
+            self.ball = self.scene.add_entity(
+                morph=gs.morphs.Sphere(
+                    radius=self.cfg.ball_radius,
+                    pos=(0, 0, 1.0),
+                ),
+                surface=gs.surfaces.Rough(),
+                material=gs.materials.Rigid(friction=self.cfg.ball_friction),
+            )
+
         self.__gs_build_virtual()
 
     @torch.compiler.disable
@@ -80,15 +119,20 @@ class SoccerField(Field):
             add_fence(-half_field_length, 0.0, 0.05, 2.0 * half_field_width),
         ]
 
-        def add_marker(x: float, y: float, xx: float, yy: float):
-            return self.scene.add_entity(
-                morph=gs.morphs.Box(
-                    pos=(x, y, 0.001), size=(xx, yy, 0.001), fixed=True, collision=False
-                ),
-                surface=gs.surfaces.Rough(color=(1.0, 1.0, 1.0)),
-            )
+        if not self._textures:
+            def add_marker(x: float, y: float, xx: float, yy: float):
+                return self.scene.add_entity(
+                    morph=gs.morphs.Box(
+                        pos=(x, y, 0.001), size=(xx, yy, 0.001), fixed=True, collision=False
+                    ),
+                    surface=gs.surfaces.Rough(color=(1.0, 1.0, 1.0)),
+                )
 
-        self.markers = [add_marker(0.0, 0.0, 0.05, 2.0 * half_field_width)]
+            self.markers = [add_marker(0.0, 0.0, 0.05, 2.0 * half_field_width)]
+
+        goal_red_surface = gs.surfaces.Rough(color=self.cfg.red_goal_color)
+        goal_blue_surface = gs.surfaces.Rough(color=self.cfg.blue_goal_color)
+
         self.red_goal = self.scene.add_entity(
             morph=gs.morphs.Box(
                 pos=(half_field_length - 0.02, 0.0, goal_height / 2 - 0.05),
@@ -97,7 +141,7 @@ class SoccerField(Field):
                 fixed=True,
                 collision=False,
             ),
-            surface=gs.surfaces.Rough(color=self.cfg.red_goal_color),
+            surface=goal_red_surface,
         )
         self.blue_goal = self.scene.add_entity(
             morph=gs.morphs.Box(
@@ -107,8 +151,61 @@ class SoccerField(Field):
                 fixed=True,
                 collision=False,
             ),
-            surface=gs.surfaces.Rough(color=self.cfg.blue_goal_color),
+            surface=goal_blue_surface,
         )
+
+        if self._textures:
+            from .meshes import sphere_obj_path
+
+            post_surface = gs.surfaces.Smooth(
+                color=(0.85, 0.85, 0.85),
+                metallic=0.8,
+                roughness=0.3,
+            )
+            post_r = 0.025
+            gw2 = self.cfg.goal_width / 2
+            for sign, base_x in [(1, half_field_length), (-1, -half_field_length)]:
+                px = base_x + sign * post_r / 2
+                self.scene.add_entity(
+                    morph=gs.morphs.Box(
+                        pos=(px, -gw2, goal_height / 2 - 0.05),
+                        size=(post_r, post_r, goal_height),
+                        fixed=True, collision=False,
+                    ),
+                    surface=post_surface,
+                )
+                self.scene.add_entity(
+                    morph=gs.morphs.Box(
+                        pos=(px, gw2, goal_height / 2 - 0.05),
+                        size=(post_r, post_r, goal_height),
+                        fixed=True, collision=False,
+                    ),
+                    surface=post_surface,
+                )
+                self.scene.add_entity(
+                    morph=gs.morphs.Box(
+                        pos=(px, 0.0, goal_height - 0.05),
+                        size=(post_r, self.cfg.goal_width + post_r, post_r),
+                        fixed=True, collision=False,
+                    ),
+                    surface=post_surface,
+                )
+
+            self.sky = self.scene.add_entity(
+                morph=gs.morphs.Mesh(
+                    file=sphere_obj_path(25.0, 32, 16, inverted=True),
+                    fixed=True,
+                    collision=False,
+                    decimate=False,
+                ),
+                surface=gs.surfaces.Emission(
+                    emissive_texture=gs.textures.ImageTexture(
+                        image_path=self._textures["sky"],
+                        encoding="srgb",
+                    ),
+                    double_sided=True,
+                ),
+            )
 
     @torch.compiler.disable
     def config(self):
