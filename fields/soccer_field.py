@@ -54,7 +54,7 @@ class SoccerField(Field):
         )
 
         if self._textures:
-            from .meshes import field_obj_path, sphere_obj_path
+            from .meshes import field_obj_path
             half_l, half_w = self.cfg.half_field_size
             self.field_visual = self.scene.add_entity(
                 morph=gs.morphs.Mesh(
@@ -71,29 +71,30 @@ class SoccerField(Field):
                 ),
             )
 
-            self.ball = self.scene.add_entity(
-                morph=gs.morphs.Mesh(
-                    file=sphere_obj_path(self.cfg.ball_radius, 24, 12),
-                    pos=(0, 0, 1.0),
+        if self._textures:
+            from .meshes import ball_urdf_path
+            ball_surface = gs.surfaces.Rough(
+                diffuse_texture=gs.textures.ImageTexture(
+                    image_path=self._textures["ball"],
+                    encoding="srgb",
                 ),
-                surface=gs.surfaces.Rough(
-                    diffuse_texture=gs.textures.ImageTexture(
-                        image_path=self._textures["ball"],
-                        encoding="srgb",
-                    ),
-                ),
-                material=gs.materials.Rigid(friction=self.cfg.ball_friction),
+            )
+            ball_morph = gs.morphs.URDF(
+                file=ball_urdf_path(self.cfg.ball_radius, self.cfg.ball_mass),
+                pos=(0, 0, 1.0),
             )
         else:
-            self.ball = self.scene.add_entity(
-                morph=gs.morphs.Sphere(
-                    radius=self.cfg.ball_radius,
-                    pos=(0, 0, 1.0),
-                ),
-                surface=gs.surfaces.Rough(),
-                material=gs.materials.Rigid(friction=self.cfg.ball_friction),
+            ball_surface = gs.surfaces.Rough()
+            ball_morph = gs.morphs.Sphere(
+                radius=self.cfg.ball_radius,
+                pos=(0, 0, 1.0),
             )
 
+        self.ball = self.scene.add_entity(
+            morph=ball_morph,
+            surface=ball_surface,
+            material=gs.materials.Rigid(friction=self.cfg.ball_friction),
+        )
         self.__gs_build_virtual()
 
     @torch.compiler.disable

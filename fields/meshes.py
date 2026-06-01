@@ -50,6 +50,41 @@ def sphere_obj_path(
     return str(path)
 
 
+def ball_urdf_path(radius: float = 0.08, mass: float = 0.200) -> str:
+    _ensure_dir()
+    sphere_obj_path(radius)
+    path = _CACHE_DIR / "ball.urdf"
+    if not path.exists():
+        with open(path, "w") as f:
+            f.write(_ball_urdf(radius, mass))
+    return str(path)
+
+
+def _ball_urdf(radius: float, mass: float) -> str:
+    inertia = 0.4 * mass * radius * radius
+    return f"""\
+<?xml version="1.0"?>
+<robot name="ball">
+  <link name="ball_link">
+    <visual>
+      <geometry>
+        <mesh filename="ball_sphere.obj"/>
+      </geometry>
+    </visual>
+    <collision>
+      <geometry>
+        <sphere radius="{radius}"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0"/>
+      <mass value="{mass}"/>
+      <inertia ixx="{inertia}" ixy="0" ixz="0" iyy="{inertia}" iyz="0" izz="{inertia}"/>
+    </inertial>
+  </link>
+</robot>"""
+
+
 def _sphere_obj(
     radius: float, slices: int, stacks: int, inverted: bool
 ) -> str:
@@ -81,10 +116,10 @@ def _sphere_obj(
             p3 = (i + 1) * (slices + 1) + j + 1
             p4 = (i + 1) * (slices + 1) + j + 2
             if inverted:
-                lines.append(f"f {p1}/{p1}/{p1} {p3}/{p3}/{p3} {p2}/{p2}/{p2}")
-                lines.append(f"f {p2}/{p2}/{p2} {p3}/{p3}/{p3} {p4}/{p4}/{p4}")
-            else:
                 lines.append(f"f {p1}/{p1}/{p1} {p2}/{p2}/{p2} {p3}/{p3}/{p3}")
                 lines.append(f"f {p2}/{p2}/{p2} {p4}/{p4}/{p4} {p3}/{p3}/{p3}")
+            else:
+                lines.append(f"f {p1}/{p1}/{p1} {p3}/{p3}/{p3} {p2}/{p2}/{p2}")
+                lines.append(f"f {p2}/{p2}/{p2} {p3}/{p3}/{p3} {p4}/{p4}/{p4}")
 
     return "\n".join(lines)
