@@ -36,6 +36,7 @@ class RobotConfig:
             lambda: np.array([1.0, 0.0, 0.0], dtype=np.float32))
     head_camera_up: np.ndarray = field(default_factory=\
             lambda: np.array([0.0, 0.0, 1.0], dtype=np.float32))
+    vis_mode: str = "visual"
     decimate: bool = True
     decimate_face_num: int = 100
     decimate_aggressiveness: int = 8
@@ -64,7 +65,7 @@ class Robot(ABC):
             decimate_face_num = self.cfg.decimate_face_num, \
             decimate_aggressiveness = self.cfg.decimate_aggressiveness, \
             requires_jac_and_IK = False, \
-        ), vis_mode='collision')
+        ), vis_mode=self.cfg.vis_mode)
         self.robot_base = self.robot.get_link(self.cfg.base_link_name)
         self.dofs_idx_local = [ self.robot.get_joint(name).dofs_idx_local[0] \
                                 for name in self.cfg.joint_names]

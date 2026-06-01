@@ -3,15 +3,6 @@ import torch
 from argparse import ArgumentParser
 from PIL import Image
 
-os.environ["PYOPENGL_PLATFORM"] = "egl"
-os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
-
-import genesis as gs
-
-from fields.field import Field, FieldConfig
-from robots.floating_camera import FloatingCameraConfig, FloatingCameraRobot
-from robots.mos9 import MOS9, MOS9Config
-
 
 def parse_args():
     parser = ArgumentParser()
@@ -25,6 +16,19 @@ def parse_args():
 
 def main() -> None:
     args = parse_args()
+
+    if args.viewer:
+        os.environ.pop("PYOPENGL_PLATFORM", None)
+    elif args.head_camera:
+        os.environ["PYOPENGL_PLATFORM"] = "egl"
+    os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
+
+    import genesis as gs
+
+    from fields.field import Field, FieldConfig
+    from robots.floating_camera import FloatingCameraConfig, FloatingCameraRobot
+    from robots.mos9 import MOS9, MOS9Config
+
     gs.init(
         backend=gs.gpu,  # type: ignore[attr-defined]
         performance_mode=True,
