@@ -46,7 +46,9 @@ class SoccerField(Field):
             self._textures = ensure_textures()
 
         self.field = self.scene.add_entity(
-            morph=gs.morphs.Plane(),
+            morph=gs.morphs.Plane(
+                visualization=not self.cfg.textured,
+            ),
             surface=gs.surfaces.Rough(color=self.cfg.field_color),
             material=gs.materials.Rigid(friction=self.cfg.field_friction),
         )
@@ -112,14 +114,14 @@ class SoccerField(Field):
                 surface=gs.surfaces.Rough(color=self.cfg.fence_color),
             )
 
-        self.fences = [
-            add_fence(0.0, half_field_width, 2.0 * half_field_length, 0.05),
-            add_fence(0.0, -half_field_width, 2.0 * half_field_length, 0.05),
-            add_fence(half_field_length, 0.0, 0.05, 2.0 * half_field_width),
-            add_fence(-half_field_length, 0.0, 0.05, 2.0 * half_field_width),
-        ]
-
         if not self._textures:
+            self.fences = [
+                add_fence(0.0, half_field_width, 2.0 * half_field_length, 0.05),
+                add_fence(0.0, -half_field_width, 2.0 * half_field_length, 0.05),
+                add_fence(half_field_length, 0.0, 0.05, 2.0 * half_field_width),
+                add_fence(-half_field_length, 0.0, 0.05, 2.0 * half_field_width),
+            ]
+
             def add_marker(x: float, y: float, xx: float, yy: float):
                 return self.scene.add_entity(
                     morph=gs.morphs.Box(
@@ -130,29 +132,29 @@ class SoccerField(Field):
 
             self.markers = [add_marker(0.0, 0.0, 0.05, 2.0 * half_field_width)]
 
-        goal_red_surface = gs.surfaces.Rough(color=self.cfg.red_goal_color)
-        goal_blue_surface = gs.surfaces.Rough(color=self.cfg.blue_goal_color)
+            goal_red_surface = gs.surfaces.Rough(color=self.cfg.red_goal_color)
+            goal_blue_surface = gs.surfaces.Rough(color=self.cfg.blue_goal_color)
 
-        self.red_goal = self.scene.add_entity(
-            morph=gs.morphs.Box(
-                pos=(half_field_length - 0.02, 0.0, goal_height / 2 - 0.05),
-                quat=(1.0, 0.0, 0.0, 0.0),
-                size=(0.2, self.cfg.goal_width, goal_height),
-                fixed=True,
-                collision=False,
-            ),
-            surface=goal_red_surface,
-        )
-        self.blue_goal = self.scene.add_entity(
-            morph=gs.morphs.Box(
-                pos=(-half_field_length + 0.02, 0.0, goal_height / 2 - 0.05),
-                quat=(1.0, 0.0, 0.0, 0.0),
-                size=(0.2, self.cfg.goal_width, goal_height),
-                fixed=True,
-                collision=False,
-            ),
-            surface=goal_blue_surface,
-        )
+            self.red_goal = self.scene.add_entity(
+                morph=gs.morphs.Box(
+                    pos=(half_field_length - 0.02, 0.0, goal_height / 2 - 0.05),
+                    quat=(1.0, 0.0, 0.0, 0.0),
+                    size=(0.2, self.cfg.goal_width, goal_height),
+                    fixed=True,
+                    collision=False,
+                ),
+                surface=goal_red_surface,
+            )
+            self.blue_goal = self.scene.add_entity(
+                morph=gs.morphs.Box(
+                    pos=(-half_field_length + 0.02, 0.0, goal_height / 2 - 0.05),
+                    quat=(1.0, 0.0, 0.0, 0.0),
+                    size=(0.2, self.cfg.goal_width, goal_height),
+                    fixed=True,
+                    collision=False,
+                ),
+                surface=goal_blue_surface,
+            )
 
         if self._textures:
             from .meshes import sphere_obj_path
@@ -190,22 +192,6 @@ class SoccerField(Field):
                     ),
                     surface=post_surface,
                 )
-
-            self.sky = self.scene.add_entity(
-                morph=gs.morphs.Mesh(
-                    file=sphere_obj_path(25.0, 32, 16, inverted=True),
-                    fixed=True,
-                    collision=False,
-                    decimate=False,
-                ),
-                surface=gs.surfaces.Emission(
-                    emissive_texture=gs.textures.ImageTexture(
-                        image_path=self._textures["sky"],
-                        encoding="srgb",
-                    ),
-                    double_sided=True,
-                ),
-            )
 
     @torch.compiler.disable
     def config(self):
