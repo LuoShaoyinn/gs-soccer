@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<robot name="MOS92_urdf_0308">
+<robot name="MOS92_urdf_0517">
 
   <link name="base_link">
     <inertial>

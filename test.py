@@ -1,5 +1,11 @@
+import os
 import numpy as np
 import torch
+from argparse import ArgumentParser
+
+os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
+os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
+
 import genesis as gs
 
 from fields.field import Field, FieldConfig
@@ -69,7 +75,15 @@ def ignore_collision_geom_pairs(pairs: tuple[tuple[int, int], ...]) -> None:
     Collider._compute_collision_pair_idx = patched_compute_collision_pair_idx
 
 
+def parse_args():
+    parser = ArgumentParser()
+    parser.add_argument("--steps", type=int, default=240)
+    parser.add_argument("--viewer", action="store_true")
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = parse_args()
     gs.init(
         backend=gs.gpu,  # type: ignore[attr-defined]
         performance_mode=True,
@@ -92,7 +106,7 @@ def main() -> None:
         rigid_options=gs.options.RigidOptions(
             enable_neutral_collision=True,
         ),
-        show_viewer=True,
+        show_viewer=args.viewer,
     )
 
     field = Field(FieldConfig(), scene)
@@ -108,7 +122,7 @@ def main() -> None:
     robot.reset(envs_idx=envs_idx)
     standing_q = torch.zeros((1, len(robot.cfg.joint_names)), device=gs.device)
 
-    while True:
+    for _ in range(args.steps):
         robot.step(standing_q)
         scene.step()
 
