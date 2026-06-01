@@ -15,6 +15,9 @@ from .robot import Robot, RobotConfig
 class MOS9Config(RobotConfig):
     robot_URDF:     str         = 'assets/MOS9/MOS9_walk.urdf'
     base_link_name: str         = "base_link"
+    head_link_name: str         = "base_link"
+    head_camera_pos_offset: np.ndarray = field(default_factory=\
+            lambda: np.array([0.08, 0.0, 0.31], dtype=np.float32))
     joint_names:    list[str]   = field(default_factory=\
             lambda: ['right_hip_pitch',     'left_hip_pitch',
                      'right_hip_roll',      'left_hip_roll', 
@@ -40,4 +43,3 @@ class MOS9Config(RobotConfig):
 
 class MOS9(Robot):
     pass
-
