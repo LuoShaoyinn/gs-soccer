@@ -36,12 +36,18 @@ def main() -> None:
     )
 
     scene = gs.Scene(
+        vis_options=gs.options.VisOptions(
+            show_world_frame=False,
+            show_link_frame=False,
+            show_cameras=False,
+        ),
         viewer_options=gs.options.ViewerOptions(
             camera_pos=(1.8, -3.0, 1.5),
             camera_lookat=(0.0, 0.0, 0.5),
             camera_fov=35,
             res=(960, 640),
             max_FPS=60,
+            enable_help_text=False,
         ),
         sim_options=gs.options.SimOptions(
             dt=0.01,

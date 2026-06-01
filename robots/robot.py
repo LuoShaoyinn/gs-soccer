@@ -40,6 +40,7 @@ class RobotConfig:
     decimate: bool = True
     decimate_face_num: int = 100
     decimate_aggressiveness: int = 8
+    file_meshes_are_zup: bool = True
 
 
 class Robot(ABC):
@@ -64,6 +65,7 @@ class Robot(ABC):
             decimate = self.cfg.decimate, \
             decimate_face_num = self.cfg.decimate_face_num, \
             decimate_aggressiveness = self.cfg.decimate_aggressiveness, \
+            file_meshes_are_zup = self.cfg.file_meshes_are_zup, \
             requires_jac_and_IK = False, \
         ), vis_mode=self.cfg.vis_mode)
         self.robot_base = self.robot.get_link(self.cfg.base_link_name)
