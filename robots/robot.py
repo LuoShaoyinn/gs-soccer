@@ -6,7 +6,6 @@ import torch
 import numpy as np
 import genesis as gs
 import gymnasium as gym
-from typing import Any, TypeVar, Generic
 from torch.nn import functional as F
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
@@ -24,18 +23,6 @@ class RobotConfig:
             lambda: np.array([0.0, 0.0, 0.0], dtype=np.float32))
     initial_quat:   np.ndarray   = field(default_factory=\
             lambda: np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32))
-    head_link_name: str | None = None
-    head_camera_res: tuple[int, int] = (320, 240)
-    head_camera_fov: float = 70.0
-    head_camera_near: float = 0.01
-    head_camera_far: float = 20.0
-    head_camera_lookahead: float = 1.0
-    head_camera_pos_offset: np.ndarray = field(default_factory=\
-            lambda: np.array([0.08, 0.0, 0.0], dtype=np.float32))
-    head_camera_forward: np.ndarray = field(default_factory=\
-            lambda: np.array([1.0, 0.0, 0.0], dtype=np.float32))
-    head_camera_up: np.ndarray = field(default_factory=\
-            lambda: np.array([0.0, 0.0, 1.0], dtype=np.float32))
     vis_mode: str = "visual"
     decimate: bool = True
     decimate_face_num: int = 100
@@ -80,9 +67,6 @@ class Robot(ABC):
                 pos_offset=(0.0, 0.0, 0.0),                 # type: ignore
             )
         )
-        self.head_camera = None
-        self.head_camera_link = None
-
     @torch.compiler.disable 
     def __gs_config(self) -> None:
         self.robot.set_dofs_kp(
@@ -98,43 +82,6 @@ class Robot(ABC):
             upper          = self.cfg.force_range[1], 
             dofs_idx_local = self.dofs_idx_local,
         )
-
-
-    @staticmethod
-    def __rotate_by_quat(vec: torch.Tensor, quat: torch.Tensor) -> torch.Tensor:
-        if vec.ndim == 1:
-            vec = vec.broadcast_to((quat.shape[0], 3))
-        q_xyz = quat[:, 1:4]
-        q_w = quat[:, 0:1]
-        t = 2.0 * torch.cross(q_xyz, vec, dim=1)
-        return vec + q_w * t + torch.cross(q_xyz, t, dim=1)
-
-    @torch.compiler.disable
-    def __head_camera_pose(self, env_idx: int = 0) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        if self.head_camera_link is None:
-            raise RuntimeError("Head camera has not been built. Call build_head_camera() before scene.build().")
-
-        envs_idx = torch.tensor([env_idx], dtype=torch.long, device=gs.device)
-        head_pos = self.head_camera_link.get_pos(envs_idx=envs_idx)
-        head_quat = self.head_camera_link.get_quat(envs_idx=envs_idx)
-        offset = torch.as_tensor(self.cfg.head_camera_pos_offset, dtype=gs.tc_float, device=gs.device)
-        forward = torch.as_tensor(self.cfg.head_camera_forward, dtype=gs.tc_float, device=gs.device)
-        up = torch.as_tensor(self.cfg.head_camera_up, dtype=gs.tc_float, device=gs.device)
-
-        forward = forward / torch.clamp(torch.linalg.norm(forward), min=1e-6)
-        up = up / torch.clamp(torch.linalg.norm(up), min=1e-6)
-        camera_pos = head_pos + self.__rotate_by_quat(offset, head_quat)
-        camera_forward = self.__rotate_by_quat(forward, head_quat)
-        camera_up = self.__rotate_by_quat(up, head_quat)
-        camera_lookat = camera_pos + self.cfg.head_camera_lookahead * camera_forward
-        return camera_pos[0], camera_lookat[0], camera_up[0]
-
-    @torch.compiler.disable
-    def __gs_update_head_camera_pose(self, env_idx: int = 0) -> None:
-        if self.head_camera is None:
-            raise RuntimeError("Head camera has not been built. Call build_head_camera() before scene.build().")
-        pos, lookat, up = self.__head_camera_pose(env_idx=env_idx)
-        self.head_camera.set_pose(pos=pos, lookat=lookat, up=up)
 
     @torch.compiler.disable
     def __gs_step(self, action: torch.Tensor) -> None:
@@ -175,31 +122,6 @@ class Robot(ABC):
     def build(self) -> None:
         self.__gs_build()
 
-    def build_head_camera(
-        self,
-        *,
-        res: tuple[int, int] | None = None,
-        fov: float | None = None,
-        GUI: bool = False,
-        env_idx: int | None = None,
-    ) -> Any:
-        if self.cfg.head_link_name is None:
-            raise ValueError("RobotConfig.head_link_name must be set before building a head camera.")
-        self.head_camera_link = self.robot.get_link(self.cfg.head_link_name)
-        res = res or self.cfg.head_camera_res
-        fov = fov or self.cfg.head_camera_fov
-        self.head_camera = self.scene.add_camera(
-            res=res,
-            pos=(0.0, 0.0, 1.0),
-            lookat=(1.0, 0.0, 1.0),
-            fov=fov,
-            GUI=GUI,
-            near=self.cfg.head_camera_near,
-            far=self.cfg.head_camera_far,
-            env_idx=env_idx,
-        )
-        return self.head_camera
-
     def config(self) -> None:
         self.__gs_config()
         self.n_envs = self.scene.n_envs
@@ -209,13 +131,6 @@ class Robot(ABC):
 
     def step(self, action: torch.Tensor) -> None:
         self.__gs_step(action=action)
-
-    def update_head_camera_pose(self, env_idx: int = 0) -> None:
-        self.__gs_update_head_camera_pose(env_idx=env_idx)
-
-    def render_head_camera(self, env_idx: int = 0, **kwargs) -> Any:
-        self.update_head_camera_pose(env_idx=env_idx)
-        return self.head_camera.render(**kwargs)
 
     def reset(self, envs_idx: torch.Tensor, 
               reset_pos: torch.Tensor | None = None,

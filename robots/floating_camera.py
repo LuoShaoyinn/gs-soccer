@@ -63,10 +63,10 @@ class FloatingCameraRobot:
         target_pos = self.target.get_pos(envs_idx=self.cfg.env_idx)
         if target_pos.ndim > 1:
             target_pos = target_pos[0]
-        offset = torch.as_tensor(self.cfg.target_offset, dtype=gs.tc_float, device=gs.device)
-        up = torch.as_tensor(self.cfg.up, dtype=gs.tc_float, device=gs.device)
+        offset = torch.as_tensor(self.cfg.target_offset, dtype=target_pos.dtype, device=target_pos.device)
+        up = torch.as_tensor(self.cfg.up, dtype=target_pos.dtype, device=target_pos.device)
         self.camera.set_pose(
-            pos=torch.as_tensor(self.cfg.pos, dtype=gs.tc_float, device=gs.device),
+            pos=torch.as_tensor(self.cfg.pos, dtype=target_pos.dtype, device=target_pos.device),
             lookat=target_pos + offset,
             up=up,
         )
