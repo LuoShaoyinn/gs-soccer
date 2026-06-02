@@ -9,8 +9,8 @@ def parse_args():
     parser.add_argument("--steps", type=int, default=240)
     parser.add_argument("--viewer", action="store_true")
     parser.add_argument("--head-camera", action="store_true")
-    parser.add_argument("--head-camera-gui", action="store_true")
     parser.add_argument("--head-camera-res", type=int, nargs=2, metavar=("WIDTH", "HEIGHT"))
+    parser.add_argument("--madrona-camera", action="store_true")
     parser.add_argument("--textured", action="store_true")
     return parser.parse_args()
 
@@ -31,12 +31,16 @@ def main() -> None:
     from robots.mos9 import MOS9, MOS9Config
 
     gs.init(
-        backend=gs.gpu,  # type: ignore[attr-defined]
+        backend=gs.cuda if args.madrona_camera else gs.gpu,  # type: ignore[attr-defined]
         performance_mode=True,
         logging_level="warning",
     )
 
+    scene_kwargs = {}
+    if args.madrona_camera:
+        scene_kwargs["renderer"] = gs.renderers.BatchRenderer(use_rasterizer=True)
     scene = gs.Scene(
+        **scene_kwargs,
         vis_options=gs.options.VisOptions(
             show_world_frame=False,
             show_link_frame=False,
@@ -67,7 +71,7 @@ def main() -> None:
         camera_robot = FloatingCameraRobot(
             FloatingCameraConfig(
                 res=tuple(args.head_camera_res) if args.head_camera_res else (320, 240),
-                GUI=args.head_camera_gui,
+                use_madrona=args.madrona_camera,
             ),
             scene,
         )
@@ -75,7 +79,6 @@ def main() -> None:
     field.build()
     robot.build()
     if camera_robot is not None:
-        camera_robot.look_at(robot.robot)
         camera_robot.build()
     scene.build(n_envs=1, env_spacing=(0.0, 0.0))
     field.config()
@@ -85,19 +88,42 @@ def main() -> None:
 
     envs_idx = torch.tensor([0], dtype=torch.long, device=gs.device)
     robot.reset(envs_idx=envs_idx)
+    if camera_robot is not None:
+        camera_robot.reset(envs_idx=envs_idx)
     standing_q = torch.zeros((1, len(robot.cfg.joint_names)), device=gs.device)
 
     for _ in range(args.steps):
         robot.step(standing_q)
         scene.step()
         if camera_robot is not None:
-            camera_robot.step()
+            target_pos = robot.robot.get_pos(envs_idx=envs_idx)[0]
+            target_offset = torch.as_tensor(
+                camera_robot.cfg.target_offset,
+                dtype=target_pos.dtype,
+                device=target_pos.device,
+            )
+            camera_pos = torch.as_tensor(
+                camera_robot.cfg.pos,
+                dtype=target_pos.dtype,
+                device=target_pos.device,
+            )
+            up = torch.as_tensor(
+                camera_robot.cfg.up,
+                dtype=target_pos.dtype,
+                device=target_pos.device,
+            )
+            camera_module = type(camera_robot.camera).__module__
+            module = __import__(camera_module, fromlist=["pos_lookat_up_to_T"])
+            camera_T = module.pos_lookat_up_to_T(camera_pos, target_pos + target_offset, up)
+            camera_robot.step(torch.cat((camera_pos, gs.T_to_quat(camera_T))))
 
     if camera_robot is not None:
         frame = camera_robot.render()
         rgb = frame[0] if isinstance(frame, tuple) else frame
         if isinstance(rgb, torch.Tensor):
             rgb = rgb.detach().cpu().numpy()
+        if rgb.ndim == 4 and rgb.shape[0] == 1:
+            rgb = rgb[0]
         Image.fromarray(rgb).save("camera.bmp", format="BMP")
         print(f"floating_camera_rgb_shape={rgb.shape}")
 
