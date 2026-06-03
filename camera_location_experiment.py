@@ -272,7 +272,16 @@ def main():
             optim.zero_grad(set_to_none=True)
             loss.backward()
             optim.step()
-            losses.append(float(loss.detach().cpu()))
+            loss_value = float(loss.detach().cpu())
+            losses.append(loss_value)
+            mean_loss = sum(losses) / len(losses)
+            print(
+                f"epoch={epoch + 1}/{args.epochs} "
+                f"episode={episode + 1}/{episodes} "
+                f"loss={loss_value:.6f} "
+                f"mean_loss={mean_loss:.6f}",
+                flush=True,
+            )
             del visual, proprio, target, pred, loss
         print(f"epoch={epoch + 1} loss={sum(losses) / len(losses):.6f}")
 
