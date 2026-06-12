@@ -1,6 +1,5 @@
 import math
 import os
-import time
 from argparse import ArgumentParser
 
 import numpy as np
@@ -11,11 +10,11 @@ def parse_args():
     p = ArgumentParser(description="PiPlus soccer sim2sim — Genesis")
     p.add_argument("--model-dir", type=str,
                    default="refs/piplus_soccer_sim2sim/models/exported")
-    p.add_argument("--mode", type=str, default="approach_kick",
+    p.add_argument("--mode", type=str, default="walk",
                    choices=["walk", "kick", "approach_kick"])
     p.add_argument("--kick-speed", type=float, default=2.0)
     p.add_argument("--kick-dir-deg", type=float, default=0.0)
-    p.add_argument("--vel-x", type=float, default=0.0)
+    p.add_argument("--vel-x", type=float, default=0.5)
     p.add_argument("--vel-y", type=float, default=0.0)
     p.add_argument("--vel-yaw", type=float, default=0.0)
     p.add_argument("--num-envs", type=int, default=1)
@@ -35,14 +34,64 @@ def main():
 
     import genesis as gs
     from robots.pi import PI, PIConfig
-    from algorithm.joints import (
-        NUM_POLICY_JOINTS, POLICY_DEFAULT_POS, POLICY_ACTION_SCALE,
-        POLICY_TO_GENESIS, GENESIS_DEFAULT_POS, GENESIS_ACTION_SCALE,
-        GENESIS_KP, GENESIS_KD,
-    )
     from algorithm.observation import ObservationBuilder
     from algorithm.command import SoccerCommandBuilder
     from algorithm.policy import OnnxPolicy
+
+    # 22-dim policy joint order (head_yaw, l_hip_pitch, ..., head_pitch, l_hip_roll, ...)
+    # 20-dim genesis omits head_yaw(idx 0) and head_pitch(idx 5)
+    NUM_POLICY_JOINTS = 22
+    NUM_GENESIS_JOINTS = 20
+    POLICY_TO_GENESIS = np.array(
+        [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
+        dtype=np.int32,
+    )
+
+    POLICY_DEFAULT_POS = np.array([
+        0.0, -0.25, 0.0, -0.25, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0,
+        0.65, 0.0, 0.65, 0.0,
+        -0.4, -0.4, 0.0, 0.0,
+    ], dtype=np.float32)
+
+    _POLICY_ACTION_SCALE = np.array([
+        0.096, 0.098, 0.154, 0.098, 0.154, 0.096,
+        0.098, 0.154, 0.098, 0.154,
+        0.098, 0.154, 0.098, 0.154,
+        0.098, 0.154, 0.098, 0.154,
+        0.098, 0.098, 0.098, 0.098,
+    ], dtype=np.float32)
+
+    _POLICY_KP = np.array([
+        7.80, 50.97, 32.51, 50.97, 32.51, 7.80,
+        50.97, 32.51, 50.97, 32.51,
+        50.97, 32.51, 50.97, 32.51,
+        50.97, 32.51, 50.97, 32.51,
+        50.97, 50.97, 50.97, 50.97,
+    ], dtype=np.float32)
+
+    _POLICY_KD = np.array([
+        0.50, 3.24, 2.07, 3.24, 2.07, 0.50,
+        3.24, 2.07, 3.24, 2.07,
+        3.24, 2.07, 3.24, 2.07,
+        3.24, 2.07, 3.24, 2.07,
+        3.24, 3.24, 3.24, 3.24,
+    ], dtype=np.float32)
+
+    _POLICY_ARMATURE = np.array([
+        0.001976, 0.01291, 0.008234, 0.01291, 0.008234, 0.001976,
+        0.01291, 0.008234, 0.01291, 0.008234,
+        0.01291, 0.008234, 0.01291, 0.008234,
+        0.01291, 0.008234, 0.01291, 0.008234,
+        0.01291, 0.01291, 0.01291, 0.01291,
+    ], dtype=np.float32)
+
+    DEFAULT_POS = POLICY_DEFAULT_POS[POLICY_TO_GENESIS]
+    ACTION_SCALE = _POLICY_ACTION_SCALE[POLICY_TO_GENESIS]
+    KP = _POLICY_KP[POLICY_TO_GENESIS]
+    KD = _POLICY_KD[POLICY_TO_GENESIS]
+    ARMATURE = _POLICY_ARMATURE[POLICY_TO_GENESIS]
 
     gs.init(backend=gs.gpu, performance_mode=True, logging_level="warning")
 
@@ -60,7 +109,15 @@ def main():
         show_viewer=args.viewer,
     )
 
-    robot = PI(PIConfig(), scene)
+    robot = PI(PIConfig(
+        initial_pos=np.array([0.0, 0.0, 0.351], dtype=np.float32),
+        kp=KP,
+        kv=KD,
+        force_range=np.array([
+            [-20.0] * NUM_GENESIS_JOINTS,
+            [ 20.0] * NUM_GENESIS_JOINTS,
+        ], dtype=np.float32),
+    ), scene)
     ball = scene.add_entity(
         morph=gs.morphs.Sphere(radius=0.07, pos=(args.ball_x, args.ball_y, 0.12)),
         material=gs.materials.Rigid(friction=0.8),
@@ -71,10 +128,16 @@ def main():
     scene.build(n_envs=args.num_envs, env_spacing=(3.0, 3.0))
     robot.config()
 
-    # override PD gains to match training
     dofs_idx = robot.dofs_idx_local
-    robot.robot.set_dofs_kp(kp=GENESIS_KP, dofs_idx_local=dofs_idx)
-    robot.robot.set_dofs_kv(kv=GENESIS_KD, dofs_idx_local=dofs_idx)
+
+    # Set armature to match training (critical for dynamics stability)
+    robot.robot.set_dofs_armature(ARMATURE, dofs_idx_local=dofs_idx)
+
+    # Zero URDF joint damping — training uses damping=0 on the drive
+    robot.robot.set_dofs_damping(
+        np.zeros(NUM_GENESIS_JOINTS, dtype=np.float32),
+        dofs_idx_local=dofs_idx,
+    )
 
     # ball config
     ball.set_mass(0.25)
@@ -107,15 +170,25 @@ def main():
     ball.zero_all_dofs_velocity(envs_idx=envs_idx)
 
     # init joint positions to default (bent knees)
-    default_q = torch.from_numpy(GENESIS_DEFAULT_POS).unsqueeze(0).broadcast_to(
+    default_q = torch.from_numpy(DEFAULT_POS).unsqueeze(0).broadcast_to(
         (args.num_envs, -1)).to(gs.device)
     robot.robot.set_dofs_position(default_q, dofs_idx_local=dofs_idx, envs_idx=envs_idx)
+    robot.robot.set_dofs_velocity(
+        torch.zeros((args.num_envs, len(DEFAULT_POS)), device=gs.device),
+        dofs_idx_local=dofs_idx, envs_idx=envs_idx,
+    )
 
     # init observation history
     init_cmd = np.zeros((args.num_envs, 7), dtype=np.float32)
     obs_builder.reset(envs_idx=np.arange(args.num_envs), command=init_cmd)
     last_action = np.zeros((args.num_envs, NUM_POLICY_JOINTS), dtype=np.float32)
-    last_action_genesis = np.zeros((args.num_envs, len(GENESIS_DEFAULT_POS)), dtype=np.float32)
+
+    # Settle: hold default pose for N steps to reach equilibrium
+    settle_target = torch.from_numpy(DEFAULT_POS).unsqueeze(0).broadcast_to(
+        (args.num_envs, -1)).to(gs.device)
+    for _ in range(50):
+        robot.step(settle_target)
+        scene.step()
 
     print(f"mode={args.mode}, kick_speed={args.kick_speed}, "
           f"ball=({args.ball_x},{args.ball_y})")
@@ -127,7 +200,7 @@ def main():
         joint_pos_genesis = state["dofs_pos"].cpu().numpy()   # (B, 20)
         joint_vel_genesis = state["dofs_vel"].cpu().numpy()   # (B, 20)
         body_quat = state["body_quat"].cpu().numpy()          # (B, 4) wxyz
-        body_ang_vel = state["body_ang_vel"].cpu().numpy()    # (B, 3)
+        body_ang_vel = state["body_ang_vel"].cpu().numpy()    # (B, 3) body-frame
         body_pos = state["body_pos"].cpu().numpy()            # (B, 3)
         ball_pos_now = ball.get_pos(envs_idx=envs_idx).cpu().numpy()   # (B, 3)
 
@@ -137,7 +210,6 @@ def main():
         joint_pos_policy[:, POLICY_TO_GENESIS] = joint_pos_genesis
         joint_vel_policy[:, POLICY_TO_GENESIS] = joint_vel_genesis
         joint_pos_rel = joint_pos_policy - POLICY_DEFAULT_POS
-
         # 3. projected gravity
         proj_grav = ObservationBuilder.quat_to_projected_gravity(body_quat)
 
@@ -165,16 +237,14 @@ def main():
         action_genesis = action_policy[:, POLICY_TO_GENESIS]
 
         # 8. compute target positions and apply
-        target_q = GENESIS_DEFAULT_POS + action_genesis * GENESIS_ACTION_SCALE
+        target_q = DEFAULT_POS + action_genesis * ACTION_SCALE
         target_t = torch.from_numpy(target_q).to(gs.device)
         robot.step(target_t)
 
         # 9. step physics
         scene.step()
 
-        # 10. store last action
         last_action = action_policy
-        last_action_genesis = action_genesis
 
         if step % 50 == 0:
             bp = ball_pos_now[0]

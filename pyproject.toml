@@ -19,7 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 cuda = ["torch", "triton", "onnxruntime-gpu"]
 metal = ["torch", "triton", "onnxruntime"]
-rocm = ["torch", "triton", "onnxruntime-rocm"]
+rocm = ["torch", "triton", "onnxruntime-migraphx"]
 
 [tool.uv]
 conflicts = [[{ extra = "cuda" }, { extra = "rocm" }],
