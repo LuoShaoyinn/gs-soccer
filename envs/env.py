@@ -107,6 +107,8 @@ class Env(ABC):
             reset_idx = torch.nonzero(need_reset).squeeze(1)
             reset_observation, reset_info = self.reset(reset_idx)
             next_observation[reset_idx] = reset_observation
+            for (k, v) in reset_info.items():
+                info[k][reset_idx] = v
         return (next_observation, reward, terminated, truncated, info)
     
     def reset(self, envs_idx: torch.Tensor | None = None
@@ -123,17 +125,7 @@ class Env(ABC):
     def get_state(self, envs_idx: torch.Tensor) -> dict[str, torch.Tensor]:
         robot_state = self.robot.get_state(envs_idx=envs_idx)
         field_state = self.field.get_state(envs_idx=envs_idx)
-        # Backward-compatible contract:
-        # - keep flat keys for existing models
-        # - provide a structured block for future extensions
-        return {
-            **robot_state,
-            **field_state,
-            "_state": {
-                "robot": robot_state,
-                "field": field_state,
-            },
-        }
+        return { **robot_state, **field_state }
     
     def close(self):
         pass

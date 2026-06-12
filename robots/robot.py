@@ -62,9 +62,9 @@ class Robot(ABC):
                                             device=gs.device)
         self.imu = self.scene.add_sensor( \
             gs.sensors.IMU( \
-                entity_idx=self.robot.idx,                  # type: ignore
-                link_idx_local=self.robot_base.idx_local,   # type: ignore
-                pos_offset=(0.0, 0.0, 0.0),                 # type: ignore
+                entity_idx=self.robot.idx,
+                link_idx_local=self.robot_base.idx_local,
+                pos_offset=(0.0, 0.0, 0.0),               
             )
         )
     @torch.compiler.disable 

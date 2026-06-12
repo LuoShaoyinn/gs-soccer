@@ -42,7 +42,7 @@ class Model(ABC):
     def build_observation(self, envs_idx, **kwargs) -> torch.Tensor:
         pass
     
-    def build_reward(self, envs_idx, body_pos, **kwargs) -> torch.Tensor:
+    def build_reward(self, envs_idx, **kwargs) -> torch.Tensor:
         return torch.zeros((envs_idx.shape[0], 1), dtype=torch.float, device=gs.device)
     
     def build_terminated(self, envs_idx, **kwargs) -> torch.Tensor:
