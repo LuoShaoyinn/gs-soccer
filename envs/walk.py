@@ -22,7 +22,6 @@ class WalkEnvConfig(EnvConfig):
     field_range:    float   = 1.0
     rl_dt:          float   = 0.02
     show_viewer:    bool    = False
-    foot_contact_height: float = 0.03
 
 
 class WalkEnv(Env): 
