@@ -49,14 +49,6 @@ class ActorConfig:
     model_file: str = "pi_plus_actor.pt"
     max_steps: int = 2500
     settle_steps: int = 50
-    armature: tuple = (
-        0.01291, 0.008234, 0.01291, 0.008234,
-        0.01291, 0.008234, 0.01291, 0.008234,
-        0.01291, 0.008234, 0.01291, 0.008234,
-        0.01291, 0.008234, 0.01291, 0.008234,
-        0.01291, 0.01291, 0.01291, 0.01291,
-    )
-    damping: float = 0.0
 
 
 class Actor(Algorithm):
@@ -75,23 +67,6 @@ class Actor(Algorithm):
         ckpt = os.path.join(self.cfg.model_dir, self.cfg.model_file)
         self.net.load_state_dict(torch.load(ckpt, map_location=dev))
         self.net.eval()
-
-        self._setup_env()
-
-    def _setup_env(self):
-        env = self.env
-        dev = gs.device
-        dofs_idx = env.robot.dofs_idx_local
-        n = len(POLICY_TO_GENESIS)
-
-        env.robot.robot.set_dofs_armature(
-            torch.tensor(self.cfg.armature, dtype=torch.float32, device=dev),
-            dofs_idx_local=dofs_idx,
-        )
-        env.robot.robot.set_dofs_damping(
-            torch.full((n,), self.cfg.damping, dtype=torch.float32, device=dev),
-            dofs_idx_local=dofs_idx,
-        )
 
     @torch.no_grad()
     def infer(self, obs: torch.Tensor) -> torch.Tensor:
