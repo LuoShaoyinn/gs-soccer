@@ -1,43 +1,49 @@
 import os
+import math
 from argparse import ArgumentParser
 
+import numpy as np
 import torch
 
 import genesis as gs
+from envs.env import Env, EnvConfig
+from robots.pi import PI, PIConfig
+from fields.ball_field import BallField, BallFieldConfig
+from models.sim2sim_soccer import Sim2SimSoccerModel, Sim2SimSoccerConfig
 
 NUM_GENESIS_JOINTS = 20
 
-KP = torch.tensor([
+_KP = np.array([
     50.97, 32.51, 50.97, 32.51,
     50.97, 32.51, 50.97, 32.51,
     50.97, 32.51, 50.97, 32.51,
     50.97, 32.51, 50.97, 32.51,
     50.97, 50.97, 50.97, 50.97,
-], dtype=torch.float32)
+], dtype=np.float32)
 
-KD = torch.tensor([
+_KD = np.array([
     3.24, 2.07, 3.24, 2.07,
     3.24, 2.07, 3.24, 2.07,
     3.24, 2.07, 3.24, 2.07,
     3.24, 2.07, 3.24, 2.07,
     3.24, 3.24, 3.24, 3.24,
-], dtype=torch.float32)
+], dtype=np.float32)
 
-ARMATURE = torch.tensor([
+_ARMATURE = np.array([
     0.01291, 0.008234, 0.01291, 0.008234,
     0.01291, 0.008234, 0.01291, 0.008234,
     0.01291, 0.008234, 0.01291, 0.008234,
     0.01291, 0.008234, 0.01291, 0.008234,
     0.01291, 0.01291, 0.01291, 0.01291,
-], dtype=torch.float32)
+], dtype=np.float32)
 
-DEFAULT_POS = torch.tensor([
+_DEFAULT_POS = np.array([
     -0.25, 0.0, -0.25, 0.0,
     0.0, 0.0, 0.0, 0.0,
     0.0, 0.0, 0.0, 0.0,
     0.65, 0.0, 0.65, 0.0,
     -0.4, -0.4, 0.0, 0.0,
-], dtype=torch.float32)
+], dtype=np.float32)
 
 
 def parse_args():
@@ -53,8 +59,8 @@ def parse_args():
     p.add_argument("--vel-yaw", type=float, default=0.0)
     p.add_argument("--num-envs", type=int, default=1)
     p.add_argument("--steps", type=int, default=2500)
-    p.add_argument("--viewer", action="store_true")
-    p.add_argument("--no-render", action="store_true")
+    p.add_argument("--viewer", action="store_true", default=True)
+    p.add_argument("--no-viewer", dest="viewer", action="store_false")
     return p.parse_args()
 
 
@@ -64,12 +70,6 @@ def main():
         os.environ.pop("PYOPENGL_PLATFORM", None)
     os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
 
-    import numpy as np
-    from envs.kick import KickEnv, KickEnvConfig
-    from robots.pi import PI, PIConfig
-    from fields.field import Field, FieldConfig
-    from models.sim2sim_soccer import Sim2SimSoccerModel, Sim2SimSoccerConfig
-
     gs.init(backend=gs.gpu, performance_mode=True, logging_level="warning")
 
     ball_r_min, ball_r_max = {
@@ -78,22 +78,36 @@ def main():
         "kick": (0.4, 1.0),
     }[args.mode]
 
-    env = KickEnv(KickEnvConfig(
-        robot_cfg=PIConfig(
-            initial_pos=np.array([0.0, 0.0, 0.351], dtype=np.float32),
-            kp=KP.numpy(),
-            kv=KD.numpy(),
-            force_range=np.stack([
-                np.full(NUM_GENESIS_JOINTS, -20.0, dtype=np.float32),
-                np.full(NUM_GENESIS_JOINTS, 20.0, dtype=np.float32),
-            ]),
-        ),
+    robot_cfg = PIConfig(
+        initial_pos=np.array([0.0, 0.0, 0.351], dtype=np.float32),
+        kp=_KP,
+        kv=_KD,
+        force_range=np.array([
+            np.full(NUM_GENESIS_JOINTS, -20.0, dtype=np.float32),
+            np.full(NUM_GENESIS_JOINTS, 20.0, dtype=np.float32),
+        ]),
+    )
+
+    env = Env(EnvConfig(
+        robot_cfg=robot_cfg,
         robot_class=PI,
-        field_cfg=FieldConfig(),
-        field_class=Field,
+        field_cfg=BallFieldConfig(
+            ball_radius=0.07,
+            ball_mass=0.16,
+            ball_damping=0.0,
+            ball_friction=0.6,
+            field_friction=1.0,
+            ball_reset_radius=(ball_r_min, ball_r_max),
+            ball_reset_noise=0.0,
+        ),
+        field_class=BallField,
         model_cfg=Sim2SimSoccerConfig(
             model_dir=args.model_dir,
             model_file=args.model_file,
+            mode=args.mode,
+            vel_cmd=(args.vel_x, args.vel_y, args.vel_yaw),
+            kick_speed=args.kick_speed,
+            kick_dir_deg=args.kick_dir_deg,
         ),
         model_class=Sim2SimSoccerModel,
         policy_freq=50,
@@ -101,27 +115,23 @@ def main():
         show_viewer=args.viewer,
         num_envs=args.num_envs,
         env_spacing=3.0,
-        ball_radius=0.07,
-        ball_mass_range=(0.16, 0.16),
-        ball_reset_r_min=ball_r_min,
-        ball_reset_r_max=ball_r_max,
-        ball_reset_noise=0.0,
-        mode=args.mode,
-        vel_cmd=(args.vel_x, args.vel_y, args.vel_yaw),
-        kick_speed=args.kick_speed,
-        kick_dir_deg=args.kick_dir_deg,
     ))
 
+    # zero URDF joint damping + set armature
     dofs_idx = env.robot.dofs_idx_local
-    env.robot.robot.set_dofs_armature(ARMATURE.to(gs.device), dofs_idx_local=dofs_idx)
+    env.robot.robot.set_dofs_armature(
+        torch.from_numpy(_ARMATURE).to(gs.device),
+        dofs_idx_local=dofs_idx,
+    )
     env.robot.robot.set_dofs_damping(
         torch.zeros(NUM_GENESIS_JOINTS, dtype=torch.float32, device=gs.device),
         dofs_idx_local=dofs_idx,
     )
-    env.ball.set_dofs_damping(0.0, dofs_idx_local=(3, 4, 5))
+    env.field.ball.set_dofs_damping(0.0, dofs_idx_local=(3, 4, 5))
 
+    # reset + settle
     obs, info = env.reset()
-    default_q = DEFAULT_POS.to(gs.device).unsqueeze(0).expand(args.num_envs, -1)
+    default_q = torch.from_numpy(_DEFAULT_POS).to(gs.device).unsqueeze(0).expand(args.num_envs, -1)
     for _ in range(50):
         env.robot.step(default_q)
         env.gs_step()

@@ -1,4 +1,3 @@
-import os
 import math
 import torch
 import gymnasium as gym
@@ -8,27 +7,7 @@ from dataclasses import dataclass
 import genesis as gs
 
 from models.model import ModelConfig, Model
-
-NUM_POLICY_JOINTS = 22
-NUM_GENESIS_JOINTS = 20
-
-_POLICY_TO_GENESIS = [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
-
-_POLICY_DEFAULT_POS = [
-    0.0, -0.25, 0.0, -0.25, 0.0, 0.0,
-    0.0, 0.0, 0.0, 0.0,
-    0.0, 0.0, 0.0, 0.0,
-    0.65, 0.0, 0.65, 0.0,
-    -0.4, -0.4, 0.0, 0.0,
-]
-
-_POLICY_ACTION_SCALE = [
-    0.096, 0.098, 0.154, 0.098, 0.154, 0.096,
-    0.098, 0.154, 0.098, 0.154,
-    0.098, 0.154, 0.098, 0.154,
-    0.098, 0.154, 0.098, 0.154,
-    0.098, 0.098, 0.098, 0.098,
-]
+from algorithm.actor import Actor, NUM_POLICY_JOINTS
 
 HISTORY_LEN = 8
 NUM_ANG_VEL = 3
@@ -40,46 +19,28 @@ ANG_VEL_SCALE = 0.25
 JOINT_VEL_SCALE = 0.05
 
 
-class ActorMLP(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.fc0 = torch.nn.Linear(632, 512)
-        self.fc1 = torch.nn.Linear(512, 256)
-        self.fc2 = torch.nn.Linear(256, 128)
-        self.fc3 = torch.nn.Linear(128, 22)
-        self.act = torch.nn.ELU()
-
-    def forward(self, x):
-        x = self.act(self.fc0(x))
-        x = self.act(self.fc1(x))
-        x = self.act(self.fc2(x))
-        return self.fc3(x)
-
-
 @dataclass(kw_only=True)
 class Sim2SimSoccerConfig(ModelConfig):
     model_dir: str = "runs"
     model_file: str = "pi_plus_actor.pt"
+    mode: str = "walk"
+    vel_cmd: tuple[float, float, float] = (0.5, 0.0, 0.0)
+    kick_speed: float = 2.0
+    kick_dir_deg: float = 0.0
+    kick_zone_radius: float = 1.0
+    approach_speed_vx: float = 1.2
+    approach_kp_wz: float = 2.0
+    approach_max_wz: float = 1.5
 
 
 class Sim2SimSoccerModel(Model):
     cfg: Sim2SimSoccerConfig
 
     def build(self):
-        self.actor = ActorMLP().to(gs.device)
-        ckpt = os.path.join(self.cfg.model_dir, self.cfg.model_file)
-        self.actor.load_state_dict(torch.load(ckpt, map_location=gs.device))
-        self.actor.eval()
+        self.actor = Actor(self.cfg.model_dir, self.cfg.model_file)
 
     def config(self):
         dev = gs.device
-        self.idx = torch.tensor(_POLICY_TO_GENESIS, dtype=torch.long, device=dev)
-        self.policy_default_pos = torch.tensor(_POLICY_DEFAULT_POS, dtype=torch.float32, device=dev)
-        self.default_pos = self.policy_default_pos[self.idx]
-
-        policy_action_scale = torch.tensor(_POLICY_ACTION_SCALE, dtype=torch.float32, device=dev)
-        self.action_scale = policy_action_scale[self.idx]
-
         B = self.scene.n_envs
         H = HISTORY_LEN
         self._buf_ang_vel = torch.zeros((B, H, NUM_ANG_VEL), dtype=torch.float32, device=dev)
@@ -92,6 +53,11 @@ class Sim2SimSoccerModel(Model):
         self._last_action = torch.zeros((B, NUM_POLICY_JOINTS), dtype=torch.float32, device=dev)
         self._pending_action = None
 
+        self._in_kick_zone = torch.zeros(B, dtype=torch.bool, device=dev)
+        self._target_pos_w = torch.zeros((B, 2), dtype=torch.float64, device=dev)
+        self._kick_dir_yaw = math.radians(self.cfg.kick_dir_deg)
+        self._last_cmd = torch.zeros((B, NUM_CMD), dtype=torch.float32, device=dev)
+
     def reset(self, envs_idx: torch.Tensor):
         for buf in (self._buf_ang_vel, self._buf_grav, self._buf_cmd,
                     self._buf_jpos, self._buf_jvel, self._buf_act):
@@ -99,20 +65,104 @@ class Sim2SimSoccerModel(Model):
         self._buf_grav[envs_idx] = self._default_gravity
         self._last_action[envs_idx] = 0.0
         self._pending_action = None
+        self._in_kick_zone[envs_idx] = False
+        self._target_pos_w[envs_idx] = 0.0
+
+    def _compute_soccer_cmd(self, body_pos, body_quat, ball_pos):
+        B = body_pos.shape[0]
+        w = body_quat[:, 0]
+        x = body_quat[:, 1]
+        y = body_quat[:, 2]
+        z = body_quat[:, 3]
+        robot_yaw = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+
+        dx = ball_pos[:, 0] - body_pos[:, 0]
+        dy = ball_pos[:, 1] - body_pos[:, 1]
+        cos_y = torch.cos(robot_yaw)
+        sin_y = torch.sin(robot_yaw)
+        ball_x_b = cos_y * dx + sin_y * dy
+        ball_y_b = -sin_y * dx + cos_y * dy
+        dist = torch.sqrt(dx * dx + dy * dy)
+
+        cmd = torch.zeros((B, NUM_CMD), dtype=torch.float32, device=gs.device)
+        cmd[:, 3] = ball_x_b.float()
+        cmd[:, 4] = ball_y_b.float()
+
+        mode = self.cfg.mode
+        ks = self.cfg.kick_speed
+
+        if mode == "walk":
+            cmd[:, 0] = self.cfg.vel_cmd[0]
+            cmd[:, 1] = self.cfg.vel_cmd[1]
+            cmd[:, 2] = self.cfg.vel_cmd[2]
+
+        elif mode == "approach_kick":
+            newly = (~self._in_kick_zone) & (dist < self.cfg.kick_zone_radius)
+            newly_idx = newly.nonzero(as_tuple=True)[0]
+            if newly_idx.numel() > 0:
+                self._in_kick_zone[newly_idx] = True
+                self._target_pos_w[newly_idx, 0] = (
+                    ball_pos[newly_idx, 0].double() + ks * math.cos(self._kick_dir_yaw)
+                )
+                self._target_pos_w[newly_idx, 1] = (
+                    ball_pos[newly_idx, 1].double() + ks * math.sin(self._kick_dir_yaw)
+                )
+
+            app = (~self._in_kick_zone).nonzero(as_tuple=True)[0]
+            if app.numel() > 0:
+                yaw_err = torch.atan2(ball_y_b[app], ball_x_b[app])
+                wz = torch.clamp(
+                    self.cfg.approach_kp_wz * yaw_err,
+                    -self.cfg.approach_max_wz, self.cfg.approach_max_wz,
+                )
+                vx = torch.maximum(
+                    torch.cos(yaw_err), torch.zeros(1, device=gs.device),
+                ) * self.cfg.approach_speed_vx
+                cmd[app, 0] = vx.float()
+                cmd[app, 2] = wz.float()
+
+            kick = self._in_kick_zone.nonzero(as_tuple=True)[0]
+            if kick.numel() > 0:
+                to_tgt = self._target_pos_w[kick] - ball_pos[kick, :2].double()
+                dir_yaw = torch.atan2(to_tgt[:, 1], to_tgt[:, 0])
+                cmd[kick, 5] = ((dir_yaw.float() - robot_yaw[kick].float()) + math.pi) % (2 * math.pi) - math.pi
+                cmd[kick, 6] = ks
+
+        elif mode == "kick":
+            nf = (~self._in_kick_zone).nonzero(as_tuple=True)[0]
+            if nf.numel() > 0:
+                self._in_kick_zone[nf] = True
+                self._target_pos_w[nf, 0] = (
+                    ball_pos[nf, 0].double() + ks * math.cos(self._kick_dir_yaw)
+                )
+                self._target_pos_w[nf, 1] = (
+                    ball_pos[nf, 1].double() + ks * math.sin(self._kick_dir_yaw)
+                )
+
+            to_tgt = self._target_pos_w - ball_pos[:, :2].double()
+            dir_yaw = torch.atan2(to_tgt[:, 1], to_tgt[:, 0])
+            cmd[:, 5] = ((dir_yaw.float() - robot_yaw.float()) + math.pi) % (2 * math.pi) - math.pi
+            cmd[:, 6] = ks
+
+        return cmd
 
     def build_observation(self, envs_idx, **kwargs) -> torch.Tensor:
         ang_vel = kwargs["body_ang_vel"]
         body_quat = kwargs["body_quat"]
+        body_pos = kwargs["body_pos"]
         dofs_pos = kwargs["dofs_pos"]
         dofs_vel = kwargs["dofs_vel"]
-        soccer_cmd = kwargs["soccer_cmd"]
+        ball_pos = kwargs["ball_pos"]
         B = ang_vel.shape[0]
+
+        soccer_cmd = self._compute_soccer_cmd(body_pos, body_quat, ball_pos)
+        self._last_cmd = soccer_cmd
 
         jpos_policy = torch.zeros((B, NUM_POLICY_JOINTS), dtype=torch.float32, device=gs.device)
         jvel_policy = torch.zeros((B, NUM_POLICY_JOINTS), dtype=torch.float32, device=gs.device)
-        jpos_policy[:, self.idx] = dofs_pos
-        jvel_policy[:, self.idx] = dofs_vel
-        jpos_rel = jpos_policy - self.policy_default_pos
+        jpos_policy[:, self.actor.idx] = dofs_pos
+        jvel_policy[:, self.actor.idx] = dofs_vel
+        jpos_rel = jpos_policy - self.actor.default_pos
 
         proj_grav = self._quat_to_projected_gravity(body_quat)
 
@@ -144,18 +194,17 @@ class Sim2SimSoccerModel(Model):
 
     def preprocess_action(self, action: torch.Tensor) -> torch.Tensor:
         self._pending_action = action.clone()
-        return self.default_pos + action[:, self.idx] * self.action_scale
+        return self.actor.map_action(action)
 
     def act(self, obs: torch.Tensor) -> torch.Tensor:
-        with torch.no_grad():
-            return self.actor(obs)
+        return self.actor.infer(obs)
 
     def build_info(self, envs_idx, **kwargs) -> dict[str, torch.Tensor]:
         return {
             "body_pos": kwargs["body_pos"],
             "ball_pos": kwargs["ball_pos"],
             "ball_vel": kwargs["ball_vel"],
-            "soccer_cmd": kwargs["soccer_cmd"],
+            "soccer_cmd": self._last_cmd,
         }
 
     @staticmethod

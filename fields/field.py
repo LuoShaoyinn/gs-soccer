@@ -3,10 +3,8 @@
 #
 
 import torch
-import numpy as np
 import genesis as gs
-import gymnasium as gym
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass(kw_only = True)
