@@ -4,7 +4,7 @@
 import torch
 import genesis as gs
 import gymnasium as gym
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from abc import ABC, abstractmethod
 
 @dataclass(kw_only = True)

@@ -5,10 +5,9 @@
 import torch
 import numpy as np
 import genesis as gs
-import gymnasium as gym
 from torch.nn import functional as F
 from dataclasses import dataclass, field
-from abc import ABC, abstractmethod
+from abc import ABC
 
 @dataclass(kw_only = True)
 class RobotConfig:
@@ -34,9 +33,9 @@ class Robot(ABC):
     def __init__(self, cfg: RobotConfig, scene: gs.Scene):
         self.cfg = cfg
         self.scene = scene
-        assert type(cfg.robot_URDF) == str, \
+        assert isinstance(cfg.robot_URDF, str), \
             f"URDF filename should be a str, got {cfg.robot_URDF}"
-        assert type(cfg.joint_names) == list, \
+        assert isinstance(cfg.joint_names, list), \
             f"joint_names should be a list[str], got{cfg.joint_names}"
 
 

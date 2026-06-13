@@ -3,11 +3,9 @@
 
 
 import torch
-import numpy as np
 import genesis as gs
-import gymnasium as gym
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from abc import ABC
+from dataclasses import dataclass
 
 from robots.robot import RobotConfig, Robot
 from fields.field import FieldConfig, Field

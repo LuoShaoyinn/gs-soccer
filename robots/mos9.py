@@ -2,10 +2,7 @@
 #   Inherit from robot and build up mos9
 #
 
-import torch
 import numpy as np
-import genesis as gs
-import gymnasium as gym
 from dataclasses import dataclass, field
 
 from .robot import Robot, RobotConfig
