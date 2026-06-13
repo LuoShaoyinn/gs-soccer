@@ -1,4 +1,4 @@
 from .algorithm import Algorithm
-from .actor import Actor, ActorMLP
+from .actor import Actor, ActorMLP, ActorConfig
 
-__all__ = ["Algorithm", "Actor", "ActorMLP"]
+__all__ = ["Algorithm", "Actor", "ActorMLP", "ActorConfig"]

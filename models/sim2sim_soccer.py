@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import genesis as gs
 
 from models.model import ModelConfig, Model
-from algorithm.actor import Actor, NUM_POLICY_JOINTS
+from algorithm.actor import NUM_POLICY_JOINTS, POLICY_TO_GENESIS, POLICY_DEFAULT_POS
 
 HISTORY_LEN = 8
 NUM_ANG_VEL = 3
@@ -21,8 +21,6 @@ JOINT_VEL_SCALE = 0.05
 
 @dataclass(kw_only=True)
 class Sim2SimSoccerConfig(ModelConfig):
-    model_dir: str = "runs"
-    model_file: str = "pi_plus_actor.pt"
     mode: str = "walk"
     vel_cmd: tuple[float, float, float] = (0.5, 0.0, 0.0)
     kick_speed: float = 2.0
@@ -36,11 +34,11 @@ class Sim2SimSoccerConfig(ModelConfig):
 class Sim2SimSoccerModel(Model):
     cfg: Sim2SimSoccerConfig
 
-    def build(self):
-        self.actor = Actor(self.cfg.model_dir, self.cfg.model_file)
-
     def config(self):
         dev = gs.device
+        self.idx = torch.tensor(POLICY_TO_GENESIS, dtype=torch.long, device=dev)
+        self.policy_default_pos = torch.tensor(POLICY_DEFAULT_POS, dtype=torch.float32, device=dev)
+
         B = self.scene.n_envs
         H = HISTORY_LEN
         self._buf_ang_vel = torch.zeros((B, H, NUM_ANG_VEL), dtype=torch.float32, device=dev)
@@ -160,9 +158,9 @@ class Sim2SimSoccerModel(Model):
 
         jpos_policy = torch.zeros((B, NUM_POLICY_JOINTS), dtype=torch.float32, device=gs.device)
         jvel_policy = torch.zeros((B, NUM_POLICY_JOINTS), dtype=torch.float32, device=gs.device)
-        jpos_policy[:, self.actor.idx] = dofs_pos
-        jvel_policy[:, self.actor.idx] = dofs_vel
-        jpos_rel = jpos_policy - self.actor.default_pos
+        jpos_policy[:, self.idx] = dofs_pos
+        jvel_policy[:, self.idx] = dofs_vel
+        jpos_rel = jpos_policy - self.policy_default_pos
 
         proj_grav = self._quat_to_projected_gravity(body_quat)
 
@@ -194,10 +192,11 @@ class Sim2SimSoccerModel(Model):
 
     def preprocess_action(self, action: torch.Tensor) -> torch.Tensor:
         self._pending_action = action.clone()
-        return self.actor.map_action(action)
-
-    def act(self, obs: torch.Tensor) -> torch.Tensor:
-        return self.actor.infer(obs)
+        idx = self.idx
+        default_pos = self.policy_default_pos[idx]
+        from algorithm.actor import POLICY_ACTION_SCALE
+        scale = torch.tensor(POLICY_ACTION_SCALE, dtype=torch.float32, device=gs.device)[idx]
+        return default_pos + action[:, idx] * scale
 
     def build_info(self, envs_idx, **kwargs) -> dict[str, torch.Tensor]:
         return {
