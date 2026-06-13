@@ -17,6 +17,7 @@ class RobotConfig:
     kp:             np.ndarray          # kp
     kv:             np.ndarray          # kv
     armature:       np.ndarray | None = None  # per-joint armature
+    damping:        np.ndarray | float | None = None  # per-joint damping
     velocity_range: np.ndarray          # joint velocity range
     force_range:    np.ndarray          # joint force(torque) range, 2xN
     initial_pos:    np.ndarray   = field(default_factory=\
@@ -91,6 +92,11 @@ class Robot(ABC):
         if self.cfg.armature is not None:
             self.robot.set_dofs_armature(
                 armature       = self.cfg.armature,
+                dofs_idx_local = self.dofs_idx_local,
+            )
+        if self.cfg.damping is not None:
+            self.robot.set_dofs_damping(
+                damping        = self.cfg.damping,
                 dofs_idx_local = self.dofs_idx_local,
             )
 
