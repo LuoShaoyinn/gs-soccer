@@ -201,116 +201,307 @@ This one-step delay matches IsaacLab's `last_action` observation term.
 
 ## 3. Training Techniques
 
-The original policy was trained in IsaacLab with the following recipe
-(from `agent.yaml` and `env.yaml`):
+The original policy was trained in **IsaacLab** (Isaac Sim 5.1, PhysX) using
+a custom framework called **HT_lab** / **instinctlab**. All details below are
+extracted from `refs/.../models/params/env.yaml` and `agent.yaml`.
 
 ### 3.1 Algorithm: WasabiPPO + AMP
 
 - **Base**: PPO with adaptive learning rate (targets KL divergence of 0.01)
 - **AMP**: Adversarial Motion Priors — a discriminator rewards motions that
-  match mocap data, added to the task reward
-- **Discriminator**: 2-layer MLP (1024→512), ReLU, gradient penalty (coef 5.0)
-- **Discriminator reward coef**: 0.25 (quadratic form)
+  match mocap data, added to the task reward (coef 0.25, quadratic form)
+- **Discriminator**: 2-layer MLP (1024→512), ReLU, gradient penalty coef 5.0,
+  weight decay 3e-4 (body) / 4e-2 (logit), lr 1e-4 (AdamW)
 - **Entropy coef**: 0.006
+- **Experiment**: `pi_plus_soccer_target_amp`
 
 ### 3.2 PPO Hyperparameters
 
-| Parameter              | Value     |
-|------------------------|-----------|
-| Clip param             | 0.2       |
-| Num learning epochs    | 5         |
-| Num mini batches       | 4         |
-| Steps per env          | 24        |
-| Gamma                  | 0.99      |
-| Lambda (GAE)           | 0.95      |
-| Max grad norm          | 1.0       |
+| Parameter              | Value              |
+|------------------------|--------------------|
+| Clip param             | 0.2                |
+| Num learning epochs    | 5                  |
+| Num mini batches       | 4                  |
+| Steps per env          | 24                 |
+| Gamma                  | 0.99               |
+| Lambda (GAE)           | 0.95               |
+| Max grad norm          | 1.0                |
 | Learning rate          | 1e-3 (AdamW, adaptive) |
-| Init noise std         | 0.6       |
+| Init noise std         | 0.6                |
+| Clip min std           | 1e-12              |
+| Advantage mixing       | 1.0                |
+| Value loss coef        | 1.0 (clipped)      |
+| Save interval          | 1000 iters         |
+| Max iterations         | 300,000            |
 
 ### 3.3 Simulation Setup
 
-| Parameter         | Value          |
-|-------------------|----------------|
-| Physics engine    | PhysX (Isaac)  |
-| dt                | 0.005 s        |
-| Decimation        | 4 (control at 50 Hz) |
-| Num envs          | 4096           |
-| Env spacing       | 10 m           |
-| Max iterations    | 300,000        |
+| Parameter              | Value              |
+|------------------------|--------------------|
+| Physics engine         | PhysX (Isaac Sim)  |
+| dt                     | 0.005 s            |
+| Decimation             | 4 (control at 50 Hz / 20 ms) |
+| Num envs               | 4096               |
+| Env spacing            | 10 m               |
+| Episode length         | 10 s (500 steps)   |
+| Seed                   | 42                 |
+| Self-collision         | false              |
+| Filter collisions      | true (between envs)|
+| Solver pos iterations  | 8                  |
+| Solver vel iterations  | 4                  |
+| Bounce threshold vel   | 0.5 m/s            |
+| Soft joint pos limit   | 0.9                |
+| CCD                    | disabled           |
 
-### 3.4 Motion Reference (AMP)
+### 3.4 Actuator Derivation
 
-- **Source**: AMASS soccer walk/run mocap data, retargeted to PiPlus
-- **Frame rate**: 50 Hz (matched to control rate)
-- **Dual buffer**: `soccer` buffer for locomotion, `walk_init` buffer for
-  reset initialization
-- **Symmetric augmentation**: Left-right mirror mapping doubles effective
-  data, with sign flips on roll/yaw joints
+PD gains are derived from per-joint armature via second-order system formulas:
 
-### 3.5 Curriculum: Kick Role Assignment
+```
+Natural frequency:  ωn = 10.0 × 2π = 62.83 rad/s
+Damping ratio:      ζ = 2.0
+Stiffness (KP):     k = armature × ωn²
+Damping (KV):       d = 2 × ζ × armature × ωn
+```
 
-At each reset, environments are split into:
-- **35%** pure walking (`walk`)
-- **35%** immediate kick (`kick`)
-- **30%** approach-then-kick (`approach_kick`)
+Three motor groups based on motor size:
 
-This ensures the policy learns all three behaviors simultaneously.
+| Motor     | Armature  | KP = k     | KV = d    | Effort limit | Action scale = 0.25×effort/kp |
+|-----------|-----------|------------|-----------|--------------|-------------------------------|
+| 5047 (legs/ankles) | 0.01291 | 50.967 | 3.245 | 20.0 N·m | 0.0981 |
+| 4438 (arms)        | 0.008234 | 32.507 | 2.069 | 20.0 N·m | 0.1538 |
+| 3536 (head)        | 0.001976 | 7.801 | 0.497 | 3.0 N·m  | 0.0961 |
 
-### 3.6 Domain Randomization
+Head uses `ImplicitActuator` (no torque-speed curve); legs and arms use
+`HTMotor` with torque-speed saturation curves:
 
-Applied at reset (IsaacLab events):
+| Group | curve_a | curve_b | curve_c | max_torque | max_vel |
+|-------|---------|---------|---------|------------|---------|
+| Legs  | -0.0141 | -0.0709 | 6.2756  | 20.0       | 6.0     |
+| Arms  | -0.1284 | -0.6996 | 19.833  | 10.0       | 20.0    |
 
-| Parameter              | Range          |
-|------------------------|----------------|
-| Static friction        | [0.2, 2.0]     |
-| Dynamic friction       | [0.2, 2.0]     |
-| Restitution            | [0.0, 0.5]     |
-| Link mass shift        | randomized     |
-| COM shift              | randomized     |
-| KP ratio               | randomized     |
-| KV ratio               | randomized     |
+### 3.5 Motion Reference (AMP)
 
-### 3.7 Observation Noise
+- **Source**: AMASS soccer walk/run mocap data, retargeted to PiPlus 22-DOF
+- **Frame rate**: 50 Hz (matched to control rate), interpolated bilinearly
+- **Assumed source framerate**: 120 Hz
+- **Dual buffer system**:
+  - `soccer` buffer: main locomotion clips from `soccer_walk_run_piplus`
+  - `walk_init` buffer: initialization clips from `soccer_init_piplus`
+- **Motion start**: sampled from middle 0–50% of clip
+- **Velocity estimation**: frontward differencing
+- **Link-of-interest tracking**: 14 links (base, shoulders, elbows, wrists,
+  hips, calves, ankles)
 
-Uniform additive noise applied to policy observations during training:
+### 3.6 Symmetric Augmentation
 
-| Term          | Noise range |
-|---------------|-------------|
-| base_ang_vel  | ±0.2        |
-| proj_gravity  | ±0.05       |
-| soccer_cmd    | ±0.05       |
-| joint_pos     | ±0.01       |
-| joint_vel     | ±0.5        |
+Left-right mirror doubles effective training data. Joint mapping swaps
+left/right pairs; sign flips applied to roll/yaw joints:
 
-This makes the policy robust to sensor noise, which is critical for sim2sim
-transfer where IMU readings differ from training.
+```
+joint_mapping:     [0,3,4,1,2,5, 8,9,6,7, 12,13,10,11, 16,17,14,15, 19,18, 21,20]
+sign_flip:         [-,+5, +5, +5, -5, -5, -5, -5, -5, -5, +4, +4]
+```
 
-### 3.8 Ball Properties (Training)
+Indices that flip sign: 0 (base yaw), 6-13 (hip roll + ankle roll),
+19-20 (head yaw, shoulder roll).
+
+### 3.7 Kick Role Assignment (Curriculum)
+
+At each environment reset, roles are assigned via `assign_kick_role`:
+
+| Role           | Fraction | Description                              |
+|----------------|----------|------------------------------------------|
+| walk           | 35%      | Pure locomotion, ball far away           |
+| kick           | 35%      | Ball close, immediate kick command       |
+| approach_kick  | 30%      | Walk toward ball, kick when in range     |
+
+### 3.8 Soccer Command (SoccerCommand)
+
+The 7-dim command is managed by `HT_lab.commands.soccer_command:SoccerCommand`:
+
+| Parameter                | Value            |
+|--------------------------|------------------|
+| Resampling time          | 10 s (full episode) |
+| Forward probability      | 0.8              |
+| Rel standing envs        | 0.2              |
+| Rel rotation-only envs   | 0.15             |
+| Rel lateral-only envs    | 0.15             |
+
+Velocity command ranges:
+
+| Axis         | Range            |
+|--------------|------------------|
+| lin_vel_x    | [-0.6, 1.5] m/s  |
+| lin_vel_y    | [-0.6, 0.6] m/s  |
+| ang_vel_z    | [-1.2, 1.2] rad/s|
+| forward_cone | [-90°, 90°]      |
+
+Kick speed sampling:
+
+| Category  | Range (m/s) | Fraction |
+|-----------|-------------|----------|
+| zero      | —           | 0%       |
+| soft      | [0.5, 2.0]  | 20%      |
+| hard      | [2.0, 5.0]  | 80%      |
+
+Approach-kick parameters:
+
+| Parameter              | Value  |
+|------------------------|--------|
+| Kick zone radius       | 1.0 m  |
+| Approach speed (vx)    | 1.2 m/s|
+| Approach yaw gain (wz) | 2.0    |
+| Approach max yaw rate  | 1.5 rad/s |
+| Clear distance         | 0.2 m  |
+| Contact force threshold| 0.1 N  |
+
+### 3.9 Reward Configuration
+
+#### Task Rewards (positive)
+
+| Reward term                  | Weight | Scope    | Key params                          |
+|------------------------------|--------|----------|-------------------------------------|
+| `is_alive`                   | +1.0   | all      | Survival bonus                      |
+| `track_lin_vel_xy_exp`       | +2.0   | walk     | exp kernel, std=0.5                 |
+| `track_ang_vel_z_exp`        | +2.0   | walk     | exp kernel, std=0.5                 |
+| `feet_air_time_walk`         | +0.5   | walk     | vel_threshold=0.15                  |
+| `feet_close_xy`              | +0.4   | all      | gaussian, threshold=0.12, std=0.224 |
+| `lower_limb_symmetry_walk`   | +500.0 | walk     | alpha=0.005, vel/lateral/ang thresh |
+| `kick_direction_speed`       | +20.0  | kick     | exp kernel, std=1.0, speed_thresh=0.3 |
+| `face_ball`                  | +1.0   | kick     | exp kernel, std=0.6, freeze=30°     |
+| `approach_ball`              | +1.0   | kick     | target_speed=0.7, std=0.5, act_dist=0.5 |
+
+#### Regularization Penalties (negative)
+
+| Reward term                  | Weight   | Scope    | Key params                          |
+|------------------------------|----------|----------|-------------------------------------|
+| `flat_orientation_l2`        | -6.0     | all      | Gravity alignment penalty           |
+| `pelvis_orientation_l2_walk` | -6.0     | walk     | Base link orientation               |
+| `undesired_contacts`         | -1.0     | all      | Non-foot contact, thresh=1.0        |
+| `dof_pos_limits`             | -1.0     | all      | Joint position limits               |
+| `dof_vel_limits`             | -1.0     | all      | soft_ratio=0.9                      |
+| `post_clear_default_pose`    | -1.0     | all      | Deviation from default after clear  |
+| `heading_error_walk`         | -1.0     | walk     | Heading vs command direction        |
+| `joint_deviation_hip`        | -0.5     | all      | Hip pitch + roll (squared)          |
+| `dont_wait_walk`             | -0.5     | walk     | Penalize no movement toward ball    |
+| `feet_slide`                 | -0.4     | all      | Contact sliding, thresh=1.0         |
+| `feet_flat_ori_walk`         | -0.4     | walk     | Feet flat on ground                 |
+| `stand_still_walk`           | -0.3     | walk     | Penalize stillness at offset=4.0m   |
+| `ball_z_speed`               | -0.2     | kick     | Vertical ball velocity              |
+| `ang_vel_xy_l2`              | -0.1     | all      | Horizontal angular velocity         |
+| `torque_limits`              | -0.01    | all      | limit_ratio=0.8                     |
+| `action_rate_l2`             | -0.01    | all      | Action smoothness                   |
+| `dof_vel_l2`                 | -1e-4    | all      | Joint velocity regularization       |
+| `energy`                      | -5e-5   | legs     | Motor power², normalized by stiffness |
+| `dof_torques_l2`             | -1.5e-7  | legs     | Joint torque (hip/thigh/ankle)      |
+| `dof_acc_l2`                 | -1.25e-7 | all      | Joint acceleration                  |
+
+Note: "walk" scope = applied only to walk-role envs; "kick" scope = kick-role
+envs; "all" = all envs. The `lower_limb_symmetry_walk` weight of 500 is large
+but scaled internally by alpha=0.005 and velocity gates.
+
+#### AMP Reward
+
+In addition to the task rewards above, the AMP discriminator adds a style
+reward (coef 0.25, quadratic form) that encourages motions matching the
+mocap reference. The discriminator observation is a 10-frame history of
+projected_gravity(3) + joint_pos_rel(22) + joint_vel(22) + base_lin_vel(3) +
+base_ang_vel(3) = 530 dims per frame.
+
+### 3.10 Termination Conditions
+
+| Termination       | Type     | Condition                              |
+|-------------------|----------|----------------------------------------|
+| `time_out`        | timeout  | Episode reaches 10 s                   |
+| `terrain_out_bound`| timeout | Robot moves >2 m beyond terrain bounds |
+| `base_contact`    | failure  | Contact force >1.0 N on base_link,     |
+|                   |          | head, thigh, hip, shoulder, elbow,     |
+|                   |          | or upper_arm links                     |
+| `root_height`     | failure  | Base height drops below 0.1 m          |
+
+### 3.11 Domain Randomization
+
+All applied at `startup` or `reset` (IsaacLab events):
+
+| Parameter                  | Mode    | Distribution    | Range          |
+|----------------------------|---------|-----------------|----------------|
+| Robot static friction      | startup | uniform         | [0.2, 2.0]     |
+| Robot dynamic friction     | startup | uniform         | [0.2, 2.0]     |
+| Robot restitution          | startup | uniform         | [0.0, 0.5]     |
+| Link mass scale            | startup | uniform         | [0.85, 1.15]   |
+| Joint friction             | startup | gaussian scale  | [0.5, 1.5]     |
+| Actuator stiffness (KP)    | startup | log_uniform     | [0.75, 1.25]   |
+| Actuator damping (KV)      | startup | log_uniform     | [0.75, 1.25]   |
+| COM shift (x, y, z)        | startup | uniform         | [-0.02, 0.02]  |
+| Ball mass                  | startup | uniform (abs)   | [0.20, 0.28]   |
+| Ball static friction       | startup | uniform         | [0.3, 1.0]     |
+| Ball dynamic friction      | startup | uniform         | [0.2, 0.8]     |
+| Ball restitution           | startup | uniform         | [0.4, 0.8]     |
+
+### 3.12 Observation Noise
+
+Uniform additive noise on policy observations during training (noise is NOT
+applied to critic or AMP discriminator observations):
+
+| Term             | Noise range |
+|------------------|-------------|
+| base_ang_vel     | ±0.2        |
+| projected_gravity| ±0.05       |
+| soccer_command   | ±0.05       |
+| joint_pos        | ±0.01       |
+| joint_vel        | ±0.5        |
+
+### 3.13 Ball Reset Configuration
+
+Ball spawn position depends on kick role:
+
+| Mode          | r_min | r_max | Angle range | z     | Notes                    |
+|---------------|-------|-------|-------------|-------|--------------------------|
+| walk          | —     | —     | —           | 0.07  | xy_offset=[4.0,4.0], noise=0.2 |
+| kick          | 0.4 m | 1.0 m | [0°, 0°]   | 0.07  | In front of robot        |
+| approach_kick | 3.0 m | 4.0 m | —           | 0.07  | Lateral noise = 0        |
+
+### 3.14 Ball Properties (Training)
 
 | Property          | Value  |
 |-------------------|--------|
 | Radius            | 0.07 m |
-| Mass              | 0.25 kg |
+| Mass (nominal)    | 0.25 kg (randomized [0.20, 0.28]) |
 | Linear damping    | 0.05   |
 | Angular damping   | 0.05   |
 | Static friction   | 0.8    |
 | Dynamic friction  | 0.6    |
 | Restitution       | 0.82   |
+| Friction combine  | average|
+| Restitution combine| average|
 
-**Note**: Our sim2sim uses mass=0.16 kg and zero damping as a closer match
-to a real size-1 soccer ball. This is a deliberate sim2sim adjustment.
+**Sim2sim adjustments**: Our Genesis sim2sim uses mass=0.16 kg and zero
+damping as a closer match to a real size-1 soccer ball. This is a deliberate
+sim2sim gap from training.
 
-### 3.9 Actuator Model: HTMotor
+### 3.15 Contact Sensors
 
-Training used a custom actuator model (`HTMotor`) with a torque-speed curve:
+Two contact sensor groups track robot interactions:
+
+| Sensor              | Body filter             | History | Purpose               |
+|---------------------|-------------------------|---------|-----------------------|
+| `contact_forces`    | All robot links         | 3 frames| General contact, feet_slide, undesired_contact |
+| `foot_ball_contact` | `.*_ankle_roll_link`    | 5 frames| Ball-foot contact detection (filtered to Ball only) |
+
+### 3.16 AMP Discriminator Observation
+
+The AMP discriminator uses a separate 10-frame history (different from the
+policy's 8-frame):
 
 ```
-Groups: legs/feet:  curve = [-0.0141, -0.0709, 6.2756], max_torque=20, max_vel=6.0
-        arms:       curve = [-0.1284, -0.6996, 19.83],  max_torque=10, max_vel=20.0
+10 × (projected_gravity(3) + joint_pos_rel(22) + joint_vel(22×0.05) + base_lin_vel(3) + base_ang_vel(3))
+= 10 × 73 = 730 dims
 ```
 
-The sim2sim uses ideal PD control (no torque-speed curve) since Genesis
-doesn't have the HTMotor model. This is a known sim2sim gap.
+Note: the AMP obs uses `projected_gravity` (from robot root) not
+`imu_projected_gravity`, and includes `base_lin_vel` which the policy does
+not see.
 
 ---
 
