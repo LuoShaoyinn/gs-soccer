@@ -27,6 +27,12 @@ class RobotConfig:
     decimate_face_num: int = 100
     decimate_aggressiveness: int = 8
     file_meshes_are_zup: bool = True
+    friction_ratio_range: tuple[float, float] | None = None
+    mass_shift_range:     tuple[float, float] | None = None
+    com_shift_range:      tuple[float, float] | None = None
+    kp_ratio_range:       tuple[float, float] | None = None
+    kv_ratio_range:       tuple[float, float] | None = None
+    armature_range:       tuple[float, float] | None = None
 
 
 class Robot(ABC):
@@ -83,6 +89,50 @@ class Robot(ABC):
         )
 
     @torch.compiler.disable
+    def __gs_randomize(self) -> None:
+        robot = self.robot
+        n_envs = self.n_envs
+        n_links = robot.n_links
+        n_dofs = self.n_dofs
+        cfg = self.cfg
+
+        def uniform(lo: float, hi: float, *shape: int) -> torch.Tensor:
+            return lo + (hi - lo) * torch.rand(shape, device=gs.device)
+
+        if cfg.friction_ratio_range is not None:
+            robot.set_friction_ratio(
+                uniform(*cfg.friction_ratio_range, n_envs, n_links),
+                links_idx_local=range(n_links),
+            )
+        if cfg.mass_shift_range is not None:
+            robot.set_mass_shift(
+                uniform(*cfg.mass_shift_range, n_envs, n_links),
+                links_idx_local=range(n_links),
+            )
+        if cfg.com_shift_range is not None:
+            robot.set_COM_shift(
+                uniform(*cfg.com_shift_range, n_envs, n_links, 3),
+                links_idx_local=range(n_links),
+            )
+        nominal_kp = torch.as_tensor(cfg.kp, dtype=torch.float32, device=gs.device)
+        nominal_kv = torch.as_tensor(cfg.kv, dtype=torch.float32, device=gs.device)
+        if cfg.kp_ratio_range is not None:
+            robot.set_dofs_kp(
+                nominal_kp * uniform(*cfg.kp_ratio_range, n_envs, n_dofs),
+                dofs_idx_local=self.dofs_idx_local,
+            )
+        if cfg.kv_ratio_range is not None:
+            robot.set_dofs_kv(
+                nominal_kv * uniform(*cfg.kv_ratio_range, n_envs, n_dofs),
+                dofs_idx_local=self.dofs_idx_local,
+            )
+        if cfg.armature_range is not None:
+            robot.set_dofs_armature(
+                uniform(*cfg.armature_range, n_envs, n_dofs),
+                dofs_idx_local=self.dofs_idx_local,
+            )
+
+    @torch.compiler.disable
     def __gs_step(self, action: torch.Tensor) -> None:
         self.robot.control_dofs_position(action, 
                                          dofs_idx_local=self.dofs_idx_local)
@@ -127,6 +177,7 @@ class Robot(ABC):
         self.n_dofs = len(self.cfg.joint_names)
         self.init_pos  = torch.from_numpy(self.cfg.initial_pos).to(gs.device)
         self.init_quat = torch.from_numpy(self.cfg.initial_quat).to(gs.device)
+        self.__gs_randomize()
 
     def step(self, action: torch.Tensor) -> None:
         self.__gs_step(action=action)

@@ -28,6 +28,7 @@ class EnvConfig():
     self_collision: bool    = True
     max_collision_pairs: int = 150
     multiplier_collision_broad_phase: int = 8
+    domain_randomization: bool = False
 
 
 class Env(ABC):
@@ -59,6 +60,8 @@ class Env(ABC):
                 tolerance=1e-6,
                 max_collision_pairs=self.cfg.max_collision_pairs,
                 multiplier_collision_broad_phase=self.cfg.multiplier_collision_broad_phase,
+                batch_dofs_info=self.cfg.domain_randomization,
+                batch_links_info=self.cfg.domain_randomization,
             ),
             show_viewer = self.cfg.show_viewer,
         )
