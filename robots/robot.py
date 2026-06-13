@@ -16,6 +16,7 @@ class RobotConfig:
     joint_names:    list[str]           # all joint names
     kp:             np.ndarray          # kp
     kv:             np.ndarray          # kv
+    armature:       np.ndarray | None = None  # per-joint armature
     velocity_range: np.ndarray          # joint velocity range
     force_range:    np.ndarray          # joint force(torque) range, 2xN
     initial_pos:    np.ndarray   = field(default_factory=\
@@ -32,7 +33,7 @@ class RobotConfig:
     com_shift_range:      tuple[float, float] | None = None
     kp_ratio_range:       tuple[float, float] | None = None
     kv_ratio_range:       tuple[float, float] | None = None
-    armature_range:       tuple[float, float] | None = None
+    armature_ratio_range: tuple[float, float] | None = None
 
 
 class Robot(ABC):
@@ -87,6 +88,11 @@ class Robot(ABC):
             upper          = self.cfg.force_range[1], 
             dofs_idx_local = self.dofs_idx_local,
         )
+        if self.cfg.armature is not None:
+            self.robot.set_dofs_armature(
+                armature       = self.cfg.armature,
+                dofs_idx_local = self.dofs_idx_local,
+            )
 
     @torch.compiler.disable
     def __gs_randomize(self) -> None:
@@ -126,9 +132,10 @@ class Robot(ABC):
                 nominal_kv * uniform(*cfg.kv_ratio_range, n_envs, n_dofs),
                 dofs_idx_local=self.dofs_idx_local,
             )
-        if cfg.armature_range is not None:
+        if cfg.armature is not None and cfg.armature_ratio_range is not None:
+            nominal_armature = torch.as_tensor(cfg.armature, dtype=torch.float32, device=gs.device)
             robot.set_dofs_armature(
-                uniform(*cfg.armature_range, n_envs, n_dofs),
+                nominal_armature * uniform(*cfg.armature_ratio_range, n_envs, n_dofs),
                 dofs_idx_local=self.dofs_idx_local,
             )
 
