@@ -1,9 +1,24 @@
 import math
 import os
+import random
 from argparse import ArgumentParser
 
 import numpy as np
 import torch
+
+BALL_RADIUS = 0.07
+
+
+def _random_ball_spawn(mode: str, rng: random.Random) -> tuple[float, float]:
+    if mode == "walk":
+        return rng.gauss(4.0, 0.2), rng.gauss(4.0, 0.2)
+    if mode == "approach_kick":
+        dist = rng.uniform(3.0, 4.0)
+        angle = rng.uniform(-math.pi, math.pi)
+        return dist * math.cos(angle), dist * math.sin(angle)
+    r = rng.uniform(0.4, 1.0)
+    angle = rng.gauss(0.0, 0.3)
+    return r * math.cos(angle), r * math.sin(angle)
 
 
 def parse_args():
@@ -20,14 +35,15 @@ def parse_args():
     p.add_argument("--num-envs", type=int, default=1)
     p.add_argument("--steps", type=int, default=2500)
     p.add_argument("--viewer", action="store_true")
-    p.add_argument("--ball-x", type=float, default=0.5)
-    p.add_argument("--ball-y", type=float, default=0.0)
+    p.add_argument("--ball-seed", type=int, default=None,
+                   help="Random seed for ball placement (default: random)")
     p.add_argument("--no-render", action="store_true")
     return p.parse_args()
 
 
 def main():
     args = parse_args()
+    rng = random.Random(args.ball_seed)
     if args.viewer:
         os.environ.pop("PYOPENGL_PLATFORM", None)
     os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
@@ -118,8 +134,9 @@ def main():
             [ 20.0] * NUM_GENESIS_JOINTS,
         ], dtype=np.float32),
     ), scene)
+    ball_x, ball_y = _random_ball_spawn(args.mode, rng)
     ball = scene.add_entity(
-        morph=gs.morphs.Sphere(radius=0.07, pos=(args.ball_x, args.ball_y, 0.12)),
+        morph=gs.morphs.Sphere(radius=BALL_RADIUS, pos=(ball_x, ball_y, BALL_RADIUS + 0.05)),
         material=gs.materials.Rigid(friction=0.8),
     )
     scene.add_entity(morph=gs.morphs.Plane())
@@ -140,7 +157,7 @@ def main():
     )
 
     # ball config
-    ball.set_mass(0.25)
+    ball.set_mass(0.16)
     ball.set_dofs_damping(2.0, dofs_idx_local=(3, 4, 5))
 
     # load policy
@@ -161,10 +178,10 @@ def main():
 
     # ---- reset ----
     robot.reset(envs_idx=envs_idx)
-    ball_z = 0.07 + 0.05
+    ball_z = BALL_RADIUS + 0.05
     ball_pos_init = torch.zeros(args.num_envs, 3, device=gs.device)
-    ball_pos_init[:, 0] = args.ball_x
-    ball_pos_init[:, 1] = args.ball_y
+    ball_pos_init[:, 0] = ball_x
+    ball_pos_init[:, 1] = ball_y
     ball_pos_init[:, 2] = ball_z
     ball.set_pos(envs_idx=envs_idx, pos=ball_pos_init)
     ball.zero_all_dofs_velocity(envs_idx=envs_idx)
@@ -191,7 +208,7 @@ def main():
         scene.step()
 
     print(f"mode={args.mode}, kick_speed={args.kick_speed}, "
-          f"ball=({args.ball_x},{args.ball_y})")
+          f"ball=({ball_x:.2f},{ball_y:.2f})")
 
     # ---- loop ----
     for step in range(args.steps):
