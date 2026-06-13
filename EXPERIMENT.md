@@ -358,56 +358,359 @@ Approach-kick parameters:
 
 ### 3.9 Reward Configuration
 
-#### Task Rewards (positive)
+The total reward at each step is:
 
-| Reward term                  | Weight | Scope    | Key params                          |
-|------------------------------|--------|----------|-------------------------------------|
-| `is_alive`                   | +1.0   | all      | Survival bonus                      |
-| `track_lin_vel_xy_exp`       | +2.0   | walk     | exp kernel, std=0.5                 |
-| `track_ang_vel_z_exp`        | +2.0   | walk     | exp kernel, std=0.5                 |
-| `feet_air_time_walk`         | +0.5   | walk     | vel_threshold=0.15                  |
-| `feet_close_xy`              | +0.4   | all      | gaussian, threshold=0.12, std=0.224 |
-| `lower_limb_symmetry_walk`   | +500.0 | walk     | alpha=0.005, vel/lateral/ang thresh |
-| `kick_direction_speed`       | +20.0  | kick     | exp kernel, std=1.0, speed_thresh=0.3 |
-| `face_ball`                  | +1.0   | kick     | exp kernel, std=0.6, freeze=30°     |
-| `approach_ball`              | +1.0   | kick     | target_speed=0.7, std=0.5, act_dist=0.5 |
+```
+R_total = Σ_i  w_i · r_i(env)  +  w_amp · r_amp(discriminator)
+```
 
-#### Regularization Penalties (negative)
+where `r_i` are the per-term raw values (below), `w_i` are the weights from
+`env.yaml`, and `r_amp` is the AMP style reward.
 
-| Reward term                  | Weight   | Scope    | Key params                          |
-|------------------------------|----------|----------|-------------------------------------|
-| `flat_orientation_l2`        | -6.0     | all      | Gravity alignment penalty           |
-| `pelvis_orientation_l2_walk` | -6.0     | walk     | Base link orientation               |
-| `undesired_contacts`         | -1.0     | all      | Non-foot contact, thresh=1.0        |
-| `dof_pos_limits`             | -1.0     | all      | Joint position limits               |
-| `dof_vel_limits`             | -1.0     | all      | soft_ratio=0.9                      |
-| `post_clear_default_pose`    | -1.0     | all      | Deviation from default after clear  |
-| `heading_error_walk`         | -1.0     | walk     | Heading vs command direction        |
-| `joint_deviation_hip`        | -0.5     | all      | Hip pitch + roll (squared)          |
-| `dont_wait_walk`             | -0.5     | walk     | Penalize no movement toward ball    |
-| `feet_slide`                 | -0.4     | all      | Contact sliding, thresh=1.0         |
-| `feet_flat_ori_walk`         | -0.4     | walk     | Feet flat on ground                 |
-| `stand_still_walk`           | -0.3     | walk     | Penalize stillness at offset=4.0m   |
-| `ball_z_speed`               | -0.2     | kick     | Vertical ball velocity              |
-| `ang_vel_xy_l2`              | -0.1     | all      | Horizontal angular velocity         |
-| `torque_limits`              | -0.01    | all      | limit_ratio=0.8                     |
-| `action_rate_l2`             | -0.01    | all      | Action smoothness                   |
-| `dof_vel_l2`                 | -1e-4    | all      | Joint velocity regularization       |
-| `energy`                      | -5e-5   | legs     | Motor power², normalized by stiffness |
-| `dof_torques_l2`             | -1.5e-7  | legs     | Joint torque (hip/thigh/ankle)      |
-| `dof_acc_l2`                 | -1.25e-7 | all      | Joint acceleration                  |
+Many terms are **role-gated**: `_walk_envs` suffix means the term returns 0
+for kick/approach_kick envs; `_kick_envs` means it returns 0 for walk envs.
+Terms without a suffix apply to all envs.
 
-Note: "walk" scope = applied only to walk-role envs; "kick" scope = kick-role
-envs; "all" = all envs. The `lower_limb_symmetry_walk` weight of 500 is large
-but scaled internally by alpha=0.005 and velocity gates.
+Notation: `N` = num_envs, subscripts `i` range over joints or feet, `t`
+is the current timestep. Unless noted, `||·||` is the L2 norm.
 
-#### AMP Reward
+---
 
-In addition to the task rewards above, the AMP discriminator adds a style
-reward (coef 0.25, quadratic form) that encourages motions matching the
-mocap reference. The discriminator observation is a 10-frame history of
-projected_gravity(3) + joint_pos_rel(22) + joint_vel(22) + base_lin_vel(3) +
-base_ang_vel(3) = 530 dims per frame.
+#### 3.9.1 Survival
+
+**`is_alive`** — weight +1.0, all envs
+
+```
+r = 1.0  if not terminated
+r = 0.0  if terminated
+```
+
+---
+
+#### 3.9.2 Velocity Tracking (walk envs)
+
+**`track_lin_vel_xy_exp`** — weight +2.0, std=0.5
+
+Tracks commanded xy linear velocity in the body frame:
+
+```
+lin_vel_error = Σ_{k=x,y} (cmd_k − v_b,k)²
+r = exp(−lin_vel_error / σ²)          where σ = 0.5
+```
+
+**`track_ang_vel_z_exp`** — weight +2.0, std=0.5
+
+Tracks commanded yaw angular velocity:
+
+```
+ang_vel_error = (cmd_wz − ω_b,z)²
+r = exp(−ang_vel_error / σ²)          where σ = 0.5
+```
+
+---
+
+#### 3.9.3 Gait Rewards (walk envs)
+
+**`feet_air_time_walk`** — weight +0.5, vel_threshold=0.15
+
+Rewards longer air time, credited on first contact after flight:
+
+```
+for each foot f:
+    if |cmd_vx| > vel_threshold:        # only when moving
+        air_time_f = clamp(time_since_last_contact, 0, 0.5)
+        reward_f   = air_time_f × first_contact_f
+r = Σ_f reward_f
+```
+
+**`lower_limb_symmetry_walk`** — weight +500.0, alpha=0.005,
+vel_threshold=0.15, lateral_threshold=0.1, ang_threshold=0.1
+
+Penalizes gait asymmetry between left and right legs (hip/calf phase
+difference), gated by forward motion:
+
+```
+gate = (|cmd_vx| > vel_threshold) ∧ (|cmd_vy| < lateral_threshold) ∧ (|cmd_wz| < ang_threshold)
+symmetry_error = || left_hip_phase − right_hip_phase ||²
+                 + || left_calf_phase − right_calf_phase ||²
+r = −alpha × symmetry_error × gate     where alpha = 0.005
+```
+
+Effective weight = 500 × 0.005 = **2.5** per unit symmetry error.
+
+---
+
+#### 3.9.4 Kick Rewards (kick envs)
+
+**`kick_direction_speed`** — weight +20.0, std=1.0, speed_threshold=0.3
+
+Rewards the ball moving in the commanded direction at the commanded speed.
+Evaluated when ball speed exceeds threshold:
+
+```
+gate = (|v_ball| > speed_threshold)
+ball_dir = atan2(v_ball_y, v_ball_x)
+dir_error = (ball_dir − target_dir)²
+speed_error = (|v_ball| − kick_speed_cmd)²
+r = exp(−(dir_error + speed_error) / σ²) × gate     where σ = 1.0
+```
+
+**`face_ball`** — weight +1.0, std=0.6, freeze_angle=30° (0.524 rad)
+
+Rewards the robot facing the ball, with a freeze cutoff:
+
+```
+angle_to_ball = |atan2(ball_y_b, ball_x_b)|
+r = exp(−angle_to_ball² / σ²)    if angle_to_ball < freeze_angle
+r = 0                             otherwise             where σ = 0.6
+```
+
+**`approach_ball`** — weight +1.0, target_speed=0.7, std=0.5,
+activate_distance=0.5
+
+Rewards decreasing distance to ball (ball approaching robot in body frame):
+
+```
+gate = (dist_to_ball < activate_distance)
+ball_speed_toward_robot = −d(dist)/dt      # closing rate
+r = exp(−(ball_speed_toward_robot − target_speed)² / σ²) × gate
+                                                              where σ = 0.5
+```
+
+**`ball_z_speed`** — weight −0.2
+
+Penalizes vertical ball velocity (encourages ground-level kicks):
+
+```
+r = |v_ball_z|
+```
+
+---
+
+#### 3.9.5 Orientation Penalties
+
+**`flat_orientation_l2`** — weight −6.0, all envs
+
+Penalizes non-flat base orientation via projected gravity xy components:
+
+```
+g = projected_gravity_b = R^T · [0, 0, −1]^T
+r = g_x² + g_y²
+```
+
+**`pelvis_orientation_l2_walk`** — weight −6.0, walk envs
+
+Identical to `flat_orientation_l2` but applied to walk-role envs only:
+
+```
+r = g_x² + g_y²        (walk envs only)
+```
+
+**`feet_flat_ori_walk`** — weight −0.4, walk envs
+
+Penalizes foot links tilting (non-flat foot contact). Computed on
+`.*_ankle_roll_link` projected gravity:
+
+```
+r = Σ_f |projected_gravity_f,x| + |projected_gravity_f,y|     (walk envs)
+```
+
+---
+
+#### 3.9.6 Velocity/Smoothness Penalties
+
+**`ang_vel_xy_l2`** — weight −0.1, all envs
+
+Penalizes roll/pitch angular velocity:
+
+```
+r = ω_b,x² + ω_b,y²
+```
+
+**`action_rate_l2`** — weight −0.01, all envs
+
+Penalizes rapid action changes between consecutive steps:
+
+```
+r = Σ_{j=1..22} (a_t,j − a_{t−1},j)²
+```
+
+---
+
+#### 3.9.7 Joint Regularization
+
+**`dof_vel_l2`** — weight −1e-4, all envs
+
+```
+r = Σ_j q̇_j²
+```
+
+**`dof_acc_l2`** — weight −1.25e-7, all envs
+
+```
+r = Σ_j q̈_j²         where q̈ = (q̇_t − q̇_{t−1}) / dt
+```
+
+**`dof_torques_l2`** — weight −1.5e-7, hip/thigh/ankle joints
+
+```
+r = Σ_{j ∈ hip,thigh,ankle} τ_j²
+```
+
+**`joint_deviation_hip`** — weight −0.5, hip_pitch + hip_roll
+
+Squared deviation from default position:
+
+```
+r = Σ_{j ∈ hip_pitch, hip_roll} (q_j − q_default,j)²
+```
+
+**`post_clear_default_pose`** — weight −1.0, all envs
+
+Penalizes full-body deviation from default pose after the ball has been
+cleared (moved beyond `clear_distance = 0.2 m` from robot):
+
+```
+gate = (dist(robot, ball) > clear_distance)
+r = Σ_j |q_j − q_default,j| × gate
+```
+
+---
+
+#### 3.9.8 Limit Penalties
+
+**`dof_pos_limits`** — weight −1.0, all envs
+
+Sum of violations beyond soft joint position limits:
+
+```
+r = Σ_j [max(0, q_min_soft,j − q_j) + max(0, q_j − q_max_soft,j)]
+where q_soft = 0.9 × q_limit
+```
+
+**`dof_vel_limits`** — weight −1.0, soft_ratio=0.9, all envs
+
+Sum of violations beyond soft joint velocity limits (clipped at 1 rad/s):
+
+```
+r = Σ_j clamp(|q̇_j| − 0.9 × q̇_limit,j, 0, 1.0)
+```
+
+**`torque_limits`** (a.k.a. `applied_torque_limits_by_ratio`) — weight −0.01,
+limit_ratio=0.8, all envs
+
+Penalizes applied torques exceeding a ratio of the effort limit:
+
+```
+r = Σ_j max(0, |τ_applied,j| − 0.8 × τ_limit,j)
+```
+
+---
+
+#### 3.9.9 Energy Penalty
+
+**`energy`** (a.k.a. `motors_power_square`) — weight −5e-5, hip/thigh/ankle,
+normalize_by_stiffness=true
+
+Penalizes squared mechanical power, normalized by joint stiffness:
+
+```
+power_j = τ_j × q̇_j
+r = Σ_{j ∈ legs} (power_j / k_j)²          where k_j = KP_j
+```
+
+The normalization by stiffness makes the penalty scale-invariant across
+different actuator groups.
+
+---
+
+#### 3.9.10 Contact Penalties
+
+**`undesired_contacts`** — weight −1.0, threshold=1.0 N, all envs except
+ankle_roll_link
+
+Counts body parts with contact force above threshold (excluding feet):
+
+```
+is_contact_i = max_t(net_force_i) > 1.0 N
+r = Σ_{i ∉ ankle_roll} is_contact_i
+```
+
+**`feet_slide`** (a.k.a. `contact_slide`) — weight −0.4, threshold=1.0 N,
+ankle_roll_link
+
+Penalizes foot sliding velocity when foot is in contact:
+
+```
+contact_f = (net_force_f > 1.0 N)
+slide_f   = √(v_f,x² + v_f,y²)           # foot xy speed
+r = Σ_f √(slide_f) × contact_f
+```
+
+The square root provides a softer penalty for small slides.
+
+---
+
+#### 3.9.11 Locomotion Style Rewards
+
+**`feet_close_xy`** — weight +0.4, threshold=0.12, std=0.224
+
+Rewards feet being close together in xy plane (gaussian kernel):
+
+```
+foot_dist = ||foot_L_xy − foot_R_xy||
+r = exp(−(max(0, foot_dist − threshold))² / σ²)    where σ = 0.224
+```
+
+**`heading_error_walk`** — weight −1.0, walk envs
+
+Penalizes heading direction mismatch between commanded velocity and actual
+walking direction:
+
+```
+heading_actual = atan2(v_y, v_x)
+heading_cmd    = atan2(cmd_vy, cmd_vx)
+r = |wrap(heading_actual − heading_cmd)|
+```
+
+**`dont_wait_walk`** — weight −0.5, walk envs
+
+Penalizes standing still when there is a non-zero velocity command and the
+robot is far from the ball:
+
+```
+gate = (||cmd_v|| > 0.1) ∧ (|v_actual| < threshold)
+r = gate × 1.0
+```
+
+**`stand_still_walk`** — weight −0.3, offset=4.0, walk envs
+
+Penalizes being too slow when the ball is far away (beyond offset distance):
+
+```
+gate = (dist_to_ball > offset)
+r = gate × max(0, offset_speed − |v_actual|)
+```
+
+---
+
+#### 3.9.12 AMP Style Reward
+
+The AMP discriminator provides an additional reward based on adversarial
+training against mocap reference motions:
+
+```
+D(s) = MLP_2layer(observation_amp)          # discriminator output ∈ ℝ
+r_amp = clamp(−α · (D(s) − 1)² / 4, 0, 1)   # quadratic form, α = 0.25
+```
+
+This is the standard AMP reward formula from the original paper (Peng et al.,
+2021). `s` is the 10-frame AMP observation (730 dims, see section 3.16).
+The quadratic form gives maximum reward (1.0) when `D(s) = 1` (motion
+indistinguishable from reference).
+
+Discriminator training uses gradient penalty (coef 5.0) and weight decay
+(3e-4 body, 4e-2 logits).
 
 ### 3.10 Termination Conditions
 
