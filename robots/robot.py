@@ -14,6 +14,7 @@ class RobotConfig:
     robot_URDF:     str                 # urdf path
     base_link_name: str                 # base link_name
     joint_names:    list[str]           # all joint names
+    foot_link_names: list[str] | None = None  # foot link names for contact/position sensing
     kp:             np.ndarray          # kp
     kv:             np.ndarray          # kv
     armature:       np.ndarray | None = None  # per-joint armature
@@ -74,6 +75,13 @@ class Robot(ABC):
                 pos_offset=(0.0, 0.0, 0.0),               
             )
         )
+        if self.cfg.foot_link_names is not None:
+            self._foot_links = [self.robot.get_link(name) \
+                                for name in self.cfg.foot_link_names]
+            self._foot_links_idx_local = [link.idx_local \
+                                          for link in self._foot_links]
+        else:
+            self._foot_links_idx_local = None
     @torch.compiler.disable 
     def __gs_config(self) -> None:
         self.robot.set_dofs_kp(
@@ -167,14 +175,27 @@ class Robot(ABC):
         robot = self.robot
         robot_base = self.robot_base
         dofs_idx_local = self.dofs_idx_local
-        return {
+        state = {
             "dofs_pos"  : robot.get_dofs_position(dofs_idx_local=dofs_idx_local, envs_idx=envs_idx), 
             "dofs_vel"  : robot.get_dofs_velocity(dofs_idx_local=dofs_idx_local, envs_idx=envs_idx),
+            "dofs_force": robot.get_dofs_control_force(dofs_idx_local=dofs_idx_local, envs_idx=envs_idx),
             "body_pos"  : robot_base.get_pos(envs_idx=envs_idx), 
             "body_quat" : robot_base.get_quat(envs_idx=envs_idx), 
             "body_lin_vel"  : robot_base.get_vel(envs_idx=envs_idx), 
             "body_ang_vel"  : self.imu.read(envs_idx=envs_idx).ang_vel, 
+            "link_contact_forces": robot.get_links_net_contact_force(envs_idx=envs_idx),
         }
+        if self._foot_links_idx_local is not None:
+            state["foot_pos"] = robot.get_links_pos(
+                links_idx_local=self._foot_links_idx_local, envs_idx=envs_idx,
+            )
+            state["foot_vel"] = robot.get_links_vel(
+                links_idx_local=self._foot_links_idx_local, envs_idx=envs_idx,
+            )
+            state["foot_contact_forces"] = robot.get_links_net_contact_force(
+                links_idx_local=self._foot_links_idx_local, envs_idx=envs_idx,
+            )
+        return state
 
 
     # -------------------------------------------------

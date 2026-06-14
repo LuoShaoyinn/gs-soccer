@@ -12,6 +12,12 @@ from .robot import Robot, RobotConfig
 class PIConfig(RobotConfig):
     robot_URDF: str = "assets/PI/pi_plus.urdf"
     base_link_name: str = "base_link"
+    foot_link_names: list[str] = field(
+        default_factory=lambda: [
+            "l_ankle_roll_link",
+            "r_ankle_roll_link",
+        ]
+    )
     joint_names: list[str] = field(
         default_factory=lambda: [
             "l_hip_pitch_joint",
