@@ -196,10 +196,6 @@ class Robot(ABC):
             state["foot_contact_forces"] = all_cf[:, self._foot_idx_tensor, :]
             body_cf = all_cf[:, self._body_link_mask, :].norm(dim=-1)
             state["body_contact_force"] = body_cf.max(dim=-1).values
-        if self._dofs_pos_limit is not None:
-            state["dofs_pos_limit"] = self._dofs_pos_limit
-            state["dofs_vel_limit"] = self._dofs_vel_limit
-            state["dofs_effort_limit"] = self._dofs_effort_limit
         return state
 
 
@@ -228,21 +224,6 @@ class Robot(ABC):
         else:
             self._foot_idx_tensor = None
             self._body_link_mask = None
-
-        pos_lo, pos_hi, vel_lim, eff_lim = [], [], [], []
-        for name in self.cfg.joint_names:
-            joint = self.robot.get_joint(name)
-            lim = joint.dofs_limit[0]
-            pos_lo.append(float(lim[0]))
-            pos_hi.append(float(lim[1]))
-            vel_lim.append(float(joint.dofs_velocity_limit[0]))
-            eff_lim.append(float(joint.dofs_force_range[0][1]))
-        self._dofs_pos_limit = torch.tensor(
-            [pos_lo, pos_hi], dtype=torch.float32, device=gs.device)
-        self._dofs_vel_limit = torch.tensor(
-            vel_lim, dtype=torch.float32, device=gs.device)
-        self._dofs_effort_limit = torch.tensor(
-            eff_lim, dtype=torch.float32, device=gs.device)
 
     def step(self, action: torch.Tensor) -> None:
         self.__gs_step(action=action)
