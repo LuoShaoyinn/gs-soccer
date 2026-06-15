@@ -1,8 +1,6 @@
-import math
 import numpy as np
 import torch
 import genesis as gs
-from torch.nn import functional as F
 from dataclasses import dataclass, field
 
 from .field import FieldConfig, Field

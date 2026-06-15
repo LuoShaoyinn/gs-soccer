@@ -1,5 +1,5 @@
-# envs.py
-#   Abstract envs
+# env.py
+#   Abstract environment
 
 
 import torch

@@ -5,7 +5,6 @@
 import torch
 import numpy as np
 import genesis as gs
-from torch.nn import functional as F
 from dataclasses import dataclass, field
 from abc import ABC
 
@@ -81,36 +80,49 @@ class Robot(ABC):
     def __gs_config(self) -> None:
         n_dofs = len(self.dofs_idx_local)
         def rnd(scale: float, shape: tuple):
+            if scale == 0.0:
+                return torch.zeros(*shape, device=gs.device)
             return scale * (torch.rand(self.scene.n_envs, *shape) - 0.5)
+        kp = torch.as_tensor(self.cfg.kp, dtype=torch.float32, device=gs.device)
+        kv = torch.as_tensor(self.cfg.kv, dtype=torch.float32, device=gs.device)
+        armature = torch.as_tensor(self.cfg.armature, dtype=torch.float32, device=gs.device)
+        damping = torch.as_tensor(self.cfg.damping, dtype=torch.float32, device=gs.device)
         self.robot.set_dofs_kp(
-            kp             = self.cfg.kp + rnd(self.cfg.kp_ratio_rnd, shape=(n_dofs,)),
+            kp             = kp + rnd(self.cfg.kp_ratio_rnd, shape=(n_dofs,)),
             dofs_idx_local = self.dofs_idx_local,
         )
         self.robot.set_dofs_kv(
-            kv             = self.cfg.kv + rnd(self.cfg.kv_ratio_rnd, shape=(n_dofs,)),
+            kv             = kv + rnd(self.cfg.kv_ratio_rnd, shape=(n_dofs,)),
             dofs_idx_local = self.dofs_idx_local,
         )
         self.robot.set_dofs_force_range(
-            lower          = self.cfg.force_range[0], 
-            upper          = self.cfg.force_range[1], 
+            lower          = self.cfg.force_range[0],
+            upper          = self.cfg.force_range[1],
             dofs_idx_local = self.dofs_idx_local,
         )
         self.robot.set_dofs_armature(
-            armature       = self.cfg.armature + rnd(self.cfg.armature_ratio_rnd, shape=(n_dofs,)),
+            armature       = armature + rnd(self.cfg.armature_ratio_rnd, shape=(n_dofs,)),
             dofs_idx_local = self.dofs_idx_local,
         )
         self.robot.set_dofs_damping(
-            damping        = self.cfg.damping + rnd(self.cfg.damping_ratio_rnd, shape=(n_dofs,)),
+            damping        = damping + rnd(self.cfg.damping_ratio_rnd, shape=(n_dofs,)),
             dofs_idx_local = self.dofs_idx_local,
         )
-        self.robot.set_mass_shift(
-            mass_shift     = rnd(self.cfg.mass_shift_rnd, shape=(1,)),
-            links_idx_local = range(self.robot.n_links),
-        )
-        self.robot.set_COM_shift(
-            com_shift      = rnd(self.cfg.com_shift_rnd, shape=(1, 3)), 
-            links_idx_local = range(self.robot.n_links),
-        )
+        if self.cfg.mass_shift_rnd != 0.0:
+            self.robot.set_mass_shift(
+                mass_shift      = rnd(self.cfg.mass_shift_rnd, shape=(self.robot.n_links,)),
+                links_idx_local = range(self.robot.n_links),
+            )
+        if self.cfg.com_shift_rnd != 0.0:
+            self.robot.set_COM_shift(
+                com_shift       = rnd(self.cfg.com_shift_rnd, shape=(self.robot.n_links, 3)),
+                links_idx_local = range(self.robot.n_links),
+            )
+        if self.cfg.friction_rnd != 0.0:
+            self.robot.set_friction_ratio(
+                friction_ratio  = rnd(self.cfg.friction_rnd, shape=(self.robot.n_links,)) + 1.0,
+                links_idx_local = range(self.robot.n_links),
+            )
 
     @torch.compiler.disable
     def __gs_step(self, action: torch.Tensor) -> None:

@@ -1,5 +1,5 @@
-# model.py
-#   Based class for modeling
+# MDP.py
+#   Base class for the MDP
 
 import torch
 import genesis as gs

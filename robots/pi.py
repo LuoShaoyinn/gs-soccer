@@ -56,6 +56,12 @@ class PIConfig(RobotConfig):
             dtype=np.float32,
         )
     )
+    armature: np.ndarray = field(
+        default_factory=lambda: np.zeros(20, dtype=np.float32)
+    )
+    damping: np.ndarray = field(
+        default_factory=lambda: np.zeros(20, dtype=np.float32)
+    )
     initial_pos: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.5], dtype=np.float32))
     force_range: np.ndarray = field(
         default_factory=lambda: np.array([[-100] * 20, [100] * 20], dtype=np.float32)
