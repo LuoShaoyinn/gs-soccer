@@ -8,21 +8,24 @@ from dataclasses import dataclass
 from abc import ABC, abstractmethod
 
 @dataclass(kw_only = True)
-class ModelConfig:
+class MDPConfig:
     pass
 
-class Model(ABC):
-    def __init__(self, cfg: ModelConfig, scene: gs.Scene):
+class MDP(ABC):
+    def __init__(self, cfg: MDPConfig, scene: gs.Scene):
         self.cfg = cfg
         self.scene = scene
 
+    @abstractmethod
     def build(self):
         pass
 
+    @abstractmethod
     def config(self):
         pass
     
-    def reset(self, envs_idx: torch.Tensor):
+    @abstractmethod
+    def reset(self, envs_idx: torch.Tensor, robot_reset_fn, field_reset_fn):
         pass
     
     def preprocess_action(self, action: torch.Tensor) -> torch.Tensor:
@@ -42,15 +45,19 @@ class Model(ABC):
     def build_observation(self, envs_idx, **kwargs) -> torch.Tensor:
         pass
     
+    @abstractmethod
     def build_reward(self, envs_idx, **kwargs) -> torch.Tensor:
-        return torch.zeros((envs_idx.shape[0], 1), dtype=torch.float, device=gs.device)
+        pass
     
+    @abstractmethod
     def build_terminated(self, envs_idx, **kwargs) -> torch.Tensor:
-        return torch.zeros((envs_idx.shape[0], 1), dtype=torch.bool, device=gs.device)
+        pass
     
+    @abstractmethod
     def build_truncated(self, envs_idx,  **kwargs) -> torch.Tensor:
-        return torch.zeros((envs_idx.shape[0], 1), dtype=torch.bool, device=gs.device)
+        pass
     
+    @abstractmethod
     def build_info(self, envs_idx, **kwargs) -> dict[str, torch.Tensor]:
-        return {}
+        pass
     

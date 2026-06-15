@@ -6,10 +6,11 @@ import torch
 import genesis as gs
 from abc import ABC
 from dataclasses import dataclass
+from functools import partial
 
 from robots.robot import RobotConfig, Robot
 from fields.field import FieldConfig, Field
-from models.model import ModelConfig, Model
+from MDPs.MDP import MDPConfig, MDP
 
 
 @dataclass(kw_only = True)
@@ -18,8 +19,8 @@ class EnvConfig():
     robot_class:    type[Robot]
     field_cfg:      FieldConfig
     field_class:    type[Field]
-    model_cfg:      ModelConfig
-    model_class:    type[Model]
+    MDP_cfg:        MDPConfig
+    MDP_class:      type[MDP]
     policy_freq:    int
     sim_freq:       int     = 500
     env_spacing:    float   = 0.0
@@ -74,18 +75,18 @@ class Env(ABC):
         ''' Is called after the scene is created, but before the scene is built. '''
         self.field = self.cfg.field_class(self.cfg.field_cfg, self.scene)
         self.robot = self.cfg.robot_class(self.cfg.robot_cfg, self.scene)
-        self.model = self.cfg.model_class(self.cfg.model_cfg, self.scene)
+        self.MDP = self.cfg.MDP_class(self.cfg.MDP_cfg, self.scene)
         self.field.build()
         self.robot.build()
-        self.model.build()
+        self.MDP.build()
 
     def config(self):
         ''' Is called after the scene is built, but before the first reset. '''
         self.field.config()
         self.robot.config()
-        self.model.config()
-        self.observation_space = self.model.observation_space
-        self.action_space = self.model.action_space
+        self.MDP.config()
+        self.observation_space = self.MDP.observation_space
+        self.action_space = self.MDP.action_space
 
     @torch.compiler.disable
     def gs_step(self):
@@ -94,15 +95,15 @@ class Env(ABC):
     def step(self, action: torch.Tensor
              ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,
                         dict[str,torch.Tensor]]: 
-        action = self.model.preprocess_action(action)
+        action = self.MDP.preprocess_action(action)
         self.robot.step(action=action)
         self.gs_step()
         kwargs = self.get_state(envs_idx=self.all_envs_idx)
-        next_observation    = self.model.build_observation(envs_idx=self.all_envs_idx, **kwargs)
-        reward              = self.model.build_reward(envs_idx=self.all_envs_idx, **kwargs)
-        terminated          = self.model.build_terminated(envs_idx=self.all_envs_idx, **kwargs)
-        truncated           = self.model.build_truncated(envs_idx=self.all_envs_idx, **kwargs)
-        info                = self.model.build_info(envs_idx=self.all_envs_idx, **kwargs)
+        next_observation    = self.MDP.build_observation(envs_idx=self.all_envs_idx, **kwargs)
+        reward              = self.MDP.build_reward(envs_idx=self.all_envs_idx, **kwargs)
+        terminated          = self.MDP.build_terminated(envs_idx=self.all_envs_idx, **kwargs)
+        truncated           = self.MDP.build_truncated(envs_idx=self.all_envs_idx, **kwargs)
+        info                = self.MDP.build_info(envs_idx=self.all_envs_idx, **kwargs)
         need_reset = torch.logical_or(terminated, truncated).squeeze(1)
         if need_reset.any():
             reset_idx = torch.nonzero(need_reset).squeeze(1)
@@ -112,16 +113,15 @@ class Env(ABC):
                 info[k][reset_idx] = v
         return (next_observation, reward, terminated, truncated, info)
     
-    def reset(self, envs_idx: torch.Tensor | None = None
-             ) -> tuple[torch.Tensor, dict]: 
-        if envs_idx is None:
-            envs_idx = self.all_envs_idx
-        self.robot.reset(envs_idx=envs_idx)
-        self.field.reset(envs_idx=envs_idx)
-        self.model.reset(envs_idx=envs_idx)
+    def reset(self, envs_idx: torch.Tensor) -> tuple[torch.Tensor, dict]: 
+        robot_reset_fn = partial(self.robot.reset, envs_idx=envs_idx)
+        field_reset_fn = partial(self.field.reset, envs_idx=envs_idx)
+        self.MDP.reset(envs_idx=envs_idx, 
+                         robot_reset_fn=robot_reset_fn, 
+                         field_reset_fn=field_reset_fn)
         kwargs = self.get_state(envs_idx=envs_idx)
-        return (self.model.build_observation(envs_idx=envs_idx, **kwargs), 
-                self.model.build_info(envs_idx=envs_idx, **kwargs))
+        return (self.MDP.build_observation(envs_idx=envs_idx, **kwargs), 
+                self.MDP.build_info(envs_idx=envs_idx, **kwargs))
   
     def get_state(self, envs_idx: torch.Tensor) -> dict[str, torch.Tensor]:
         robot_state = self.robot.get_state(envs_idx=envs_idx)

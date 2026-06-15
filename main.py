@@ -10,17 +10,17 @@ import genesis as gs
 from envs.env import Env, EnvConfig
 from robots.pi import PI, PIConfig
 from fields.ball_field import BallField, BallFieldConfig
-from models.model import Model, ModelConfig
+from MDPs import MDP, MDPConfig
 
 # 
 # Example of model - but please implement it inside the model/ dir
 #
 @dataclass(kw_only=True)
-class StandingModelConfig(ModelConfig):
+class StandingMDPConfig(MDPConfig):
     action_dim: int
 
-class StandingModel(Model):
-    cfg: StandingModelConfig
+class StandingMDP(MDP):
+    cfg: StandingMDPConfig
 
     @property
     def observation_space(self) -> gym.spaces.Box:
