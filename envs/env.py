@@ -113,7 +113,9 @@ class Env(ABC):
                 info[k][reset_idx] = v
         return (next_observation, reward, terminated, truncated, info)
     
-    def reset(self, envs_idx: torch.Tensor) -> tuple[torch.Tensor, dict]: 
+    def reset(self, envs_idx: torch.Tensor | None = None) -> tuple[torch.Tensor, dict]:
+        if envs_idx is None:
+            envs_idx = self.all_envs_idx
         robot_reset_fn = partial(self.robot.reset, envs_idx=envs_idx)
         field_reset_fn = partial(self.field.reset, envs_idx=envs_idx)
         self.MDP.reset(envs_idx=envs_idx, 
