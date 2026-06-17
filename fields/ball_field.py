@@ -18,6 +18,13 @@ class BallFieldConfig(FieldConfig):
     )
     ball_mass_shift: float  = 0.0
     ball_COM_shift: float   = 0.0
+    # Terrain (disabled by default — uses flat Plane)
+    use_terrain:       bool  = False
+    terrain_types:     str   = "flat_terrain"
+    n_subterrains:     tuple[int, int]    = (1, 1)
+    subterrain_size:   tuple[float, float] = (12.0, 12.0)
+    horizontal_scale:  float = 0.25
+    vertical_scale:    float = 0.005
 
 
 class BallField(Field):
@@ -25,10 +32,22 @@ class BallField(Field):
 
     @torch.compiler.disable
     def build(self):
-        self.plane = self.scene.add_entity(
-            morph=gs.morphs.Plane(),
-            material=gs.materials.Rigid(friction=self.cfg.field_friction),
-        )
+        if self.cfg.use_terrain:
+            self.plane = self.scene.add_entity(
+                morph=gs.morphs.Terrain(
+                    n_subterrains=self.cfg.n_subterrains,
+                    subterrain_size=self.cfg.subterrain_size,
+                    horizontal_scale=self.cfg.horizontal_scale,
+                    vertical_scale=self.cfg.vertical_scale,
+                    subterrain_types=self.cfg.terrain_types,
+                ),
+                material=gs.materials.Rigid(friction=self.cfg.field_friction),
+            )
+        else:
+            self.plane = self.scene.add_entity(
+                morph=gs.morphs.Plane(),
+                material=gs.materials.Rigid(friction=self.cfg.field_friction),
+            )
         self.ball = self.scene.add_entity(
             morph=gs.morphs.Sphere(radius=self.cfg.ball_radius),
             material=gs.materials.Rigid(friction=self.cfg.ball_friction),
