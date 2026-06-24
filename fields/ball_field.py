@@ -25,6 +25,7 @@ class BallFieldConfig(FieldConfig):
     subterrain_size:   tuple[float, float] = (12.0, 12.0)
     horizontal_scale:  float = 0.25
     vertical_scale:    float = 0.005
+    terrain_height:    float = 0.0
 
 
 class BallField(Field):
@@ -46,7 +47,7 @@ class BallField(Field):
                     horizontal_scale=self.cfg.horizontal_scale,
                     vertical_scale=self.cfg.vertical_scale,
                     subterrain_types=self.cfg.terrain_types,
-                    pos=(-tx / 2, -ty / 2, 0.0),
+                    pos=(-tx / 2, -ty / 2, self.cfg.terrain_height),
                 ),
                 material=gs.materials.Rigid(friction=self.cfg.field_friction),
             )
