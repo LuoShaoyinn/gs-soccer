@@ -25,12 +25,8 @@ class BallFieldConfig(FieldConfig):
     subterrain_size:   tuple[float, float] = (12.0, 12.0)
     horizontal_scale:  float = 0.25
     vertical_scale:    float = 0.005
-    terrain_height:    float = 0.0
-    # random_uniform_terrain params (meters)
-    terrain_min_height:         float = 0.0
-    terrain_max_height:         float = 0.05
-    terrain_step:               float = 0.01
-    terrain_downsampled_scale:  float = 0.5
+    terrain_pos:     tuple[float, float, float] = (0.0, 0.0, 0.0)
+    subterrain_parameters: dict = field(default_factory=lambda: {})
 
 
 class BallField(Field):
@@ -43,8 +39,6 @@ class BallField(Field):
             material=gs.materials.Rigid(friction=self.cfg.field_friction),
         )
         if self.cfg.use_terrain:
-            tx = self.cfg.n_subterrains[0] * self.cfg.subterrain_size[0]
-            ty = self.cfg.n_subterrains[1] * self.cfg.subterrain_size[1]
             self.terrain = self.scene.add_entity(
                 morph=gs.morphs.Terrain(
                     n_subterrains=self.cfg.n_subterrains,
@@ -52,15 +46,8 @@ class BallField(Field):
                     horizontal_scale=self.cfg.horizontal_scale,
                     vertical_scale=self.cfg.vertical_scale,
                     subterrain_types=self.cfg.terrain_types,
-                    subterrain_parameters={
-                        "random_uniform_terrain": {
-                            "min_height": self.cfg.terrain_min_height,
-                            "max_height": self.cfg.terrain_max_height,
-                            "step": self.cfg.terrain_step,
-                            "downsampled_scale": self.cfg.terrain_downsampled_scale,
-                        },
-                    },
-                    pos=(-tx / 2, -ty / 2, self.cfg.terrain_height),
+                    subterrain_parameters=self.cfg.subterrain_parameters,
+                    pos=self.cfg.terrain_pos,
                 ),
                 material=gs.materials.Rigid(friction=self.cfg.field_friction),
             )
