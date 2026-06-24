@@ -32,10 +32,14 @@ class BallField(Field):
 
     @torch.compiler.disable
     def build(self):
+        self.plane = self.scene.add_entity(
+            morph=gs.morphs.Plane(),
+            material=gs.materials.Rigid(friction=self.cfg.field_friction),
+        )
         if self.cfg.use_terrain:
             tx = self.cfg.n_subterrains[0] * self.cfg.subterrain_size[0]
             ty = self.cfg.n_subterrains[1] * self.cfg.subterrain_size[1]
-            self.plane = self.scene.add_entity(
+            self.terrain = self.scene.add_entity(
                 morph=gs.morphs.Terrain(
                     n_subterrains=self.cfg.n_subterrains,
                     subterrain_size=self.cfg.subterrain_size,
@@ -44,11 +48,6 @@ class BallField(Field):
                     subterrain_types=self.cfg.terrain_types,
                     pos=(-tx / 2, -ty / 2, 0.0),
                 ),
-                material=gs.materials.Rigid(friction=self.cfg.field_friction),
-            )
-        else:
-            self.plane = self.scene.add_entity(
-                morph=gs.morphs.Plane(),
                 material=gs.materials.Rigid(friction=self.cfg.field_friction),
             )
         self.ball = self.scene.add_entity(
