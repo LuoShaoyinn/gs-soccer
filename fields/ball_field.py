@@ -26,6 +26,11 @@ class BallFieldConfig(FieldConfig):
     horizontal_scale:  float = 0.25
     vertical_scale:    float = 0.005
     terrain_height:    float = 0.0
+    # random_uniform_terrain params (meters)
+    terrain_min_height:         float = 0.0
+    terrain_max_height:         float = 0.05
+    terrain_step:               float = 0.01
+    terrain_downsampled_scale:  float = 0.5
 
 
 class BallField(Field):
@@ -47,6 +52,14 @@ class BallField(Field):
                     horizontal_scale=self.cfg.horizontal_scale,
                     vertical_scale=self.cfg.vertical_scale,
                     subterrain_types=self.cfg.terrain_types,
+                    subterrain_params={
+                        "random_uniform_terrain": {
+                            "min_height": self.cfg.terrain_min_height,
+                            "max_height": self.cfg.terrain_max_height,
+                            "step": self.cfg.terrain_step,
+                            "downsampled_scale": self.cfg.terrain_downsampled_scale,
+                        },
+                    },
                     pos=(-tx / 2, -ty / 2, self.cfg.terrain_height),
                 ),
                 material=gs.materials.Rigid(friction=self.cfg.field_friction),
