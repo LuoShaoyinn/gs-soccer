@@ -52,7 +52,7 @@ class BallField(Field):
                     horizontal_scale=self.cfg.horizontal_scale,
                     vertical_scale=self.cfg.vertical_scale,
                     subterrain_types=self.cfg.terrain_types,
-                    subterrain_params={
+                    subterrain_parameters={
                         "random_uniform_terrain": {
                             "min_height": self.cfg.terrain_min_height,
                             "max_height": self.cfg.terrain_max_height,
