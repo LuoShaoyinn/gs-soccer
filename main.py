@@ -7,7 +7,7 @@ import torch
 import genesis as gs
 from envs.env import Env, EnvConfig
 from robots.pi import PI, PIConfig
-from fields.ball_field import BallField, BallFieldConfig
+from fields.terrain_field import TerrainField, TerrainFieldConfig
 from MDPs import DummyMDP, DummyMDPConfig
 
 
@@ -29,18 +29,17 @@ def main():
     gs.init(backend=gs.gpu, performance_mode=True, logging_level="warning")
 
     robot_cfg = PIConfig()
-    field_cfg = BallFieldConfig()
+    field_cfg = TerrainFieldConfig()
     cfg = EnvConfig(
         robot_cfg=robot_cfg,
         robot_class=PI,
         field_cfg=field_cfg,
-        field_class=BallField,
+        field_class=TerrainField,
         MDP_cfg=DummyMDPConfig(
             action_dim=len(robot_cfg.joint_names),
             home_pose=np.zeros(len(robot_cfg.joint_names), dtype=np.float32),
             base_pos=robot_cfg.initial_pos,
             base_quat=robot_cfg.initial_quat,
-            ball_pos=field_cfg.ball_init_pos,
         ),
         MDP_class=DummyMDP,
         policy_freq=50,

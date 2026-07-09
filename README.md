@@ -11,7 +11,8 @@ concrete `MDP`, an `Algorithm`, and the `main.py` entry point.
 - `envs/env.py`: `Env` — single generic orchestrator owning the Genesis scene.
   Delegates observation / reward / termination / info to an injected `MDP`.
 - `robots/`: robot definitions (`Robot`, `PI`, `MOS9`, `FloatingCameraRobot`).
-- `fields/`: field definitions (`Field`, `BallField` — a plane plus a ball).
+- `fields/`: field definitions (`Field` -> `TerrainField` -> `BallField` —
+  a plane, optionally with terrain, plus a ball).
 - `MDPs/MDP.py`: `MDP` — abstract task contract (spaces, observation,
   reward, termination, truncation, info, and reset).
 - `MDPs/dummy.py`: `DummyMDP` — a standing-task example showing how to

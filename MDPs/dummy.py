@@ -16,7 +16,6 @@ class DummyMDPConfig(MDPConfig):
     home_pose: np.ndarray
     base_pos: np.ndarray
     base_quat: np.ndarray
-    ball_pos: np.ndarray
 
 
 class DummyMDP(MDP):
@@ -29,7 +28,6 @@ class DummyMDP(MDP):
         self._home_pose = torch.from_numpy(self.cfg.home_pose).to(gs.device)
         self._base_pos = torch.from_numpy(self.cfg.base_pos).to(gs.device)
         self._base_quat = torch.from_numpy(self.cfg.base_quat).to(gs.device)
-        self._ball_pos = torch.from_numpy(self.cfg.ball_pos).to(gs.device)
 
     def reset(self, envs_idx, robot_reset_fn, field_reset_fn):
         n = envs_idx.shape[0]
@@ -38,7 +36,7 @@ class DummyMDP(MDP):
             reset_pos=self._base_pos.broadcast_to((n, 3)),
             reset_quat=self._base_quat.broadcast_to((n, 4)),
         )
-        field_reset_fn(ball_pos=self._ball_pos.broadcast_to((n, 3)))
+        field_reset_fn()
 
     @property
     def observation_space(self) -> gym.spaces.Box:
