@@ -28,8 +28,19 @@ def main():
 
     gs.init(backend=gs.gpu, performance_mode=True, logging_level="warning")
 
-    robot_cfg = PIConfig()
-    field_cfg = TerrainFieldConfig()
+    robot_cfg = PIConfig(initial_pos=np.array([0, 0, 0.6]))
+    field_cfg = TerrainFieldConfig(
+        use_terrain=True,
+        terrain_types="random_uniform_terrain",
+        n_subterrains=(1, 1),
+        terrain_pos=(-6.0, -6.0, 0.1),
+        subterrain_parameters={
+            "random_uniform_terrain": {
+                "min_height": 0.0,
+                "max_height": 0.1,
+            }
+        },
+    )
     cfg = EnvConfig(
         robot_cfg=robot_cfg,
         robot_class=PI,
