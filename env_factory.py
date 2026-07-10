@@ -63,13 +63,13 @@ def make_env(num_envs=1, viewer=False, domain_randomization=False):
         terrain_types="random_uniform_terrain",
         n_subterrains=(1, 1),
         subterrain_size=(6.0, 6.0),
-        horizontal_scale=0.1,
-        vertical_scale=0.1,
-        terrain_pos=(-3.0, -3.0, 0.01),
+        horizontal_scale=0.2,
+        vertical_scale=0.05,
+        terrain_pos=(-3.0, -3.0, 0.1),
         subterrain_parameters={
             "random_uniform_terrain": {
                 "min_height": 0.0,
-                "max_height": 0.01,
+                "max_height": 0.1,
             },
         },
     )
