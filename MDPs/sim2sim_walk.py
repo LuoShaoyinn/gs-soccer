@@ -25,7 +25,7 @@ class WalkConfig(MDPConfig):
     max_episode_steps: int = 500
     base_height_min: float = 0.2
     init_height: float = 0.50
-    termination_grace_steps: int = 25
+    termination_grace_steps: int = 50
     target_body_height: float = 0.45
     dof_vel_max: float = 30.0
     dof_acc_max: float = 1500.0
@@ -199,6 +199,8 @@ class WalkMDP(MDP):
             info.update(self._reward_terms)
         info["body_pos_z"] = kwargs["body_pos"][:, 2].mean().detach()
         info["walk_vx_body"] = self._body_vx(kwargs["body_lin_vel"], kwargs["body_quat"]).mean().detach()
+        if hasattr(self, "_term_info"):
+            info.update(self._term_info)
         return info
 
     def _check_term_conditions(self, envs_idx, **kwargs):
@@ -208,22 +210,39 @@ class WalkMDP(MDP):
         dofs_vel = kwargs["dofs_vel"]
         dofs_force = kwargs["dofs_force"]
 
-        term = body_pos[:, 2] < self.cfg.base_height_min
+        term_height = body_pos[:, 2] < self.cfg.base_height_min
+        term = term_height
         body_cf = self._body_contact_force(kwargs)
+        term_contact = torch.zeros_like(term)
         if body_cf is not None:
-            term = term | (body_cf > self.cfg.contact_force_thresh)
+            term_contact = body_cf > self.cfg.contact_force_thresh
+            term = term | term_contact
 
         proj_grav = self._quat_to_projected_gravity(body_quat)
         tilt = (proj_grav[:, 0] ** 2 + proj_grav[:, 1] ** 2).sqrt()
         dof_acc = ((dofs_vel - self._prev_dofs_vel[envs_idx]) / dt).abs()
+        term_dof_vel = (dofs_vel.abs() > self.cfg.dof_vel_max).any(-1)
+        term_dof_acc = (dof_acc > self.cfg.dof_acc_max).any(-1)
+        term_dof_force = (dofs_force.abs() > self.cfg.dof_force_max).any(-1)
+        term_tilt = tilt > self.cfg.upright_thresh
         term = term | (
-            (dofs_vel.abs() > self.cfg.dof_vel_max).any(-1)
-            | (dof_acc > self.cfg.dof_acc_max).any(-1)
-            | (dofs_force.abs() > self.cfg.dof_force_max).any(-1)
-            | (tilt > self.cfg.upright_thresh)
+            term_dof_vel
+            | term_dof_acc
+            | term_dof_force
         )
+        # | (tilt > self.cfg.upright_thresh)
         grace = self._episode_step[envs_idx] < self.cfg.termination_grace_steps
         term = term & (~grace)
+        self._term_info = {
+            "term/height": term_height.float().mean().detach(),
+            "term/contact": term_contact.float().mean().detach(),
+            "term/dof_vel": term_dof_vel.float().mean().detach(),
+            "term/dof_acc": term_dof_acc.float().mean().detach(),
+            "term/dof_force": term_dof_force.float().mean().detach(),
+            "term/tilt": term_tilt.float().mean().detach(),
+            "term/grace": grace.float().mean().detach(),
+            "term/any": term.float().mean().detach(),
+        }
         return term
 
     @staticmethod

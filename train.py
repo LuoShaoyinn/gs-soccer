@@ -140,6 +140,7 @@ def parse_args():
     p = argparse.ArgumentParser(description="Walk-only online RLPD")
     p.add_argument("--num-envs", type=int, default=512)
     p.add_argument("--teacher-model-dir", type=str, default="refs/piplus_soccer_sim2sim/models/exported")
+    p.add_argument("--teacher-model-file", type=str, default=None)
     p.add_argument("--memory-size", type=int, default=8 * (2**20))
     p.add_argument("--replay-dir", type=str, default="/tmp/gs_soccer_walk_replay")
     p.add_argument("--batch-size", type=int, default=256)
@@ -265,7 +266,7 @@ def main():
     num_envs = args.num_envs
     half = num_envs // 2
     env = make_env(num_envs=num_envs, viewer=args.viewer or args.eval)
-    teacher = WalkTeacher(args.teacher_model_dir, device=dev)
+    teacher = WalkTeacher(args.teacher_model_dir, model_file=args.teacher_model_file, device=dev)
 
     obs_space = env.observation_space
     act_space = env.action_space
@@ -310,6 +311,7 @@ def main():
     writer = SummaryWriter(save_dir)
 
     obs, info = env.reset()
+    teacher.reset(half, dev)
     zeros = torch.zeros(num_envs, act_space.shape[0], dtype=torch.float32, device=dev)
     for _ in range(args.settle_steps):
         obs, _, _, _, _ = env.step(zeros)

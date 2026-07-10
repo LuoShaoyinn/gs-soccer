@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.nn as nn
 
 HISTORY_LEN = 8
 NUM_GENESIS_JOINTS = 20
@@ -37,6 +38,22 @@ TEACHER_OBS_FRAME_DIM = 3 + 3 + NUM_SOCCER_COMMANDS + 3 * NUM_POLICY_JOINTS
 TEACHER_OBS_DIM = HISTORY_LEN * TEACHER_OBS_FRAME_DIM
 
 
+class ActorMLP(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc0 = nn.Linear(TEACHER_OBS_DIM, 512)
+        self.fc1 = nn.Linear(512, 256)
+        self.fc2 = nn.Linear(256, 128)
+        self.fc3 = nn.Linear(128, NUM_POLICY_JOINTS)
+        self.act = nn.ELU()
+
+    def forward(self, x):
+        x = self.act(self.fc0(x))
+        x = self.act(self.fc1(x))
+        x = self.act(self.fc2(x))
+        return self.fc3(x)
+
+
 def _sim2sim_root() -> Path:
     return Path(__file__).resolve().parents[2] / "refs" / "piplus_soccer_sim2sim"
 
@@ -44,7 +61,12 @@ def _sim2sim_root() -> Path:
 class WalkTeacher:
     """Adapter from 20-DOF walk observations to the exported 22-DOF soccer ONNX actor."""
 
-    def __init__(self, model_dir: str = "refs/piplus_soccer_sim2sim/models/exported", device=None):
+    def __init__(
+        self,
+        model_dir: str = "refs/piplus_soccer_sim2sim/models/exported",
+        model_file: str | None = None,
+        device=None,
+    ):
         root = _sim2sim_root()
         sim2sim_dir = root / "sim2sim"
         if str(root) not in sys.path:
@@ -52,35 +74,81 @@ class WalkTeacher:
         if str(sim2sim_dir) not in sys.path:
             sys.path.insert(0, str(sim2sim_dir))
 
-        try:
-            from sim2sim.onnx_policy_soccer import SoccerOnnxPolicy
-        except ModuleNotFoundError as exc:
-            if exc.name == "onnxruntime":
-                raise ModuleNotFoundError(
-                    "onnxruntime is required for the exported sim2sim teacher. "
-                    "Run `uv sync --extra rocm` after updating pyproject.toml."
-                ) from exc
-            raise
-
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
-        self.policy = SoccerOnnxPolicy(model_dir)
-        if self.policy.proprio_dim != TEACHER_OBS_DIM or self.policy.action_dim != NUM_POLICY_JOINTS:
-            raise ValueError(
-                f"Unexpected teacher shape: obs={self.policy.proprio_dim}, action={self.policy.action_dim}"
-            )
+        self._head_action_history = None
+        self.policy = None
+        self.net = None
+        if model_file is not None:
+            self.net = ActorMLP().to(self.device)
+            self.net.load_state_dict(torch.load(model_file, map_location=self.device))
+            self.net.eval()
+        else:
+            try:
+                from sim2sim.onnx_policy_soccer import SoccerOnnxPolicy
+            except ModuleNotFoundError as exc:
+                if exc.name == "onnxruntime":
+                    raise ModuleNotFoundError(
+                        "onnxruntime is required for the exported sim2sim teacher. "
+                        "Run `uv sync --extra rocm` after updating pyproject.toml."
+                    ) from exc
+                raise
+            self.policy = SoccerOnnxPolicy(model_dir)
+            if self.policy.proprio_dim != TEACHER_OBS_DIM or self.policy.action_dim != NUM_POLICY_JOINTS:
+                raise ValueError(
+                    f"Unexpected teacher shape: obs={self.policy.proprio_dim}, action={self.policy.action_dim}"
+                )
 
     @torch.no_grad()
     def infer(self, walk_obs: torch.Tensor) -> torch.Tensor:
-        teacher_obs = expand_walk_obs_to_teacher(walk_obs).detach().cpu().numpy()
-        if self.policy.proprio_dim == TEACHER_OBS_DIM and teacher_obs.shape[0] != 1:
-            action22 = np.concatenate([self.policy.infer(row[None, :]) for row in teacher_obs], axis=0)
+        head_history = self._prepare_head_action_history(walk_obs)
+        teacher_obs_t = expand_walk_obs_to_teacher(walk_obs, head_action_history=head_history)
+        if self.net is not None:
+            action22 = self.net(teacher_obs_t.to(self.device)).detach().cpu().numpy()
         else:
-            action22 = self.policy.infer(teacher_obs)
+            teacher_obs = teacher_obs_t.detach().cpu().numpy()
+            if self.policy.proprio_dim == TEACHER_OBS_DIM and teacher_obs.shape[0] != 1:
+                action22 = np.concatenate([self.policy.infer(row[None, :]) for row in teacher_obs], axis=0)
+            else:
+                action22 = self.policy.infer(teacher_obs)
+        self._record_head_action(action22, walk_obs.device)
         action20 = action22[:, POLICY_TO_GENESIS]
         return torch.as_tensor(action20, dtype=torch.float32, device=walk_obs.device)
 
+    def reset(self, num_envs: int | None = None, device=None):
+        if num_envs is None:
+            self._head_action_history = None
+            return
+        dev = torch.device(device or self.device)
+        self._head_action_history = torch.zeros(num_envs, HISTORY_LEN, len(HEAD_POLICY_IDX), device=dev)
 
-def expand_walk_obs_to_teacher(walk_obs: torch.Tensor) -> torch.Tensor:
+    def _prepare_head_action_history(self, walk_obs: torch.Tensor) -> torch.Tensor:
+        batch = walk_obs.shape[0]
+        if (
+            self._head_action_history is None
+            or self._head_action_history.shape[0] != batch
+            or self._head_action_history.device != walk_obs.device
+        ):
+            self.reset(batch, walk_obs.device)
+
+        frames = walk_obs.reshape(batch, HISTORY_LEN, WALK_OBS_FRAME_DIM)
+        act20 = frames[..., 49:69]
+        reset_rows = act20.abs().amax(dim=(1, 2)) == 0
+        if reset_rows.any():
+            self._head_action_history[reset_rows] = 0.0
+        return self._head_action_history.to(dtype=walk_obs.dtype)
+
+    def _record_head_action(self, action22: np.ndarray, device):
+        if self._head_action_history is None:
+            return
+        head_action = torch.as_tensor(action22[:, HEAD_POLICY_IDX], dtype=self._head_action_history.dtype, device=device)
+        self._head_action_history[:, :-1] = self._head_action_history[:, 1:].clone()
+        self._head_action_history[:, -1] = head_action
+
+
+def expand_walk_obs_to_teacher(
+    walk_obs: torch.Tensor,
+    head_action_history: torch.Tensor | None = None,
+) -> torch.Tensor:
     if walk_obs.shape[-1] != WALK_OBS_DIM:
         raise ValueError(f"Expected walk obs dim {WALK_OBS_DIM}, got {walk_obs.shape[-1]}")
 
@@ -100,6 +168,8 @@ def expand_walk_obs_to_teacher(walk_obs: torch.Tensor) -> torch.Tensor:
     jpos22 = _insert_fake_head_slots(jpos20)
     jvel22 = _insert_fake_head_slots(jvel20)
     act22 = _insert_fake_head_slots(act20)
+    if head_action_history is not None:
+        act22[..., HEAD_POLICY_IDX] = head_action_history.to(dtype=walk_obs.dtype, device=walk_obs.device)
 
     teacher_frames = torch.cat([ang_vel, gravity, cmd7, jpos22, jvel22, act22], dim=-1)
     return teacher_frames.reshape(*leading_shape, TEACHER_OBS_DIM)

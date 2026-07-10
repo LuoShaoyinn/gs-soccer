@@ -9,7 +9,7 @@ from robots.pi import PI, PIConfig
 def make_env(num_envs=1, viewer=False, domain_randomization=False):
     n_joints = 20
     robot_cfg = PIConfig(
-        initial_pos=np.array([0.0, 0.0, 0.70], dtype=np.float32),
+        initial_pos=np.array([0.0, 0.0, 0.50], dtype=np.float32),
         kp=np.array(
             [
                 50.97, 32.51, 50.97, 32.51,
@@ -55,14 +55,14 @@ def make_env(num_envs=1, viewer=False, domain_randomization=False):
         use_terrain=True,
         terrain_types="random_uniform_terrain",
         n_subterrains=(1, 1),
-        subterrain_size=(12.0, 12.0),
-        horizontal_scale=0.25,
-        vertical_scale=0.005,
-        terrain_pos=(-6.0, -6.0, 0.1),
+        subterrain_size=(6.0, 6.0),
+        horizontal_scale=0.1,
+        vertical_scale=0.1,
+        terrain_pos=(-3.0, -3.0, 0.01),
         subterrain_parameters={
             "random_uniform_terrain": {
                 "min_height": 0.0,
-                "max_height": 0.1,
+                "max_height": 0.01,
             },
         },
     )
@@ -76,7 +76,7 @@ def make_env(num_envs=1, viewer=False, domain_randomization=False):
             MDP_cfg=WalkConfig(
                 vel_cmd=(0.5, 0.0, 0.0),
                 init_height=float(robot_cfg.initial_pos[2]),
-                termination_grace_steps=25,
+                termination_grace_steps=50,
                 max_episode_steps=500,
             ),
             MDP_class=WalkMDP,

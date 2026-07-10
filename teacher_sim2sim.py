@@ -16,6 +16,7 @@ def parse_args():
     p.add_argument("--steps", type=int, default=2000)
     p.add_argument("--settle-steps", type=int, default=50)
     p.add_argument("--model-dir", type=str, default="refs/piplus_soccer_sim2sim/models/exported")
+    p.add_argument("--model-file", type=str, default=None)
     p.add_argument("--log-dir", type=str, default=None)
     p.add_argument("--viewer", action="store_true", default=True)
     return p.parse_args()
@@ -30,13 +31,14 @@ def main():
     dev = torch.device(gs.device)
 
     env = make_env(num_envs=args.num_envs, viewer=args.viewer)
-    teacher = WalkTeacher(args.model_dir, device=dev)
+    teacher = WalkTeacher(args.model_dir, model_file=args.model_file, device=dev)
     action_low, action_high = action_clip_bounds(dev)
 
     log_dir = args.log_dir or f"runs/teacher_walk_{datetime.now().strftime('%m%d_%H%M')}"
     writer = SummaryWriter(log_dir)
 
     obs, info = env.reset()
+    teacher.reset(args.num_envs, dev)
     zeros = torch.zeros(args.num_envs, env.action_space.shape[0], device=dev)
     for _ in range(args.settle_steps):
         obs, _, _, _, info = env.step(zeros)
@@ -72,4 +74,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
