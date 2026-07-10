@@ -110,7 +110,16 @@ class Env(ABC):
             reset_observation, reset_info = self.reset(reset_idx)
             next_observation[reset_idx] = reset_observation
             for (k, v) in reset_info.items():
-                info[k][reset_idx] = v
+                if (
+                    k not in info
+                    or not torch.is_tensor(info[k])
+                    or not torch.is_tensor(v)
+                    or info[k].dim() == 0
+                    or v.dim() == 0
+                ):
+                    info[k] = v
+                else:
+                    info[k][reset_idx] = v
         return (next_observation, reward, terminated, truncated, info)
     
     def reset(self, envs_idx: torch.Tensor | None = None) -> tuple[torch.Tensor, dict]:
