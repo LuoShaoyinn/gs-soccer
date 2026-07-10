@@ -181,7 +181,7 @@ class WalkMDP(MDP):
         reward += term_pen
         terms["term_pen"] = term_pen
 
-        self._reward_terms = {f"r_{name}": value.mean().detach() for name, value in terms.items()}
+        self._reward_terms = {f"r_{name}": value.detach() for name, value in terms.items()}
         return reward.unsqueeze(1)
 
     def build_terminated(self, envs_idx, **kwargs):
@@ -196,11 +196,13 @@ class WalkMDP(MDP):
     def build_info(self, envs_idx, **kwargs):
         info = {}
         if hasattr(self, "_reward_terms"):
-            info.update(self._reward_terms)
-        info["body_pos_z"] = kwargs["body_pos"][:, 2].mean().detach()
-        info["walk_vx_body"] = self._body_vx(kwargs["body_lin_vel"], kwargs["body_quat"]).mean().detach()
+            for key, value in self._reward_terms.items():
+                info[key] = value[envs_idx]
+        info["body_pos_z"] = kwargs["body_pos"][:, 2].detach()
+        info["walk_vx_body"] = self._body_vx(kwargs["body_lin_vel"], kwargs["body_quat"]).detach()
         if hasattr(self, "_term_info"):
-            info.update(self._term_info)
+            for key, value in self._term_info.items():
+                info[key] = value[envs_idx]
         return info
 
     def _check_term_conditions(self, envs_idx, **kwargs):
@@ -229,19 +231,19 @@ class WalkMDP(MDP):
             term_dof_vel
             | term_dof_acc
             | term_dof_force
+            | term_tilt
         )
-        # | (tilt > self.cfg.upright_thresh)
         grace = self._episode_step[envs_idx] < self.cfg.termination_grace_steps
         term = term & (~grace)
         self._term_info = {
-            "term/height": term_height.float().mean().detach(),
-            "term/contact": term_contact.float().mean().detach(),
-            "term/dof_vel": term_dof_vel.float().mean().detach(),
-            "term/dof_acc": term_dof_acc.float().mean().detach(),
-            "term/dof_force": term_dof_force.float().mean().detach(),
-            "term/tilt": term_tilt.float().mean().detach(),
-            "term/grace": grace.float().mean().detach(),
-            "term/any": term.float().mean().detach(),
+            "term/height": term_height.float().detach(),
+            "term/contact": term_contact.float().detach(),
+            "term/dof_vel": term_dof_vel.float().detach(),
+            "term/dof_acc": term_dof_acc.float().detach(),
+            "term/dof_force": term_dof_force.float().detach(),
+            "term/tilt": term_tilt.float().detach(),
+            "term/grace": grace.float().detach(),
+            "term/any": term.float().detach(),
         }
         return term
 

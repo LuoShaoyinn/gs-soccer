@@ -161,6 +161,7 @@ def parse_args():
     p.add_argument("--save-interval", type=int, default=10_000)
     p.add_argument("--save-dir", type=str, default=None)
     p.add_argument("--viewer", action="store_true", default=False)
+    p.add_argument("--domain-randomization", action="store_true", default=False)
     p.add_argument("--eval", action="store_true", default=False)
     p.add_argument("--eval-episodes", type=int, default=40)
     p.add_argument("--resume", type=str, default=None)
@@ -265,7 +266,11 @@ def main():
     dev = torch.device(gs.device)
     num_envs = args.num_envs
     half = num_envs // 2
-    env = make_env(num_envs=num_envs, viewer=args.viewer or args.eval)
+    env = make_env(
+        num_envs=num_envs,
+        viewer=args.viewer or args.eval,
+        domain_randomization=args.domain_randomization,
+    )
     teacher = WalkTeacher(args.teacher_model_dir, model_file=args.teacher_model_file, device=dev)
 
     obs_space = env.observation_space
@@ -318,13 +323,14 @@ def main():
 
     t0 = time.time()
     stats = {}
+    teacher_reset_mask = torch.zeros(half, dtype=torch.bool, device=dev)
     print(f"=== Walk RLPD: {num_envs} envs ({half} teacher + {num_envs - half} student), {args.timesteps} steps ===")
     print(f"    replay: TorchRL LazyMemmapStorage at {args.replay_dir}, capacity={args.memory_size:,}")
     print(f"    obs={obs_space.shape[0]}, action={act_space.shape[0]}, critics={args.n_critics}, UTD={args.utd}")
 
     for step in range(start_step, args.timesteps):
         with torch.no_grad():
-            teacher_actions = teacher.infer(obs[:half])
+            teacher_actions = teacher.infer(obs[:half], reset_mask=teacher_reset_mask)
             mean, out = policy.compute({"observations": obs[half:]})
             student_dist = Normal(mean, out["log_std"].exp())
             student_actions = student_dist.rsample()
@@ -334,6 +340,7 @@ def main():
         next_obs, rewards, terminated, truncated, info = env.step(actions)
         done = terminated | truncated
         replay.add(obs, actions, rewards, done)
+        teacher_reset_mask = done[:half].squeeze(-1)
         obs = next_obs
 
         if step >= args.learning_starts and len(replay) >= max(args.batch_size, num_envs + 1):

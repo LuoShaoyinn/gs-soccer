@@ -59,7 +59,13 @@ def _sim2sim_root() -> Path:
 
 
 class WalkTeacher:
-    """Adapter from 20-DOF walk observations to the exported 22-DOF soccer ONNX actor."""
+    """Adapter from 20-DOF walk observations to the 22-DOF soccer teacher.
+
+    The student/env observation is term-major:
+    [ang_hist][grav_hist][cmd_hist][jpos_hist][jvel_hist][act_hist].
+    The teacher expects the same term-major convention, with fixed head
+    qpos/qvel slots and the real 22-D previous action history.
+    """
 
     def __init__(
         self,
@@ -75,7 +81,8 @@ class WalkTeacher:
             sys.path.insert(0, str(sim2sim_dir))
 
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
-        self._head_action_history = None
+        self._action_history = None
+        self._last_action = None
         self.policy = None
         self.net = None
         if model_file is not None:
@@ -99,9 +106,20 @@ class WalkTeacher:
                 )
 
     @torch.no_grad()
-    def infer(self, walk_obs: torch.Tensor) -> torch.Tensor:
-        head_history = self._prepare_head_action_history(walk_obs)
-        teacher_obs_t = expand_walk_obs_to_teacher(walk_obs, head_action_history=head_history)
+    def infer(self, walk_obs: torch.Tensor, reset_mask: torch.Tensor | None = None) -> torch.Tensor:
+        batch = walk_obs.shape[0]
+        dev = walk_obs.device
+        self._ensure_buffers(batch, dev)
+
+        if reset_mask is not None and reset_mask.any():
+            idx = torch.nonzero(reset_mask, as_tuple=False).squeeze(-1)
+            self._action_history[idx] = 0.0
+            self._last_action[idx] = 0.0
+
+        self._action_history[:, :-1] = self._action_history[:, 1:].clone()
+        self._action_history[:, -1] = self._last_action
+
+        teacher_obs_t = expand_walk_obs_to_teacher(walk_obs, action_history22=self._action_history)
         if self.net is not None:
             action22 = self.net(teacher_obs_t.to(self.device)).detach().cpu().numpy()
         else:
@@ -110,69 +128,72 @@ class WalkTeacher:
                 action22 = np.concatenate([self.policy.infer(row[None, :]) for row in teacher_obs], axis=0)
             else:
                 action22 = self.policy.infer(teacher_obs)
-        self._record_head_action(action22, walk_obs.device)
+        self._last_action = torch.as_tensor(action22, dtype=torch.float32, device=dev)
         action20 = action22[:, POLICY_TO_GENESIS]
-        return torch.as_tensor(action20, dtype=torch.float32, device=walk_obs.device)
+        return torch.as_tensor(action20, dtype=torch.float32, device=dev)
 
     def reset(self, num_envs: int | None = None, device=None):
         if num_envs is None:
-            self._head_action_history = None
+            self._action_history = None
+            self._last_action = None
             return
         dev = torch.device(device or self.device)
-        self._head_action_history = torch.zeros(num_envs, HISTORY_LEN, len(HEAD_POLICY_IDX), device=dev)
+        self._action_history = torch.zeros(num_envs, HISTORY_LEN, NUM_POLICY_JOINTS, device=dev)
+        self._last_action = torch.zeros(num_envs, NUM_POLICY_JOINTS, device=dev)
 
-    def _prepare_head_action_history(self, walk_obs: torch.Tensor) -> torch.Tensor:
-        batch = walk_obs.shape[0]
+    def _ensure_buffers(self, batch: int, device):
         if (
-            self._head_action_history is None
-            or self._head_action_history.shape[0] != batch
-            or self._head_action_history.device != walk_obs.device
+            self._action_history is None
+            or self._action_history.shape[0] != batch
+            or self._action_history.device != device
         ):
-            self.reset(batch, walk_obs.device)
-
-        frames = walk_obs.reshape(batch, HISTORY_LEN, WALK_OBS_FRAME_DIM)
-        act20 = frames[..., 49:69]
-        reset_rows = act20.abs().amax(dim=(1, 2)) == 0
-        if reset_rows.any():
-            self._head_action_history[reset_rows] = 0.0
-        return self._head_action_history.to(dtype=walk_obs.dtype)
-
-    def _record_head_action(self, action22: np.ndarray, device):
-        if self._head_action_history is None:
-            return
-        head_action = torch.as_tensor(action22[:, HEAD_POLICY_IDX], dtype=self._head_action_history.dtype, device=device)
-        self._head_action_history[:, :-1] = self._head_action_history[:, 1:].clone()
-        self._head_action_history[:, -1] = head_action
+            self.reset(batch, device)
 
 
 def expand_walk_obs_to_teacher(
     walk_obs: torch.Tensor,
-    head_action_history: torch.Tensor | None = None,
+    action_history22: torch.Tensor | None = None,
 ) -> torch.Tensor:
+    """Expand 20-DOF walk obs into the teacher's 22-DOF term-major obs."""
     if walk_obs.shape[-1] != WALK_OBS_DIM:
         raise ValueError(f"Expected walk obs dim {WALK_OBS_DIM}, got {walk_obs.shape[-1]}")
 
-    leading_shape = walk_obs.shape[:-1]
-    frames = walk_obs.reshape(*leading_shape, HISTORY_LEN, WALK_OBS_FRAME_DIM)
+    leading = walk_obs.shape[:-1]
+    h = HISTORY_LEN
 
-    ang_vel = frames[..., 0:3]
-    gravity = frames[..., 3:6]
-    walk_cmd = frames[..., 6:9]
-    jpos20 = frames[..., 9:29]
-    jvel20 = frames[..., 29:49]
-    act20 = frames[..., 49:69]
+    def term(start: int, dim: int) -> torch.Tensor:
+        end = start + h * dim
+        return walk_obs[..., start:end].reshape(*leading, h, dim)
 
-    cmd7 = torch.zeros(*leading_shape, HISTORY_LEN, NUM_SOCCER_COMMANDS, dtype=walk_obs.dtype, device=walk_obs.device)
+    offset = 0
+    ang_vel = term(offset, 3); offset += h * 3
+    gravity = term(offset, 3); offset += h * 3
+    walk_cmd = term(offset, NUM_WALK_COMMANDS); offset += h * NUM_WALK_COMMANDS
+    jpos20 = term(offset, NUM_GENESIS_JOINTS); offset += h * NUM_GENESIS_JOINTS
+    jvel20 = term(offset, NUM_GENESIS_JOINTS); offset += h * NUM_GENESIS_JOINTS
+
+    cmd7 = torch.zeros(*leading, h, NUM_SOCCER_COMMANDS, dtype=walk_obs.dtype, device=walk_obs.device)
     cmd7[..., 0:3] = walk_cmd
 
     jpos22 = _insert_fake_head_slots(jpos20)
     jvel22 = _insert_fake_head_slots(jvel20)
-    act22 = _insert_fake_head_slots(act20)
-    if head_action_history is not None:
-        act22[..., HEAD_POLICY_IDX] = head_action_history.to(dtype=walk_obs.dtype, device=walk_obs.device)
+    if action_history22 is not None:
+        act22 = action_history22.to(dtype=walk_obs.dtype, device=walk_obs.device)
+    else:
+        act20 = term(offset, NUM_GENESIS_JOINTS)
+        act22 = _insert_fake_head_slots(act20)
 
-    teacher_frames = torch.cat([ang_vel, gravity, cmd7, jpos22, jvel22, act22], dim=-1)
-    return teacher_frames.reshape(*leading_shape, TEACHER_OBS_DIM)
+    return torch.cat(
+        [
+            ang_vel.reshape(*leading, h * 3),
+            gravity.reshape(*leading, h * 3),
+            cmd7.reshape(*leading, h * NUM_SOCCER_COMMANDS),
+            jpos22.reshape(*leading, h * NUM_POLICY_JOINTS),
+            jvel22.reshape(*leading, h * NUM_POLICY_JOINTS),
+            act22.reshape(*leading, h * NUM_POLICY_JOINTS),
+        ],
+        dim=-1,
+    )
 
 
 def _insert_fake_head_slots(x20: torch.Tensor) -> torch.Tensor:

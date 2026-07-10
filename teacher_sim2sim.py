@@ -44,11 +44,13 @@ def main():
         obs, _, _, _, info = env.step(zeros)
 
     ep_reward = torch.zeros(args.num_envs, device=dev)
+    teacher_reset_mask = torch.zeros(args.num_envs, dtype=torch.bool, device=dev)
     for step in range(args.steps):
         with torch.no_grad():
-            action = clip_walk_action(teacher.infer(obs), action_low, action_high)
+            action = clip_walk_action(teacher.infer(obs, reset_mask=teacher_reset_mask), action_low, action_high)
         obs, reward, terminated, truncated, info = env.step(action)
         done = terminated | truncated
+        teacher_reset_mask = done.squeeze(-1)
         ep_reward += reward.squeeze(-1)
 
         if step % 10 == 0:

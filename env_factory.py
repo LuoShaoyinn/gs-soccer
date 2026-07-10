@@ -48,6 +48,13 @@ def make_env(num_envs=1, viewer=False, domain_randomization=False):
             dtype=np.float32,
         ),
         damping=np.zeros(n_joints, dtype=np.float32),
+        friction_rnd=0.2 if domain_randomization else 0.0,
+        mass_shift_rnd=0.02 if domain_randomization else 0.0,
+        com_shift_rnd=0.01 if domain_randomization else 0.0,
+        kp_ratio_rnd=0.1 if domain_randomization else 0.0,
+        kv_ratio_rnd=0.1 if domain_randomization else 0.0,
+        armature_ratio_rnd=0.05 if domain_randomization else 0.0,
+        damping_ratio_rnd=0.05 if domain_randomization else 0.0,
     )
 
     field_cfg = TerrainFieldConfig(
