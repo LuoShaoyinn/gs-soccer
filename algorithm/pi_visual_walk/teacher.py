@@ -158,19 +158,28 @@ def expand_walk_obs_to_teacher(
     walk_obs: torch.Tensor,
     action_history22: torch.Tensor | None = None,
 ) -> torch.Tensor:
+    """Expand the 20-DOF walk obs into the 22-DOF teacher obs.
+
+    The walk obs is laid out *term-major*: ``[ang(8*3)][grav(8*3)][cmd(8*3)]
+    [jpos(8*20)][jvel(8*20)][act(8*20)]``. The exported policy expects the same
+    term-major order over its 79-wide frame (``[ang][grav][cmd7][jpos][jvel][act]``).
+    """
     if walk_obs.shape[-1] != WALK_OBS_DIM:
         raise ValueError(f"Expected walk obs dim {WALK_OBS_DIM}, got {walk_obs.shape[-1]}")
 
-    leading_shape = walk_obs.shape[:-1]
-    frames = walk_obs.reshape(*leading_shape, HISTORY_LEN, WALK_OBS_FRAME_DIM)
+    leading = walk_obs.shape[:-1]
+    H = HISTORY_LEN
 
-    ang_vel = frames[..., 0:3]
-    gravity = frames[..., 3:6]
-    walk_cmd = frames[..., 6:9]
-    jpos20 = frames[..., 9:29]
-    jvel20 = frames[..., 29:49]
+    def term(lo: int, hi: int, d: int) -> torch.Tensor:
+        return walk_obs[..., lo:hi].reshape(*leading, H, d)
 
-    cmd7 = torch.zeros(*leading_shape, HISTORY_LEN, NUM_SOCCER_COMMANDS, dtype=walk_obs.dtype, device=walk_obs.device)
+    ang_vel = term(0, H * 3, 3)
+    gravity = term(H * 3, H * 6, 3)
+    walk_cmd = term(H * 6, H * 9, 3)
+    jpos20 = term(H * 9, H * 29, NUM_GENESIS_JOINTS)
+    jvel20 = term(H * 29, H * 49, NUM_GENESIS_JOINTS)
+
+    cmd7 = torch.zeros(*leading, H, NUM_SOCCER_COMMANDS, dtype=walk_obs.dtype, device=walk_obs.device)
     cmd7[..., 0:3] = walk_cmd
 
     # Head/neck motors are fixed: their pos/vel stay at default (zero relative).
@@ -180,11 +189,21 @@ def expand_walk_obs_to_teacher(
     if action_history22 is not None:
         act22 = action_history22.to(dtype=walk_obs.dtype, device=walk_obs.device)
     else:
-        act20 = frames[..., 49:69]
+        act20 = term(H * 49, H * 69, NUM_GENESIS_JOINTS)
         act22 = _insert_fake_head_slots(act20)
 
-    teacher_frames = torch.cat([ang_vel, gravity, cmd7, jpos22, jvel22, act22], dim=-1)
-    return teacher_frames.reshape(*leading_shape, TEACHER_OBS_DIM)
+    # term-major flatten: each term's full history as one contiguous block.
+    return torch.cat(
+        [
+            ang_vel.reshape(*leading, H * 3),
+            gravity.reshape(*leading, H * 3),
+            cmd7.reshape(*leading, H * NUM_SOCCER_COMMANDS),
+            jpos22.reshape(*leading, H * NUM_POLICY_JOINTS),
+            jvel22.reshape(*leading, H * NUM_POLICY_JOINTS),
+            act22.reshape(*leading, H * NUM_POLICY_JOINTS),
+        ],
+        dim=-1,
+    )
 
 
 def _insert_fake_head_slots(x20: torch.Tensor) -> torch.Tensor:
