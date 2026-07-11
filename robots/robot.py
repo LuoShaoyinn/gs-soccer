@@ -83,16 +83,20 @@ class Robot(ABC):
             if scale == 0.0:
                 return torch.zeros(*shape, device=gs.device)
             return scale * (torch.rand(self.scene.n_envs, *shape) - 0.5)
+        def ratio(base: torch.Tensor, scale: float) -> torch.Tensor:
+            if scale == 0.0:
+                return base
+            return base.unsqueeze(0) * (1.0 + rnd(scale, shape=(n_dofs,))).clamp_min(0.0)
         kp = torch.as_tensor(self.cfg.kp, dtype=torch.float32, device=gs.device)
         kv = torch.as_tensor(self.cfg.kv, dtype=torch.float32, device=gs.device)
         armature = torch.as_tensor(self.cfg.armature, dtype=torch.float32, device=gs.device)
         damping = torch.as_tensor(self.cfg.damping, dtype=torch.float32, device=gs.device)
         self.robot.set_dofs_kp(
-            kp             = kp + rnd(self.cfg.kp_ratio_rnd, shape=(n_dofs,)),
+            kp             = ratio(kp, self.cfg.kp_ratio_rnd),
             dofs_idx_local = self.dofs_idx_local,
         )
         self.robot.set_dofs_kv(
-            kv             = kv + rnd(self.cfg.kv_ratio_rnd, shape=(n_dofs,)),
+            kv             = ratio(kv, self.cfg.kv_ratio_rnd),
             dofs_idx_local = self.dofs_idx_local,
         )
         self.robot.set_dofs_force_range(
@@ -101,11 +105,11 @@ class Robot(ABC):
             dofs_idx_local = self.dofs_idx_local,
         )
         self.robot.set_dofs_armature(
-            armature       = armature + rnd(self.cfg.armature_ratio_rnd, shape=(n_dofs,)),
+            armature       = ratio(armature, self.cfg.armature_ratio_rnd),
             dofs_idx_local = self.dofs_idx_local,
         )
         self.robot.set_dofs_damping(
-            damping        = damping + rnd(self.cfg.damping_ratio_rnd, shape=(n_dofs,)),
+            damping        = ratio(damping, self.cfg.damping_ratio_rnd),
             dofs_idx_local = self.dofs_idx_local,
         )
         if self.cfg.mass_shift_rnd != 0.0:
