@@ -129,7 +129,7 @@ class ReplayBatchStager:
         batch = self.next_batch
         if self.stream is not None:
             current = torch.cuda.current_stream(device=self.replay.device)
-            for tensor in batch:
+            for tensor in batch: # type: ignore
                 tensor.record_stream(current)
         if prefetch:
             self._prefetch()
@@ -149,7 +149,7 @@ def parse_args():
     p.add_argument("--tau", type=float, default=0.005)
     p.add_argument("--alpha-init", type=float, default=0.001)
     p.add_argument("--target-entropy", type=float, default=-2.0)
-    p.add_argument("--reward-scale", type=float, default=1.0)
+    p.add_argument("--reward-scale", type=float, default=10.0)
     p.add_argument("--learning-starts", type=int, default=1000)
     p.add_argument("--utd", type=int, default=32)
     p.add_argument("--n-critics", type=int, default=32)
@@ -175,16 +175,18 @@ def _autocast():
 
 def critic_update(critics, tgt_critics, policy, log_alpha, c_opt, scaler, batch, gamma, reward_scale, grad_clip, n_min, action_low, action_high):
     obs, act, rew, nobs, done = batch
+    scaled_rew = reward_scale * rew
     with _autocast():
         with torch.no_grad():
             n_mean, n_out = policy.compute({"observations": nobs})
             n_dist = Normal(n_mean, n_out["log_std"].exp())
             n_action = clip_walk_action(n_dist.rsample(), action_low, action_high)
             n_log_prob = n_dist.log_prob(n_action).sum(-1, keepdim=True)
+            entropy_bonus = -log_alpha.exp().detach() * n_log_prob
             tgt_idx = torch.randperm(len(tgt_critics), device=obs.device)[:n_min]
             q_targets = torch.cat([tgt_critics[int(i)].net(torch.cat([nobs, n_action], -1)) for i in tgt_idx], dim=-1)
-            target_q = reward_scale * rew + gamma * (1.0 - done) * (
-                q_targets.min(dim=-1, keepdim=True).values - log_alpha.exp().detach() * n_log_prob
+            target_q = scaled_rew + gamma * (1.0 - done) * (
+                q_targets.min(dim=-1, keepdim=True).values + entropy_bonus
             )
         qs = [critic.net(torch.cat([obs, act], -1)) for critic in critics]
         critic_loss = sum(F.mse_loss(q, target_q) for q in qs)
@@ -199,7 +201,7 @@ def critic_update(critics, tgt_critics, policy, log_alpha, c_opt, scaler, batch,
         torch.nn.utils.clip_grad_norm_(params, grad_clip)
     scaler.step(c_opt)
     scaler.update()
-    return qs[0], critic_loss
+    return qs[0], critic_loss, rew.detach(), scaled_rew.detach(), entropy_bonus.detach()
 
 
 def policy_update(policy, critics, log_alpha, p_opt, a_opt, scaler, batch, target_entropy, grad_clip, n_min, action_low, action_high):
@@ -230,9 +232,9 @@ def policy_update(policy, critics, log_alpha, p_opt, a_opt, scaler, batch, targe
 
 def sac_step(policy, critics, tgt_critics, replay, p_opt, c_opt, a_opt, log_alpha, scaler, args, action_low, action_high):
     stager = ReplayBatchStager(replay, args.batch_size)
-    q1 = critic_loss = None
+    q1 = critic_loss = raw_rew = scaled_rew = entropy_bonus = None
     for _ in range(args.utd):
-        q1, critic_loss = critic_update(
+        q1, critic_loss, raw_rew, scaled_rew, entropy_bonus = critic_update(
             critics, tgt_critics, policy, log_alpha, c_opt, scaler,
             stager.next(), args.gamma, args.reward_scale, args.grad_norm_clip, args.n_min,
             action_low, action_high,
@@ -247,12 +249,15 @@ def sac_step(policy, critics, tgt_critics, replay, p_opt, c_opt, a_opt, log_alph
             for p, tp in zip(critic.parameters(), target.parameters()):
                 tp.mul_(1.0 - args.tau).add_(p, alpha=args.tau)
     return {
-        "q1": q1.mean().detach().item(),
-        "critic_loss": critic_loss.detach().item(),
+        "q1": q1.mean().detach().item(), # type: ignore
+        "critic_loss": critic_loss.detach().item(), # type: ignore
         "policy_loss": policy_loss.detach().item(),
         "alpha_loss": alpha_loss.detach().item(),
         "alpha": log_alpha.exp().detach().item(),
         "entropy": -log_prob.float().mean().detach().item(),
+        "raw_reward_batch": raw_rew.float().mean().detach().item(), # type: ignore
+        "scaled_reward_batch": scaled_rew.float().mean().detach().item(), # type: ignore
+        "entropy_bonus_batch": entropy_bonus.float().mean().detach().item(), # type: ignore
     }
 
 
@@ -261,9 +266,9 @@ def main():
     if args.viewer:
         os.environ.pop("PYOPENGL_PLATFORM", None)
     os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
-    gs.init(backend=gs.gpu, performance_mode=True, logging_level="warning")
+    gs.init(backend=gs.gpu, performance_mode=True, logging_level="warning") # type: ignore
 
-    dev = torch.device(gs.device)
+    dev = torch.device(gs.device) # type: ignore
     num_envs = args.num_envs
     half = num_envs // 2
     env = make_env(
@@ -315,7 +320,7 @@ def main():
     os.makedirs(save_dir, exist_ok=True)
     writer = SummaryWriter(save_dir)
 
-    obs, info = env.reset()
+    obs, _ = env.reset()
     teacher.reset(half, dev)
     zeros = torch.zeros(num_envs, act_space.shape[0], dtype=torch.float32, device=dev)
     for _ in range(args.settle_steps):
@@ -323,6 +328,10 @@ def main():
 
     t0 = time.time()
     stats = {}
+    ep_returns = torch.zeros(num_envs, dtype=torch.float32, device=dev)
+    ep_lengths = torch.zeros(num_envs, dtype=torch.float32, device=dev)
+    last_done_return = None
+    last_done_length = None
     teacher_reset_mask = torch.zeros(half, dtype=torch.bool, device=dev)
     print(f"=== Walk RLPD: {num_envs} envs ({half} teacher + {num_envs - half} student), {args.timesteps} steps ===")
     print(f"    replay: TorchRL LazyMemmapStorage at {args.replay_dir}, capacity={args.memory_size:,}")
@@ -339,6 +348,14 @@ def main():
 
         next_obs, rewards, terminated, truncated, info = env.step(actions)
         done = terminated | truncated
+        done_mask = done.squeeze(-1)
+        ep_returns += rewards.squeeze(-1)
+        ep_lengths += 1.0
+        if done_mask.any():
+            last_done_return = ep_returns[done_mask].mean().detach()
+            last_done_length = ep_lengths[done_mask].mean().detach()
+            ep_returns[done_mask] = 0.0
+            ep_lengths[done_mask] = 0.0
         replay.add(obs, actions, rewards, done)
         teacher_reset_mask = done[:half].squeeze(-1)
         obs = next_obs
@@ -355,6 +372,10 @@ def main():
             elapsed = max(time.time() - t0, 1e-6)
             writer.add_scalar("train/fps", (s - start_step) / elapsed, s)
             writer.add_scalar("reward/total", rewards.float().mean().detach().item(), s)
+            writer.add_scalar("reward/scaled_total", (args.reward_scale * rewards.float()).mean().detach().item(), s)
+            if last_done_return is not None:
+                writer.add_scalar("episode/return", last_done_return.item(), s)
+                writer.add_scalar("episode/length", last_done_length.item(), s) # type: ignore
             writer.add_scalar("replay/size", len(replay), s)
             for key, value in info.items():
                 scalar = value.float().mean().detach().item() if torch.is_tensor(value) else float(value)

@@ -8,6 +8,12 @@ from robots.pi import PI, PIConfig
 
 def make_env(num_envs=1, viewer=False, domain_randomization=False):
     n_joints = 20
+    vel_cmd = (0.5, 0.0, 0.0)
+    vel_cmd_ranges = ((0.25, 0.75), (-0.10, 0.10), (-0.25, 0.25)) if domain_randomization else (
+        (vel_cmd[0], vel_cmd[0]),
+        (vel_cmd[1], vel_cmd[1]),
+        (vel_cmd[2], vel_cmd[2]),
+    )
     robot_cfg = PIConfig(
         initial_pos=np.array([0.0, 0.0, 0.50], dtype=np.float32),
         kp=np.array(
@@ -81,7 +87,8 @@ def make_env(num_envs=1, viewer=False, domain_randomization=False):
             field_cfg=field_cfg,
             field_class=TerrainField,
             MDP_cfg=WalkConfig(
-                vel_cmd=(0.5, 0.0, 0.0),
+                vel_cmd=vel_cmd,
+                vel_cmd_ranges=vel_cmd_ranges,
                 init_height=float(robot_cfg.initial_pos[2]),
                 termination_grace_steps=50,
                 max_episode_steps=500,

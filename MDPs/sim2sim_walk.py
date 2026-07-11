@@ -22,6 +22,11 @@ JOINT_VEL_SCALE = 0.05
 @dataclass(kw_only=True)
 class WalkConfig(MDPConfig):
     vel_cmd: tuple[float, float, float] = (0.5, 0.0, 0.0)
+    vel_cmd_ranges: tuple[tuple[float, float], tuple[float, float], tuple[float, float]] = (
+        (0.5, 0.5),
+        (0.0, 0.0),
+        (0.0, 0.0),
+    )
     max_episode_steps: int = 500
     base_height_min: float = 0.2
     init_height: float = 0.50
@@ -53,7 +58,10 @@ class WalkMDP(MDP):
 
         self._base_pos = torch.tensor([0.0, 0.0, self.cfg.init_height], dtype=torch.float32, device=dev)
         self._base_quat = torch.tensor([1.0, 0.0, 0.0, 0.0], dtype=torch.float32, device=dev)
-        self._vel_cmd = torch.tensor(self.cfg.vel_cmd, dtype=torch.float32, device=dev)
+        self._base_vel_cmd = torch.tensor(self.cfg.vel_cmd, dtype=torch.float32, device=dev)
+        self._vel_cmd = self._base_vel_cmd.unsqueeze(0).expand(num_envs, -1).clone()
+        self._vel_cmd_low = torch.tensor([r[0] for r in self.cfg.vel_cmd_ranges], dtype=torch.float32, device=dev)
+        self._vel_cmd_high = torch.tensor([r[1] for r in self.cfg.vel_cmd_ranges], dtype=torch.float32, device=dev)
 
         self._buf_ang_vel = torch.zeros((num_envs, HISTORY_LEN, 3), dtype=torch.float32, device=dev)
         self._buf_grav = torch.zeros((num_envs, HISTORY_LEN, 3), dtype=torch.float32, device=dev)
@@ -71,7 +79,8 @@ class WalkMDP(MDP):
         for buf in (self._buf_ang_vel, self._buf_grav, self._buf_cmd, self._buf_jpos, self._buf_jvel, self._buf_act):
             buf[envs_idx] = 0.0
         self._buf_grav[envs_idx] = self._default_gravity
-        self._buf_cmd[envs_idx] = self._vel_cmd
+        self._resample_velocity_command(envs_idx)
+        self._buf_cmd[envs_idx] = self._vel_cmd[envs_idx].unsqueeze(1)
         self._last_action[envs_idx] = 0.0
         self._pending_action = None
         self._prev_dofs_vel[envs_idx] = 0.0
@@ -97,7 +106,7 @@ class WalkMDP(MDP):
 
         self._buf_ang_vel[envs_idx, -1] = ang_vel * ANG_VEL_SCALE
         self._buf_grav[envs_idx, -1] = self._quat_to_projected_gravity(body_quat)
-        self._buf_cmd[envs_idx, -1] = self._vel_cmd
+        self._buf_cmd[envs_idx, -1] = self._vel_cmd[envs_idx]
         self._buf_jpos[envs_idx, -1] = dofs_pos - self.default_pos
         self._buf_jvel[envs_idx, -1] = dofs_vel * JOINT_VEL_SCALE
         self._buf_act[envs_idx, -1] = self._last_action[envs_idx]
@@ -150,13 +159,14 @@ class WalkMDP(MDP):
         reward += term
         terms["upright"] = term
 
-        lin_err = (self._vel_cmd[0] - vx_body) ** 2 + (self._vel_cmd[1] - vy_body) ** 2
+        cmd = self._vel_cmd[envs_idx]
+        lin_err = (cmd[:, 0] - vx_body) ** 2 + (cmd[:, 1] - vy_body) ** 2
         term = 0.4 * torch.exp(-lin_err / 0.05)
         reward += term
         terms["track_lin"] = term
 
-        ang_err = (self._vel_cmd[2] - body_ang_vel[:, 2]) ** 2
-        term = 0.2 * torch.exp(-ang_err / 0.05) * (abs(self.cfg.vel_cmd[2]) > 0.1)
+        ang_err = (cmd[:, 2] - body_ang_vel[:, 2]) ** 2
+        term = 0.2 * torch.exp(-ang_err / 0.05) * (cmd[:, 2].abs() > 0.1).float()
         reward += term
         terms["track_ang"] = term
 
@@ -200,6 +210,9 @@ class WalkMDP(MDP):
                 info[key] = value[envs_idx]
         info["body_pos_z"] = kwargs["body_pos"][:, 2].detach()
         info["walk_vx_body"] = self._body_vx(kwargs["body_lin_vel"], kwargs["body_quat"]).detach()
+        info["cmd_vx"] = self._vel_cmd[envs_idx, 0].detach()
+        info["cmd_vy"] = self._vel_cmd[envs_idx, 1].detach()
+        info["cmd_wz"] = self._vel_cmd[envs_idx, 2].detach()
         if hasattr(self, "_term_info"):
             for key, value in self._term_info.items():
                 info[key] = value[envs_idx]
@@ -246,6 +259,10 @@ class WalkMDP(MDP):
             "term/any": term.float().detach(),
         }
         return term
+
+    def _resample_velocity_command(self, envs_idx):
+        u = torch.rand((envs_idx.shape[0], 3), dtype=torch.float32, device=gs.device)
+        self._vel_cmd[envs_idx] = self._vel_cmd_low + u * (self._vel_cmd_high - self._vel_cmd_low)
 
     @staticmethod
     def _body_contact_force(kwargs):
