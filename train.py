@@ -173,15 +173,23 @@ def _autocast():
     return torch.autocast(device_type="cuda", dtype=torch.float16, enabled=enabled)
 
 
+def _sample_policy_action(policy, obs, action_low, action_high):
+    mean, out = policy.compute({"observations": obs})
+    mean = clip_walk_action(mean.float(), action_low, action_high)
+    std = out["log_std"].float().exp()
+    dist = Normal(mean, std)
+    raw_action = dist.rsample()
+    action = clip_walk_action(raw_action, action_low, action_high)
+    log_prob = dist.log_prob(raw_action).sum(-1, keepdim=True)
+    return action, log_prob
+
+
 def critic_update(critics, tgt_critics, policy, log_alpha, c_opt, scaler, batch, gamma, reward_scale, grad_clip, n_min, action_low, action_high):
     obs, act, rew, nobs, done = batch
     scaled_rew = reward_scale * rew
     with _autocast():
         with torch.no_grad():
-            n_mean, n_out = policy.compute({"observations": nobs})
-            n_dist = Normal(n_mean, n_out["log_std"].exp())
-            n_action = clip_walk_action(n_dist.rsample(), action_low, action_high)
-            n_log_prob = n_dist.log_prob(n_action).sum(-1, keepdim=True)
+            n_action, n_log_prob = _sample_policy_action(policy, nobs, action_low, action_high)
             entropy_bonus = -log_alpha.exp().detach() * n_log_prob
             tgt_idx = torch.randperm(len(tgt_critics), device=obs.device)[:n_min]
             q_targets = torch.cat([tgt_critics[int(i)].net(torch.cat([nobs, n_action], -1)) for i in tgt_idx], dim=-1)
@@ -207,10 +215,7 @@ def critic_update(critics, tgt_critics, policy, log_alpha, c_opt, scaler, batch,
 def policy_update(policy, critics, log_alpha, p_opt, a_opt, scaler, batch, target_entropy, grad_clip, n_min, action_low, action_high):
     obs = batch[0]
     with _autocast():
-        mean, out = policy.compute({"observations": obs})
-        dist = Normal(mean, out["log_std"].exp())
-        action = clip_walk_action(dist.rsample(), action_low, action_high)
-        log_prob = dist.log_prob(action).sum(-1, keepdim=True)
+        action, log_prob = _sample_policy_action(policy, obs, action_low, action_high)
         critic_idx = torch.randperm(len(critics), device=obs.device)[:n_min]
         q_policy = torch.cat([critics[int(i)].net(torch.cat([obs, action], -1)) for i in critic_idx], dim=-1)
         policy_loss = (log_alpha.exp().detach() * log_prob - q_policy.min(dim=-1, keepdim=True).values).mean()
