@@ -1,8 +1,8 @@
 import os
-import torch
 from dataclasses import dataclass
 
 import genesis as gs
+import torch
 
 from .algorithm import Algorithm
 
@@ -95,7 +95,7 @@ class Actor(Algorithm):
 
         for step in range(self.cfg.max_steps):
             action = self.infer(obs)
-            obs, reward, done, trunc, info = env.step(action)
+            obs, _reward, _done, _trunc, info = env.step(action)
 
             if step % 50 == 0:
                 bp = info["body_pos"][0]

@@ -1,15 +1,14 @@
 import os
 from argparse import ArgumentParser
 
-import numpy as np
-import torch
-
 import genesis as gs
-from envs.env import Env, EnvConfig
-from robots.pi import PI, PIConfig
-from fields.ball_field import BallField, BallFieldConfig
-from models.sim2sim_soccer import Sim2SimSoccerModel, Sim2SimSoccerConfig
+import numpy as np
+
 from algorithm.actor import Actor, ActorConfig
+from envs.env import Env, EnvConfig
+from fields.ball_field import BallField, BallFieldConfig
+from MDPs.sim2sim_soccer import Sim2SimSoccerConfig, Sim2SimSoccerMDP
+from robots.pi import PI, PIConfig
 
 
 def parse_args():
@@ -32,6 +31,8 @@ def main():
     args = parse_args()
     if args.viewer:
         os.environ.pop("PYOPENGL_PLATFORM", None)
+    else:
+        os.environ["PYOPENGL_PLATFORM"] = "egl"
     os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
 
     gs.init(backend=gs.gpu, performance_mode=True, logging_level="warning")
@@ -83,17 +84,20 @@ def main():
             ball_damping=0.0,
             ball_friction=0.6,
             field_friction=1.0,
-            ball_reset_radius=(ball_r_min, ball_r_max),
-            ball_reset_noise=0.0,
         ),
         field_class=BallField,
-        model_cfg=Sim2SimSoccerConfig(
+        MDP_cfg=Sim2SimSoccerConfig(
             mode=args.mode,
             vel_cmd=(args.vel_x, args.vel_y, args.vel_yaw),
             kick_speed=args.kick_speed,
             kick_dir_deg=args.kick_dir_deg,
+            base_pos=robot_cfg.initial_pos,
+            base_quat=robot_cfg.initial_quat,
+            ball_reset_radius=(ball_r_min, ball_r_max),
+            ball_reset_noise=0.0,
+            ball_radius=0.07,
         ),
-        model_class=Sim2SimSoccerModel,
+        MDP_class=Sim2SimSoccerMDP,
         policy_freq=50,
         sim_freq=200,
         show_viewer=args.viewer,

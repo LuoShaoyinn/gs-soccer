@@ -1,13 +1,18 @@
 import math
-import torch
-import gymnasium as gym
-import numpy as np
 from dataclasses import dataclass
 
 import genesis as gs
+import gymnasium as gym
+import numpy as np
+import torch
 
-from models.model import ModelConfig, Model
-from algorithm.actor import NUM_POLICY_JOINTS, POLICY_TO_GENESIS, POLICY_DEFAULT_POS
+from algorithm.actor import (
+    NUM_POLICY_JOINTS,
+    POLICY_ACTION_SCALE,
+    POLICY_DEFAULT_POS,
+    POLICY_TO_GENESIS,
+)
+from MDPs.MDP import MDP, MDPConfig
 
 HISTORY_LEN = 8
 NUM_ANG_VEL = 3
@@ -20,7 +25,7 @@ JOINT_VEL_SCALE = 0.05
 
 
 @dataclass(kw_only=True)
-class Sim2SimSoccerConfig(ModelConfig):
+class Sim2SimSoccerConfig(MDPConfig):
     mode: str = "walk"
     vel_cmd: tuple[float, float, float] = (0.5, 0.0, 0.0)
     kick_speed: float = 2.0
@@ -29,15 +34,27 @@ class Sim2SimSoccerConfig(ModelConfig):
     approach_speed_vx: float = 1.2
     approach_kp_wz: float = 2.0
     approach_max_wz: float = 1.5
+    base_pos: np.ndarray
+    base_quat: np.ndarray
+    ball_reset_radius: tuple[float, float] = (0.4, 1.0)
+    ball_reset_noise: float = 0.0
+    ball_radius: float = 0.07
 
 
-class Sim2SimSoccerModel(Model):
+class Sim2SimSoccerMDP(MDP):
     cfg: Sim2SimSoccerConfig
+
+    def build(self):
+        pass
 
     def config(self):
         dev = gs.device
         self.idx = torch.tensor(POLICY_TO_GENESIS, dtype=torch.long, device=dev)
         self.policy_default_pos = torch.tensor(POLICY_DEFAULT_POS, dtype=torch.float32, device=dev)
+        self._default_pos20 = self.policy_default_pos[self.idx]
+        self._action_scale20 = torch.tensor(POLICY_ACTION_SCALE, dtype=torch.float32, device=dev)[self.idx]
+        self._base_pos = torch.from_numpy(np.asarray(self.cfg.base_pos, dtype=np.float32)).to(dev)
+        self._base_quat = torch.from_numpy(np.asarray(self.cfg.base_quat, dtype=np.float32)).to(dev)
 
         B = self.scene.n_envs
         H = HISTORY_LEN
@@ -56,7 +73,27 @@ class Sim2SimSoccerModel(Model):
         self._kick_dir_yaw = math.radians(self.cfg.kick_dir_deg)
         self._last_cmd = torch.zeros((B, NUM_CMD), dtype=torch.float32, device=dev)
 
-    def reset(self, envs_idx: torch.Tensor):
+    def reset(self, envs_idx, robot_reset_fn, field_reset_fn):
+        n = envs_idx.shape[0]
+        robot_reset_fn(
+            joint_pos=self._default_pos20.broadcast_to((n, self._default_pos20.shape[0])),
+            reset_pos=self._base_pos.broadcast_to((n, 3)),
+            reset_quat=self._base_quat.broadcast_to((n, 4)),
+        )
+
+        dev = gs.device
+        r_min, r_max = self.cfg.ball_reset_radius
+        r = r_min + (r_max - r_min) * torch.rand(n, device=dev)
+        angle = 2.0 * math.pi * torch.rand(n, device=dev)
+        noise = self.cfg.ball_reset_noise * (
+            2.0 * torch.rand(n, 2, device=dev) - 1.0
+        )
+        ball_pos = torch.zeros(n, 3, device=dev)
+        ball_pos[:, 0] = r * torch.cos(angle) + noise[:, 0]
+        ball_pos[:, 1] = r * torch.sin(angle) + noise[:, 1]
+        ball_pos[:, 2] = self.cfg.ball_radius
+        field_reset_fn(ball_pos=ball_pos)
+
         for buf in (self._buf_ang_vel, self._buf_grav, self._buf_cmd,
                     self._buf_jpos, self._buf_jvel, self._buf_act):
             buf[envs_idx] = 0.0
@@ -192,11 +229,16 @@ class Sim2SimSoccerModel(Model):
 
     def preprocess_action(self, action: torch.Tensor) -> torch.Tensor:
         self._pending_action = action.clone()
-        idx = self.idx
-        default_pos = self.policy_default_pos[idx]
-        from algorithm.actor import POLICY_ACTION_SCALE
-        scale = torch.tensor(POLICY_ACTION_SCALE, dtype=torch.float32, device=gs.device)[idx]
-        return default_pos + action[:, idx] * scale
+        return self._default_pos20 + action[:, self.idx] * self._action_scale20
+
+    def build_reward(self, envs_idx, **kwargs) -> torch.Tensor:
+        return torch.zeros((envs_idx.shape[0], 1), dtype=torch.float, device=gs.device)
+
+    def build_terminated(self, envs_idx, **kwargs) -> torch.Tensor:
+        return torch.zeros((envs_idx.shape[0], 1), dtype=torch.bool, device=gs.device)
+
+    def build_truncated(self, envs_idx, **kwargs) -> torch.Tensor:
+        return torch.zeros((envs_idx.shape[0], 1), dtype=torch.bool, device=gs.device)
 
     def build_info(self, envs_idx, **kwargs) -> dict[str, torch.Tensor]:
         return {

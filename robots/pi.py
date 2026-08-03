@@ -12,6 +12,12 @@ from .robot import Robot, RobotConfig
 class PIConfig(RobotConfig):
     robot_URDF: str = "assets/PI/pi_plus.urdf"
     base_link_name: str = "base_link"
+    foot_link_names: list[str] = field(
+        default_factory=lambda: [
+            "l_ankle_roll_link",
+            "r_ankle_roll_link",
+        ]
+    )
     joint_names: list[str] = field(
         default_factory=lambda: [
             "l_hip_pitch_joint",
@@ -49,6 +55,12 @@ class PIConfig(RobotConfig):
              1.2, 1.2, 1.2, 1.2, ],
             dtype=np.float32,
         )
+    )
+    armature: np.ndarray = field(
+        default_factory=lambda: np.zeros(20, dtype=np.float32)
+    )
+    damping: np.ndarray = field(
+        default_factory=lambda: np.zeros(20, dtype=np.float32)
     )
     initial_pos: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.5], dtype=np.float32))
     force_range: np.ndarray = field(

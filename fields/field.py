@@ -1,5 +1,5 @@
-# single_walker.py
-#   Build up a single walker env
+# field.py
+#   Base class for the field
 #
 
 import torch
