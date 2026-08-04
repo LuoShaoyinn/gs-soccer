@@ -107,7 +107,7 @@ class KickSim2SimMDP(MDP):
         self._last_action = action.detach().clone()
         return action * self._scale + self._home_pose
 
-    def _command(self, body_pos, body_quat, ball_pos):
+    def _command(self, body_pos, body_quat, ball_pos, envs_idx=None):
         ball_b = _quat_rotate_inverse(_yaw_quat(body_quat), ball_pos - body_pos)
         w, x, y, z = body_quat.unbind(-1)
         yaw = torch.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
@@ -117,7 +117,7 @@ class KickSim2SimMDP(MDP):
     def build_observation(self, envs_idx, body_ang_vel=None, body_quat=None, dofs_pos=None, dofs_vel=None, ball_pos=None, body_pos=None, **kwargs):
         if body_quat is None:
             return torch.zeros((envs_idx.shape[0], 646), device=gs.device)
-        cmd = self._command(body_pos, body_quat, ball_pos)
+        cmd = self._command(body_pos, body_quat, ball_pos, envs_idx=envs_idx)
         fresh = ~self._history_valid[envs_idx]
         if fresh.any():
             fresh_idx = envs_idx[fresh]
@@ -145,7 +145,20 @@ class KickSim2SimMDP(MDP):
             obs = self.build_observation(self._all_idx, **state)
         else:
             obs = self._observation_cache
-        output = self._ort.run(None, {self._actor_input: obs.detach().cpu().numpy().astype(np.float32)})[0]
+        return self._run_actor(obs)
+
+    def _run_actor(self, observation):
+        values = observation.detach().cpu().numpy().astype(np.float32)
+        input_batch = self._ort.get_inputs()[0].shape[0]
+        if input_batch in (None, "None") or input_batch == "batch":
+            output = self._ort.run(None, {self._actor_input: values})[0]
+        elif input_batch == 1 and values.shape[0] != 1:
+            output = np.concatenate([
+                self._ort.run(None, {self._actor_input: values[i:i + 1]})[0]
+                for i in range(values.shape[0])
+            ], axis=0)
+        else:
+            output = self._ort.run(None, {self._actor_input: values})[0]
         return torch.as_tensor(output, device=gs.device)
 
     def build_reward(self, envs_idx, **kwargs):

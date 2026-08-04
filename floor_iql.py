@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 import numpy as np
+import torch
 
 os.environ.setdefault("XDG_CACHE_HOME", "/tmp/gs-soccer-cache")
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/gs-soccer-matplotlib")
@@ -34,16 +35,22 @@ def main():
     env = Env(cfg)
     teacher = TeacherActor(env)
     env.reset()
+    finished = np.zeros(args.num_envs, dtype=bool)
     for step in range(args.steps):
         state = env.get_state(env.all_envs_idx)
         action = teacher.act(state)
         if args.diagnostics and (step == 0 or (step + 1) % 25 == 0):
-            phase = env.MDP._phase[0].item()
-            delta_x = state["ball_pos"][0, 0].item() - 1.0
-            print(f"step={step + 1:4d} phase={phase} delta_x={delta_x:+.3f} action=[{action.min().item():+.2f},{action.max().item():+.2f}]")
+            phases = env.MDP._phase.tolist()
+            delta_x = env.MDP._delta_x(env.all_envs_idx, state["ball_pos"]).tolist()
+            print(f"step={step + 1:4d} phases={phases} delta_x={[round(v, 3) for v in delta_x]} robot_xy={state['body_pos'][:, :2].detach().cpu().numpy().round(3).tolist()} action=[{action.min().item():+.2f},{action.max().item():+.2f}]")
         _, reward, terminated, truncated, info = env.step(action)
-        if terminated.any() or truncated.any():
-            print(f"episode_end step={step + 1} success={info['success'].tolist()} reward={reward.squeeze(1).tolist()}")
+        done = (terminated | truncated).squeeze(1).detach().cpu().numpy()
+        new_done = done & ~finished
+        if new_done.any():
+            done_idx = torch.as_tensor(new_done, dtype=torch.bool, device=reward.device)
+            print(f"episode_end step={step + 1} envs={np.flatnonzero(new_done).tolist()} success={info['success'][done_idx].tolist()} timeout={info['timeout'][done_idx].tolist()} reward={reward.squeeze(1)[done_idx].tolist()} episode_return={info['episode_return'][done_idx].tolist()}")
+            finished |= done
+        if finished.all():
             break
     env.close()
 

@@ -17,6 +17,9 @@ class FloorIQLConfig(KickSim2SimConfig):
     success_delta_x: float = 0.1
     max_steps: int = 350
     step_penalty: float = -0.1
+    robot_x_randomization: float = 0.05
+    robot_y_randomization: float = 0.05
+    robot_yaw_randomization: float = 0.1745329252  # 10 degrees
 
 
 class FloorIQLMDP(KickSim2SimMDP):
@@ -33,22 +36,49 @@ class FloorIQLMDP(KickSim2SimMDP):
     def config(self):
         super().config()
         self._episode_ball_x = torch.zeros(self.scene.n_envs, device=gs.device)
+        self._episode_ball_start = torch.zeros((self.scene.n_envs, 3), device=gs.device)
+        self._episode_forward = torch.zeros((self.scene.n_envs, 2), device=gs.device)
+        self._episode_yaw = torch.zeros(self.scene.n_envs, device=gs.device)
         self._step_count = torch.zeros(self.scene.n_envs, dtype=torch.long, device=gs.device)
         self._phase = torch.zeros(self.scene.n_envs, dtype=torch.long, device=gs.device)
+        self._episode_return = torch.zeros(self.scene.n_envs, device=gs.device)
         self._floor_observation_cache = torch.zeros((self.scene.n_envs, 649), device=gs.device)
 
     def reset(self, envs_idx, robot_reset_fn, field_reset_fn):
-        super().reset(envs_idx, robot_reset_fn, field_reset_fn)
-        self._episode_ball_x[envs_idx] = float(self.cfg.ball_pos[0])
+        n = envs_idx.shape[0]
+        device = self._episode_yaw.device
+        x = (2.0 * torch.rand(n, device=device) - 1.0) * self.cfg.robot_x_randomization
+        y = (2.0 * torch.rand(n, device=device) - 1.0) * self.cfg.robot_y_randomization
+        yaw = (2.0 * torch.rand(n, device=device) - 1.0) * self.cfg.robot_yaw_randomization
+        robot_pos = self._base_pos.broadcast_to((n, 3)).clone()
+        robot_pos[:, 0] += x
+        robot_pos[:, 1] += y
+        robot_quat = torch.stack((torch.cos(yaw / 2), torch.zeros_like(yaw), torch.zeros_like(yaw), torch.sin(yaw / 2)), dim=-1)
+        ball_distance = float(self.cfg.ball_pos[0])
+        ball_pos = robot_pos + ball_distance * torch.stack((torch.cos(yaw), torch.sin(yaw), torch.zeros_like(yaw)), dim=-1)
+        ball_pos[:, 2] = float(self.cfg.ball_pos[2])
+        robot_reset_fn(joint_pos=self._home_pose.broadcast_to((n, 22)), reset_pos=robot_pos, reset_quat=robot_quat)
+        field_reset_fn(ball_pos=ball_pos)
+        self._episode_ball_start[envs_idx] = ball_pos
+        self._episode_forward[envs_idx] = torch.stack((torch.cos(yaw), torch.sin(yaw)), dim=-1)
+        self._episode_yaw[envs_idx] = yaw
+        self._episode_ball_x[envs_idx] = ball_pos[:, 0]
         self._step_count[envs_idx] = 0
         self._phase[envs_idx] = 0
+        self._episode_return[envs_idx] = 0.0
+
+        self._last_action[envs_idx] = 0
+        self._cmd_hist[envs_idx] = 0
+        self._ball_hist[envs_idx] = 0
+        self._history_valid[envs_idx] = False
+        self._observation_valid[envs_idx] = False
 
     @property
     def observation_space(self):
         return gym.spaces.Box(-np.inf, np.inf, shape=(649,), dtype=np.float32)
 
     def _update_phase(self, envs_idx, ball_pos):
-        delta_x = ball_pos[:, 0] - self._episode_ball_x[envs_idx]
+        delta_x = self._delta_x(envs_idx, ball_pos)
         success = delta_x > self.cfg.success_delta_x
         timeout = self._step_count[envs_idx] >= self.cfg.max_steps
         self._phase[envs_idx] = torch.where(success | timeout, torch.full_like(self._phase[envs_idx], 2), torch.where(self._step_count[envs_idx] > 0, torch.ones_like(self._phase[envs_idx]), torch.zeros_like(self._phase[envs_idx])))
@@ -65,16 +95,33 @@ class FloorIQLMDP(KickSim2SimMDP):
         if not self._observation_valid.all():
             self.build_observation(self._all_idx, **state)
         # The pretrained actor was exported before the floor phase feature.
-        output = self._ort.run(None, {self._actor_input: self._observation_cache.detach().cpu().numpy().astype(np.float32)})[0]
-        return torch.as_tensor(output, device=gs.device)
+        return self._run_actor(self._observation_cache)
 
     def _success(self, envs_idx, ball_pos):
-        return (ball_pos[:, 0] - self._episode_ball_x[envs_idx]) > self.cfg.success_delta_x
+        return self._delta_x(envs_idx, ball_pos) > self.cfg.success_delta_x
+
+    def _delta_x(self, envs_idx, ball_pos):
+        displacement = ball_pos - self._episode_ball_start[envs_idx]
+        return (displacement[:, :2] * self._episode_forward[envs_idx]).sum(dim=-1)
+
+    def _command(self, body_pos, body_quat, ball_pos, envs_idx=None):
+        """Build the teacher command with forward kick direction per episode."""
+        ball_b = super()._command(body_pos, body_quat, ball_pos)
+        w, x, y, z = body_quat.unbind(-1)
+        yaw = torch.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+        if envs_idx is None:
+            envs_idx = self._all_idx
+        kick_dir = torch.remainder(self._episode_yaw[envs_idx] + self.cfg.kick_dir_yaw - yaw + np.pi, 2 * np.pi) - np.pi
+        ball_b[:, 5] = kick_dir
+        return ball_b
 
     def build_reward(self, envs_idx, ball_pos=None, **kwargs):
         success = self._success(envs_idx, ball_pos)
         self._step_count[envs_idx] += 1
-        return torch.where(success, torch.ones_like(success, dtype=torch.float32), torch.full_like(success, self.cfg.step_penalty, dtype=torch.float32)).unsqueeze(1)
+        reward = torch.where(success, torch.ones_like(success, dtype=torch.float32), torch.full_like(success, self.cfg.step_penalty, dtype=torch.float32))
+        self._episode_return[envs_idx] += reward
+        self._update_phase(envs_idx, ball_pos)
+        return reward.unsqueeze(1)
 
     def build_terminated(self, envs_idx, ball_pos=None, **kwargs):
         return self._success(envs_idx, ball_pos).unsqueeze(1)
@@ -85,8 +132,12 @@ class FloorIQLMDP(KickSim2SimMDP):
 
     def build_info(self, envs_idx, ball_pos=None, **kwargs):
         success = self._success(envs_idx, ball_pos)
+        timeout = (self._step_count[envs_idx] >= self.cfg.max_steps) & ~success
         return {
             "success": success,
-            "delta_x": ball_pos[:, 0] - self._episode_ball_x[envs_idx],
+            "timeout": timeout,
+            "delta_x": self._delta_x(envs_idx, ball_pos),
             "phase": self._phase[envs_idx],
+            "step_count": self._step_count[envs_idx],
+            "episode_return": self._episode_return[envs_idx],
         }
