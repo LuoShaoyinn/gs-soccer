@@ -29,6 +29,64 @@ from MDPs import FloorIQLConfig, FloorIQLMDP
 from robots import KickPI, KickPIConfig
 
 
+CHECKPOINT_FORMAT = "grounded-sac-v1"
+
+
+def save_checkpoint(
+    path: Path,
+    *,
+    learner: GroundedSACLearner,
+    replay: VectorReplayBuffer,
+    vector_step: int,
+    generator: torch.Generator,
+) -> None:
+    """Atomically replace a complete, restartable learner/replay checkpoint."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload: dict[str, object] = {
+        "format": CHECKPOINT_FORMAT,
+        "learner": learner.state_dict(),
+        "replay": replay.state_dict(),
+        "vector_step": vector_step,
+        "torch_rng_state": torch.get_rng_state(),
+        "rollout_rng_state": generator.get_state(),
+    }
+    if torch.cuda.is_available():
+        payload["cuda_rng_states"] = torch.cuda.get_rng_state_all()
+    temporary = path.with_name(f".{path.name}.tmp")
+    torch.save(payload, temporary)
+    os.replace(temporary, path)
+    print(
+        f"checkpoint saved path={path} replay={len(replay)} updates={learner.update_count} "
+        f"vector_step={vector_step}",
+        flush=True,
+    )
+
+
+def load_checkpoint(
+    path: Path,
+    *,
+    learner: GroundedSACLearner,
+    replay: VectorReplayBuffer,
+    generator: torch.Generator,
+) -> int:
+    payload = torch.load(path, map_location="cpu", weights_only=False)
+    if payload.get("format") != CHECKPOINT_FORMAT:
+        raise ValueError(f"unsupported checkpoint format in {path}")
+    learner.load_state_dict(payload["learner"])
+    replay.load_state_dict(payload["replay"])
+    torch.set_rng_state(payload["torch_rng_state"])
+    generator.set_state(payload["rollout_rng_state"])
+    if torch.cuda.is_available() and "cuda_rng_states" in payload:
+        torch.cuda.set_rng_state_all(payload["cuda_rng_states"])
+    vector_step = int(payload["vector_step"])
+    print(
+        f"checkpoint loaded path={path} replay={len(replay)} updates={learner.update_count} "
+        f"vector_step={vector_step}",
+        flush=True,
+    )
+    return vector_step
+
+
 def make_env(actor_path: str, num_envs: int, no_viewer: bool) -> Env:
     robot_cfg = KickPIConfig()
     field_cfg = BallFieldConfig(
@@ -165,6 +223,9 @@ def main() -> None:
     parser.add_argument("--exploration-std", type=float, default=0.05)
     parser.add_argument("--teacher-intervention-prob", type=float, default=0.0)
     parser.add_argument("--logdir", default="runs/grounded_sac")
+    parser.add_argument("--checkpoint-dir", default="checkpoints/grounded_sac")
+    parser.add_argument("--checkpoint-every", type=int, default=5_000, help="learner updates between full-buffer checkpoints; 0 disables periodic saves")
+    parser.add_argument("--resume", type=Path, default=None, help="resume learner/replay from a checkpoint")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--no-viewer", action="store_true")
     args = parser.parse_args()
@@ -190,27 +251,33 @@ def main() -> None:
     learner = GroundedSACLearner(config, replay)
     collector = Collector(env, replay, learner, TeacherActor(env))
     writer = SummaryWriter(args.logdir)
+    checkpoint_path = Path(args.checkpoint_dir) / "latest.pt"
+    generator = torch.Generator(device=gs.device).manual_seed(args.seed + 1)
+    vector_step = 0
     try:
-        collect_initial_demos(collector, args.demo_episodes)
-        learner.fit_normalizer_once()
-        print(f"starting IQL pretraining for {config.iql_pretrain_updates} updates", flush=True)
-        for update in range(config.iql_pretrain_updates):
-            metrics = learner._update_iql(replay.sample(config.batch_size, learner.device, human_suffix=True))
-            if update % 100 == 0:
-                for key, value in metrics.items():
-                    writer.add_scalar(key, value.detach().mean().item(), update)
-                writer.flush()
-                print(
-                    f"iql_pretrain update={update}/{config.iql_pretrain_updates} "
-                    f"td={metrics['iql/critic_td'].item():.5f} "
-                    f"expectile={metrics['iql/expectile'].item():.5f} "
-                    f"actor={metrics['iql/actor_loss'].item():.5f}",
-                    flush=True,
-                )
+        if args.resume is not None:
+            vector_step = load_checkpoint(args.resume, learner=learner, replay=replay, generator=generator)
+        else:
+            collect_initial_demos(collector, args.demo_episodes)
+            learner.fit_normalizer_once()
+            print(f"starting IQL pretraining for {config.iql_pretrain_updates} updates", flush=True)
+            for update in range(config.iql_pretrain_updates):
+                metrics = learner._update_iql(replay.sample(config.batch_size, learner.device, human_suffix=True))
+                if update % 100 == 0:
+                    for key, value in metrics.items():
+                        writer.add_scalar(key, value.detach().mean().item(), update)
+                    writer.flush()
+                    print(
+                        f"iql_pretrain update={update}/{config.iql_pretrain_updates} "
+                        f"td={metrics['iql/critic_td'].item():.5f} "
+                        f"expectile={metrics['iql/expectile'].item():.5f} "
+                        f"actor={metrics['iql/actor_loss'].item():.5f}",
+                        flush=True,
+                    )
+            save_checkpoint(checkpoint_path, learner=learner, replay=replay, vector_step=vector_step, generator=generator)
 
-        generator = torch.Generator(device=gs.device).manual_seed(args.seed + 1)
         update_budget = 0.0
-        for step in range(args.steps):
+        for step in range(vector_step, args.steps):
             for episode_metric in collector.step(
                 intervention_probability=args.teacher_intervention_prob,
                 exploration_std=config.exploration_std,
@@ -231,9 +298,16 @@ def main() -> None:
                         f"q_h350={metrics['sac/q_h350']:.5f}",
                         flush=True,
                     )
+                if args.checkpoint_every and learner.update_count % args.checkpoint_every == 0:
+                    save_checkpoint(checkpoint_path, learner=learner, replay=replay, vector_step=step + 1, generator=generator)
                 update_budget -= 1.0
             if step % 50 == 0:
                 print(f"train step={step} replay={len(replay)} updates={learner.update_count}", flush=True)
+            vector_step = step + 1
+        save_checkpoint(checkpoint_path, learner=learner, replay=replay, vector_step=vector_step, generator=generator)
+    except KeyboardInterrupt:
+        save_checkpoint(checkpoint_path, learner=learner, replay=replay, vector_step=vector_step, generator=generator)
+        raise
     finally:
         writer.close()
         env.close()

@@ -80,3 +80,40 @@ class VectorReplayBuffer:
         if len(ids) == 0:
             raise RuntimeError("no successful human suffixes have been recorded")
         return self.observation[ids]
+
+    @torch.no_grad()
+    def state_dict(self) -> dict[str, object]:
+        """Serialize only populated rows, compacted into chronological order.
+
+        This keeps a full replay checkpoint correct after wraparound without
+        writing unused capacity.  Sampling does not depend on physical row
+        order, so loading the compact form into rows ``[0:size]`` is lossless.
+        """
+        if self.size < self.capacity:
+            indices = torch.arange(self.size, device=self.device)
+        else:
+            indices = (torch.arange(self.capacity, device=self.device) + self.position) % self.capacity
+        return {
+            "capacity": self.capacity,
+            "size": self.size,
+            "fields": {
+                name: getattr(self, name)[indices].detach().cpu()
+                for name in ReplayBatch.__dataclass_fields__
+            },
+        }
+
+    @torch.no_grad()
+    def load_state_dict(self, state: dict[str, object]) -> None:
+        size = int(state["size"])
+        if size > self.capacity:
+            raise ValueError(f"checkpoint replay has {size} rows but capacity is {self.capacity}")
+        fields = state["fields"]
+        if not isinstance(fields, dict):
+            raise TypeError("checkpoint replay fields must be a dictionary")
+        for name in ReplayBatch.__dataclass_fields__:
+            value = fields.get(name)
+            if not isinstance(value, torch.Tensor) or len(value) != size:
+                raise ValueError(f"invalid checkpoint replay field: {name}")
+            getattr(self, name)[:size] = value.to(self.device)
+        self.size = size
+        self.position = size % self.capacity
