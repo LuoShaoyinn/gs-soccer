@@ -13,15 +13,10 @@ from .replay import ReplayBatch, VectorReplayBuffer
 MONITOR_HORIZONS = (10, 20, 50, 100, 350)
 
 
-def _rank_loss(value: torch.Tensor, step_penalty: float) -> torch.Tensor:
-    """Horizon constraint with a positive *cost magnitude*.
+def _rank_loss(value: torch.Tensor, max_horizon_drop: float) -> torch.Tensor:
+    """Penalize horizon drops larger than one valid transition cost."""
 
-    Runtime rewards use a negative step penalty.  The ranking relation is
-    therefore `f_h >= f_(h-1) - abs(step_penalty)`, which permits all-one
-    success vectors while constraining adjacent heads.
-    """
-
-    return torch.relu(value[:, :-1] - abs(step_penalty) - value[:, 1:]).square().mean()
+    return torch.relu(value[:, :-1] - max_horizon_drop - value[:, 1:]).square().mean()
 
 
 def _td_loss(prediction: torch.Tensor, target: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -37,11 +32,14 @@ def _assert_finite(name: str, *tensors: torch.Tensor) -> None:
             raise FloatingPointError(f"non-finite {name}: {bad}/{tensor.numel()} values")
 
 
-def _lower_bound(horizons: int, gamma: float, step_penalty: float, device: torch.device) -> torch.Tensor:
-    h = torch.arange(1, horizons + 1, dtype=torch.float32, device=device)
-    if gamma == 1.0:
-        return h * step_penalty
-    return step_penalty * (1.0 - gamma ** h) / (1.0 - gamma)
+def _lower_bound(horizons: int, value_lower_bound: float, device: torch.device) -> torch.Tensor:
+    """A task-valid bound shared by every horizon head.
+
+    A terminal fall carries a -1 cost in one transition, after prior ordinary
+    step costs.  Per-horizon discounted-step bounds would clip that valid
+    failure signal, so all heads use the task return lower bound instead.
+    """
+    return torch.full((horizons,), value_lower_bound, dtype=torch.float32, device=device)
 
 
 def _cat_batches(*batches: ReplayBatch) -> ReplayBatch:
@@ -65,10 +63,10 @@ class GroundedSACLearner:
         self.replay = replay
         self.device = torch.device(config.device)
         self.normalizer = FrozenObservationNormalizer(config.observation_dim).to(self.device)
-        self.lower_bound = _lower_bound(config.horizons, config.gamma, config.step_penalty, self.device)
+        self.lower_bound = _lower_bound(config.horizons, config.value_lower_bound, self.device)
 
-        actor_args = (config.observation_dim, config.action_dim, config.hidden_dim)
-        critic_args = (*actor_args, self.lower_bound)
+        actor_args = (config.observation_dim, config.action_dim, config.hidden_dim, config.action_limit)
+        critic_args = (config.observation_dim, config.action_dim, config.hidden_dim, self.lower_bound)
         self.iql_actor = VectorActor(*actor_args).to(self.device)
         self.iql_q1 = VectorCritic(*critic_args).to(self.device)
         self.iql_q2 = VectorCritic(*critic_args).to(self.device)
@@ -168,7 +166,7 @@ class GroundedSACLearner:
         q1, q2 = self.iql_q1(normalized, action), self.iql_q2(normalized, action)
         q_loss_1, q_smooth_1, q_mse_1 = _td_loss(q1, target)
         q_loss_2, q_smooth_2, q_mse_2 = _td_loss(q2, target)
-        q_rank = _rank_loss(q1, self.cfg.step_penalty) + _rank_loss(q2, self.cfg.step_penalty)
+        q_rank = _rank_loss(q1, self.cfg.max_horizon_drop) + _rank_loss(q2, self.cfg.max_horizon_drop)
         q_loss = q_loss_1 + q_loss_2 + self.cfg.rank_weight * q_rank
         self._optimizer_step(self.iql_q_optim, q_loss, [*self.iql_q1.parameters(), *self.iql_q2.parameters()], "iql_q")
 
@@ -178,7 +176,7 @@ class GroundedSACLearner:
         difference = q_min - value
         expectile_weight = torch.where(difference > 0, self.cfg.expectile, 1.0 - self.cfg.expectile)
         v_expectile = (expectile_weight * difference.square()).mean()
-        v_rank = _rank_loss(value, self.cfg.step_penalty)
+        v_rank = _rank_loss(value, self.cfg.max_horizon_drop)
         v_loss = v_expectile + self.cfg.rank_weight * v_rank
         self._optimizer_step(self.iql_v_optim, v_loss, self.iql_v.parameters(), "iql_v")
 
@@ -232,7 +230,7 @@ class GroundedSACLearner:
         q1, q2 = self.sac_q1(normalized, action), self.sac_q2(normalized, action)
         td1, smooth1, mse1 = _td_loss(q1, target)
         td2, smooth2, mse2 = _td_loss(q2, target)
-        rank = _rank_loss(q1, self.cfg.step_penalty) + _rank_loss(q2, self.cfg.step_penalty)
+        rank = _rank_loss(q1, self.cfg.max_horizon_drop) + _rank_loss(q2, self.cfg.max_horizon_drop)
         floor, floor_metrics = self._floor_loss(floor_batch)
         # No unfamiliar states exist in this revision; retain the named term
         # and metric to make fence enablement a local change later.

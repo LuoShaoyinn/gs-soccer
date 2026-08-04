@@ -1,4 +1,4 @@
-"""Train no-fence human-grounded vector SAC on 512 floor-kick environments.
+"""Train no-fence human-grounded vector SAC on 256 floor-kick environments.
 
 The pretrained teacher is used only to record the initial successful
 human-equivalent demonstrations (and optionally to simulate later human
@@ -169,6 +169,11 @@ class Collector:
         self.completed = 0
         self.invalid_transitions = 0
         self.teacher_takeover = torch.zeros(env.num_envs, dtype=torch.bool, device=gs.device)
+        # Keep one fixed half of the vector purely autonomous.  The remaining
+        # half retains sticky probabilistic teacher rescue, providing both
+        # irrecoverable failures and recoverable intervention trajectories.
+        self.teacher_rescue_enabled = torch.zeros(env.num_envs, dtype=torch.bool, device=gs.device)
+        self.teacher_rescue_enabled[env.num_envs // 2:] = True
         self.human_suffix_limit: int | None = None
         self.successful_human_suffixes = 0
 
@@ -193,7 +198,7 @@ class Collector:
             trigger = (
                 torch.rand(self.env.num_envs, generator=generator, device=gs.device)
                 < intervention_probability
-            ) & ~self.teacher_takeover
+            ) & self.teacher_rescue_enabled & ~self.teacher_takeover
             self.teacher_takeover |= trigger
             human_mask = self.teacher_takeover
         action, _ = self.learner.controller_action(self.obs)
@@ -202,7 +207,9 @@ class Collector:
                 action.shape, generator=generator, device=action.device,
                 dtype=action.dtype,
             ) * exploration_std
-            action = (action + noise).clamp(-1.0, 1.0)
+            action = (action + noise).clamp(-self.learner.cfg.action_limit, self.learner.cfg.action_limit)
+        else:
+            action = action.clamp(-self.learner.cfg.action_limit, self.learner.cfg.action_limit)
         if bool(human_mask.any()):
             teacher_action = self.teacher.act(self.env.get_state(self.env.all_envs_idx))
             executed = torch.where(human_mask[:, None], teacher_action, action)
@@ -244,6 +251,7 @@ class Collector:
                 "task/intervention_fraction": float(sum(flag for _, flag in trajectory) / len(trajectory)),
                 "task/sac_control_fraction": float(sum(not flag for _, flag in trajectory) / len(trajectory)),
                 "task/iql_control_fraction": 0.0,  # fence is deliberately disabled
+                "task/teacher_rescue_enabled": float(self.teacher_rescue_enabled[env_id]),
             })
             self.episodes[env_id] = []
             self.teacher_takeover[env_id] = False
@@ -316,7 +324,7 @@ def collect_initial_demos(collector: Collector, demo_episodes: int) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--actor", default="refs/kick_ball_0625/20260624_144537_from20260624_111401/exported/actor.onnx")
-    parser.add_argument("--num-envs", type=int, default=512)
+    parser.add_argument("--num-envs", type=int, default=256)
     parser.add_argument("--steps", type=int, default=10_000)
     parser.add_argument("--demo-episodes", type=int, default=2_000)
     parser.add_argument("--pretrain-updates", type=int, default=2_000)
@@ -330,10 +338,10 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--no-viewer", action="store_true")
     args = parser.parse_args()
-    if args.num_envs != 512:
-        raise ValueError("this first training run is intentionally configured for 512 environments")
+    if args.num_envs != 256:
+        raise ValueError("this revised fall experiment is intentionally configured for 256 environments")
     torch.manual_seed(args.seed)
-    print("initializing Genesis scene (512 environments)...", flush=True)
+    print("initializing Genesis scene (256 environments: 128 autonomous / 128 rescue-enabled)...", flush=True)
     gs.init(backend=gs.gpu, performance_mode=True, logging_level="warning")
     env = make_env(str(Path(args.actor)), args.num_envs, args.no_viewer)
     print(f"Genesis scene ready on {gs.device}; allocating replay...", flush=True)

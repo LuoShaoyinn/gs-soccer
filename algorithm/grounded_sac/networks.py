@@ -34,13 +34,19 @@ def _trunk(input_dim: int, hidden_dim: int) -> nn.Sequential:
 
 
 class VectorActor(nn.Module):
-    def __init__(self, observation_dim: int, action_dim: int, hidden_dim: int) -> None:
+    def __init__(self, observation_dim: int, action_dim: int, hidden_dim: int, action_limit: float) -> None:
         super().__init__()
         self.trunk = _trunk(observation_dim, hidden_dim)
         self.output = nn.Linear(hidden_dim, action_dim)
+        self.action_limit = float(action_limit)
 
     def forward(self, observation: torch.Tensor) -> torch.Tensor:
-        return torch.tanh(self.output(self.trunk(observation)))
+        # Replay holds the teacher's raw joint-target multipliers rather than
+        # normalized [-1, 1] actions.  Scaling the pre-activation before tanh
+        # makes this nearly identity-valued around normal teacher actions
+        # (typically O(1..10)), while retaining the MDP's ±100 safety bound.
+        raw_action = self.output(self.trunk(observation))
+        return self.action_limit * torch.tanh(raw_action / self.action_limit)
 
 
 class VectorCritic(nn.Module):

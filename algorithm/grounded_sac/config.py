@@ -14,11 +14,21 @@ class GroundedSACConfig:
 
     observation_dim: int = 649
     action_dim: int = 22
+    # The teacher actions are raw joint-target multipliers, not normalized
+    # actions.  They are clipped to this physical-interface limit by the MDP.
+    # Keep the learned actors in the same units as replay.
+    action_limit: float = 100.0
     # Match the physical FloorIQLMDP timeout exactly.
     horizons: int = 350
     hidden_dim: int = 512
     gamma: float = 0.99
     step_penalty: float = -1.0 / 350.0
+    # A fall adds a terminal -1 after any preceding timeout-equivalent step
+    # costs, so every vector head must be able to express the task range.
+    value_lower_bound: float = -2.0
+    # Extending a horizon by one control step can now include the terminal
+    # fall cost rather than only the ordinary step penalty.
+    max_horizon_drop: float = 1.0
     expectile: float = 0.7
     awr_beta: float = 3.0
     awr_max_weight: float = 100.0

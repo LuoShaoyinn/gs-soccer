@@ -18,6 +18,10 @@ class FloorIQLConfig(KickSim2SimConfig):
     max_steps: int = 350
     # 350 * (-1 / 350) = -1.0 on a timeout episode.
     step_penalty: float = -1.0 / 350.0
+    # Falling is unrecoverable in this simulator.  It receives a distinct
+    # terminal failure cost, in addition to all earlier ordinary step costs.
+    # Thus complete episode returns remain in [-2, 1].
+    fall_penalty: float = -1.0
     # Match the source task's root-height termination threshold.
     fall_height: float = 0.1
     robot_x_randomization: float = 0.05
@@ -130,10 +134,11 @@ class FloorIQLMDP(KickSim2SimMDP):
         fallen = self._fallen(envs_idx, body_pos) & ~success
         self._step_count[envs_idx] += 1
         timeout_reward = torch.full_like(success, self.cfg.step_penalty, dtype=torch.float32)
-        # A fall is terminal, but it represents the same failed outcome as a
-        # full timeout: charge every not-yet-issued step penalty immediately.
-        remaining_penalty = self.cfg.step_penalty * (self.cfg.max_steps - self._step_count[envs_idx] + 1).to(torch.float32)
-        reward = torch.where(success, torch.ones_like(timeout_reward), torch.where(fallen, remaining_penalty, timeout_reward))
+        # A fallen robot cannot be rescued by the teacher in this scene.  Keep
+        # its failure distinguishable from a merely slow timeout: previous
+        # step penalties plus this terminal cost place returns in [-2, 1].
+        fall_reward = torch.full_like(timeout_reward, self.cfg.fall_penalty)
+        reward = torch.where(success, torch.ones_like(timeout_reward), torch.where(fallen, fall_reward, timeout_reward))
         self._episode_return[envs_idx] += reward
         self._update_phase(envs_idx, ball_pos, body_pos)
         return reward.unsqueeze(1)
