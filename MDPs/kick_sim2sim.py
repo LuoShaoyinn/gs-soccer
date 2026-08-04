@@ -15,6 +15,7 @@ from .MDP import MDP, MDPConfig
 class KickSim2SimConfig(MDPConfig):
     actor_path: str
     action_dim: int = 22
+    teacher_clip: float = 100.0
     ball_pos: np.ndarray = field(default_factory=lambda: np.array([0.8, 0.0, 0.07], dtype=np.float32))
     kick_dir_yaw: float = 0.0
     kick_speed: float = 1.0
@@ -62,8 +63,13 @@ class KickSim2SimMDP(MDP):
         self._ball_pos = torch.as_tensor(self.cfg.ball_pos, device=gs.device)
         self._scale = torch.as_tensor(self.cfg.action_scale, device=gs.device)
         self._last_action = torch.zeros((self.scene.n_envs, 22), device=gs.device)
-        self._cmd_hist = torch.zeros((self.scene.n_envs, 10, 7), device=gs.device)
+        # The exported policy sees a 10-frame soccer-command block and a
+        # separate 10-frame ball block.  At deployment the velocity/kick
+        # command is live and broadcast across every command frame; only ball
+        # XY is asynchronously sampled and held at 10 Hz (50 Hz control).
+        self._cmd_hist = torch.zeros((self.scene.n_envs, 10, 5), device=gs.device)
         self._ball_hist = torch.zeros((self.scene.n_envs, 10, 2), device=gs.device)
+        self._ball_pub_counter = torch.zeros(self.scene.n_envs, dtype=torch.long, device=gs.device)
         self._history_valid = torch.zeros(self.scene.n_envs, dtype=torch.bool, device=gs.device)
         self._observation_valid = torch.zeros(self.scene.n_envs, dtype=torch.bool, device=gs.device)
         self._observation_cache = torch.zeros((self.scene.n_envs, 646), device=gs.device)
@@ -88,6 +94,7 @@ class KickSim2SimMDP(MDP):
         self._last_action[envs_idx] = 0
         self._cmd_hist[envs_idx] = 0
         self._ball_hist[envs_idx] = 0
+        self._ball_pub_counter[envs_idx] = 0
         self._history_valid[envs_idx] = False
         self._observation_valid[envs_idx] = False
 
@@ -97,10 +104,14 @@ class KickSim2SimMDP(MDP):
 
     @property
     def action_space(self):
-        return gym.spaces.Box(-1.0, 1.0, shape=(22,), dtype=np.float32)
+        # The exported teacher has an unbounded final linear layer.  Keep its
+        # interface bounded while preserving NaNs for the normal runtime to
+        # surface rather than silently rewriting them.
+        return gym.spaces.Box(-self.cfg.teacher_clip, self.cfg.teacher_clip, shape=(22,), dtype=np.float32)
 
     def preprocess_action(self, action):
         action = torch.as_tensor(action, device=gs.device, dtype=torch.float32)
+        action = action.clamp(-self.cfg.teacher_clip, self.cfg.teacher_clip)
         self._last_action = action.detach().clone()
         return action * self._scale + self._home_pose
 
@@ -115,24 +126,33 @@ class KickSim2SimMDP(MDP):
         if body_quat is None:
             return torch.zeros((envs_idx.shape[0], 646), device=gs.device)
         cmd = self._command(body_pos, body_quat, ball_pos, envs_idx=envs_idx)
+        # soccer_command_async(..., drop_ball_pos=True): ten copies of the
+        # live [vx, vy, wz, kick_dir, kick_speed] command.  Ball XY is kept in
+        # its own downsampled, newest-last history for the ONNX ball encoder.
+        live_command = cmd[:, [0, 1, 2, 5, 6]]
         fresh = ~self._history_valid[envs_idx]
         if fresh.any():
             fresh_idx = envs_idx[fresh]
-            self._cmd_hist[fresh_idx] = cmd[fresh].unsqueeze(1)
+            self._cmd_hist[fresh_idx] = live_command[fresh].unsqueeze(1)
             self._ball_hist[fresh_idx] = cmd[fresh, 3:5].unsqueeze(1)
+            self._ball_pub_counter[fresh_idx] = 1
         if (~fresh).any():
             live_idx = envs_idx[~fresh]
-            self._cmd_hist[live_idx] = torch.roll(self._cmd_hist[live_idx], -1, 1)
-            self._cmd_hist[live_idx, -1] = cmd[~fresh]
-            self._ball_hist[live_idx] = torch.roll(self._ball_hist[live_idx], -1, 1)
-            self._ball_hist[live_idx, -1] = cmd[~fresh, 3:5]
+            self._cmd_hist[live_idx] = live_command[~fresh].unsqueeze(1)
+            publish = (self._ball_pub_counter[live_idx] % 5) == 0
+            if publish.any():
+                publish_idx = live_idx[publish]
+                self._ball_hist[publish_idx] = torch.roll(self._ball_hist[publish_idx], -1, 1)
+                self._ball_hist[publish_idx, -1] = cmd[~fresh][publish, 3:5]
+            self._ball_pub_counter[live_idx] += 1
         self._history_valid[envs_idx] = True
         gravity = _quat_rotate_inverse(body_quat, torch.tensor([0., 0., -1.], device=gs.device).expand_as(body_quat[:, :3]))
         cmd_hist = self._cmd_hist[envs_idx]
         ball_hist = self._ball_hist[envs_idx]
         last_action = self._last_action[envs_idx]
-        parts = [(body_ang_vel * 0.25).unsqueeze(1).expand(-1, 8, -1), gravity.unsqueeze(1).expand(-1, 8, -1), cmd_hist[:, :, [0, 1, 2, 5, 6]], (dofs_pos - self._home_pose).unsqueeze(1).expand(-1, 8, -1), (dofs_vel * 0.05).unsqueeze(1).expand(-1, 8, -1), last_action.unsqueeze(1).expand(-1, 8, -1), ball_hist]
+        parts = [(body_ang_vel * 0.25).unsqueeze(1).expand(-1, 8, -1), gravity.unsqueeze(1).expand(-1, 8, -1), cmd_hist, (dofs_pos - self._home_pose).unsqueeze(1).expand(-1, 8, -1), (dofs_vel * 0.05).unsqueeze(1).expand(-1, 8, -1), last_action.unsqueeze(1).expand(-1, 8, -1), ball_hist]
         observation = torch.cat([x.reshape(x.shape[0], -1) for x in parts], dim=-1)
+        observation = observation.clamp(-self.cfg.teacher_clip, self.cfg.teacher_clip)
         self._observation_cache[envs_idx] = observation
         self._observation_valid[envs_idx] = True
         return observation
@@ -146,7 +166,9 @@ class KickSim2SimMDP(MDP):
 
     def _run_actor(self, observation):
         with torch.inference_mode():
-            return self._torch_actor(observation.float())
+            bounded_observation = observation.float().clamp(-self.cfg.teacher_clip, self.cfg.teacher_clip)
+            action = self._torch_actor(bounded_observation)
+            return action.clamp(-self.cfg.teacher_clip, self.cfg.teacher_clip)
 
     def build_reward(self, envs_idx, **kwargs):
         return torch.zeros((envs_idx.shape[0], 1), device=gs.device)

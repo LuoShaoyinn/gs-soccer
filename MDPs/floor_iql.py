@@ -18,6 +18,8 @@ class FloorIQLConfig(KickSim2SimConfig):
     max_steps: int = 350
     # 350 * (-1 / 350) = -1.0 on a timeout episode.
     step_penalty: float = -1.0 / 350.0
+    # Match the source task's root-height termination threshold.
+    fall_height: float = 0.1
     robot_x_randomization: float = 0.05
     robot_y_randomization: float = 0.05
     robot_yaw_randomization: float = 0.1745329252  # 10 degrees
@@ -71,6 +73,7 @@ class FloorIQLMDP(KickSim2SimMDP):
         self._last_action[envs_idx] = 0
         self._cmd_hist[envs_idx] = 0
         self._ball_hist[envs_idx] = 0
+        self._ball_pub_counter[envs_idx] = 0
         self._history_valid[envs_idx] = False
         self._observation_valid[envs_idx] = False
 
@@ -78,15 +81,16 @@ class FloorIQLMDP(KickSim2SimMDP):
     def observation_space(self):
         return gym.spaces.Box(-np.inf, np.inf, shape=(649,), dtype=np.float32)
 
-    def _update_phase(self, envs_idx, ball_pos):
+    def _update_phase(self, envs_idx, ball_pos, body_pos=None):
         delta_x = self._delta_x(envs_idx, ball_pos)
         success = delta_x > self.cfg.success_delta_x
         timeout = self._step_count[envs_idx] >= self.cfg.max_steps
-        self._phase[envs_idx] = torch.where(success | timeout, torch.full_like(self._phase[envs_idx], 2), torch.where(self._step_count[envs_idx] > 0, torch.ones_like(self._phase[envs_idx]), torch.zeros_like(self._phase[envs_idx])))
+        fallen = self._fallen(envs_idx, body_pos)
+        self._phase[envs_idx] = torch.where(success | timeout | fallen, torch.full_like(self._phase[envs_idx], 2), torch.where(self._step_count[envs_idx] > 0, torch.ones_like(self._phase[envs_idx]), torch.zeros_like(self._phase[envs_idx])))
 
-    def build_observation(self, envs_idx, ball_pos=None, **kwargs):
-        core = super().build_observation(envs_idx, ball_pos=ball_pos, **kwargs)
-        self._update_phase(envs_idx, ball_pos)
+    def build_observation(self, envs_idx, ball_pos=None, body_pos=None, **kwargs):
+        core = super().build_observation(envs_idx, ball_pos=ball_pos, body_pos=body_pos, **kwargs)
+        self._update_phase(envs_idx, ball_pos, body_pos)
         phase = torch.nn.functional.one_hot(self._phase[envs_idx], num_classes=3).to(torch.float32)
         observation = torch.cat((core, phase), dim=-1)
         self._floor_observation_cache[envs_idx] = observation
@@ -100,6 +104,11 @@ class FloorIQLMDP(KickSim2SimMDP):
 
     def _success(self, envs_idx, ball_pos):
         return self._delta_x(envs_idx, ball_pos) > self.cfg.success_delta_x
+
+    def _fallen(self, envs_idx, body_pos):
+        if body_pos is None:
+            return torch.zeros(envs_idx.shape[0], dtype=torch.bool, device=gs.device)
+        return body_pos[:, 2] < self.cfg.fall_height
 
     def _delta_x(self, envs_idx, ball_pos):
         displacement = ball_pos - self._episode_ball_start[envs_idx]
@@ -116,26 +125,36 @@ class FloorIQLMDP(KickSim2SimMDP):
         ball_b[:, 5] = kick_dir
         return ball_b
 
-    def build_reward(self, envs_idx, ball_pos=None, **kwargs):
+    def build_reward(self, envs_idx, ball_pos=None, body_pos=None, **kwargs):
         success = self._success(envs_idx, ball_pos)
+        fallen = self._fallen(envs_idx, body_pos) & ~success
         self._step_count[envs_idx] += 1
-        reward = torch.where(success, torch.ones_like(success, dtype=torch.float32), torch.full_like(success, self.cfg.step_penalty, dtype=torch.float32))
+        timeout_reward = torch.full_like(success, self.cfg.step_penalty, dtype=torch.float32)
+        # A fall is terminal, but it represents the same failed outcome as a
+        # full timeout: charge every not-yet-issued step penalty immediately.
+        remaining_penalty = self.cfg.step_penalty * (self.cfg.max_steps - self._step_count[envs_idx] + 1).to(torch.float32)
+        reward = torch.where(success, torch.ones_like(timeout_reward), torch.where(fallen, remaining_penalty, timeout_reward))
         self._episode_return[envs_idx] += reward
-        self._update_phase(envs_idx, ball_pos)
+        self._update_phase(envs_idx, ball_pos, body_pos)
         return reward.unsqueeze(1)
 
-    def build_terminated(self, envs_idx, ball_pos=None, **kwargs):
-        return self._success(envs_idx, ball_pos).unsqueeze(1)
+    def build_terminated(self, envs_idx, ball_pos=None, body_pos=None, **kwargs):
+        return (self._success(envs_idx, ball_pos) | self._fallen(envs_idx, body_pos)).unsqueeze(1)
 
-    def build_truncated(self, envs_idx, ball_pos=None, **kwargs):
-        timeout = (self._step_count[envs_idx] >= self.cfg.max_steps) & ~self._success(envs_idx, ball_pos)
+    def build_truncated(self, envs_idx, ball_pos=None, body_pos=None, **kwargs):
+        timeout = (self._step_count[envs_idx] >= self.cfg.max_steps) & ~self._success(envs_idx, ball_pos) & ~self._fallen(envs_idx, body_pos)
         return timeout.unsqueeze(1)
 
-    def build_info(self, envs_idx, ball_pos=None, **kwargs):
+    def build_info(self, envs_idx, ball_pos=None, body_pos=None, **kwargs):
         success = self._success(envs_idx, ball_pos)
-        timeout = (self._step_count[envs_idx] >= self.cfg.max_steps) & ~success
+        fallen = self._fallen(envs_idx, body_pos) & ~success
+        timeout = (self._step_count[envs_idx] >= self.cfg.max_steps) & ~success & ~fallen
         return {
             "success": success,
+            "fallen": fallen,
+            # Env.step auto-resets terminal rows, making a fall the explicit
+            # stop point and the following reset the recovery transition.
+            "recovery": fallen,
             "timeout": timeout,
             "delta_x": self._delta_x(envs_idx, ball_pos),
             "phase": self._phase[envs_idx],
