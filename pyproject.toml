@@ -23,6 +23,7 @@ metal = ["torch", "triton"]
 rocm = ["torch", "triton"]
 
 [tool.uv]
+link-mode = "copy"
 conflicts = [[{ extra = "cuda" }, { extra = "rocm" }],
              [{ extra = "metal" }, { extra = "rocm" }],
              [{ extra = "metal" }, { extra = "cuda" }]]
