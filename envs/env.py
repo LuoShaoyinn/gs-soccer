@@ -110,7 +110,16 @@ class Env(ABC):
             reset_observation, reset_info = self.reset(reset_idx)
             next_observation[reset_idx] = reset_observation
             for (k, v) in reset_info.items():
-                info[k][reset_idx] = v
+                # Keep terminal diagnostics on the transition that caused the
+                # auto-reset. Reset-time values are useful only for keys that
+                # the terminal transition did not already provide.
+                if k not in info:
+                    info[k] = torch.zeros(
+                        (self.num_envs, *v.shape[1:]),
+                        dtype=v.dtype,
+                        device=v.device,
+                    )
+                    info[k][reset_idx] = v
         return (next_observation, reward, terminated, truncated, info)
     
     def reset(self, envs_idx: torch.Tensor | None = None) -> tuple[torch.Tensor, dict]:
