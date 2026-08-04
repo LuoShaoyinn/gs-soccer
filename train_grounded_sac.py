@@ -114,6 +114,22 @@ class Collector:
         )
         if (~valid).any():
             invalid_idx = torch.nonzero(~valid).squeeze(1)
+            raw_state = self.env.get_state(self.env.all_envs_idx)
+            state_bad = {
+                name: int((~torch.isfinite(value[invalid_idx])).sum().item())
+                for name, value in raw_state.items()
+                if value.is_floating_point() and not bool(torch.isfinite(value[invalid_idx]).all())
+            }
+            bad_parts = []
+            for name, value in {
+                "obs": self.obs,
+                "action": executed,
+                "reward": reward.squeeze(1),
+                "next_obs": next_obs,
+            }.items():
+                count = int((~torch.isfinite(value[invalid_idx])).sum().item())
+                if count:
+                    bad_parts.append(f"{name}={count}")
             reset_obs, _ = self.env.reset(invalid_idx)
             next_obs = next_obs.clone()
             next_obs[invalid_idx] = reset_obs
@@ -121,7 +137,12 @@ class Collector:
             for env_id in invalid_idx.tolist():
                 self.episodes[env_id] = []
             self.invalid_transitions += len(invalid_idx)
-            print(f"nan_guard dropped {len(invalid_idx)} non-finite transitions; total={self.invalid_transitions}", flush=True)
+            print(
+                f"nan_guard dropped envs={invalid_idx.tolist()} "
+                f"({' '.join(bad_parts)}) state_nonfinite={state_bad} "
+                f"total={self.invalid_transitions}",
+                flush=True,
+            )
         batch = ReplayBatch(
             observation=self.obs.detach(), action=executed.detach(), reward=reward.squeeze(1).detach(),
             next_observation=next_obs.detach(), success=success.detach(), terminal=done.detach(),
