@@ -71,18 +71,15 @@ class KickSim2SimMDP(MDP):
         self._load_actor()
 
     def _load_actor(self):
-        try:
-            import onnxruntime as ort
-        except ImportError as exc:
-            raise ImportError("Install onnxruntime to run kick sim2sim") from exc
+        from algorithm.kick_teacher_torch import convert_onnx_kick_actor, load_kick_teacher
         path = Path(self.cfg.actor_path)
-        if not path.is_file():
-            raise FileNotFoundError(path)
-        self._ort = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
-        inp = self._ort.get_inputs()[0]
-        if inp.shape[-1] != 646 or self._ort.get_outputs()[0].shape[-1] != 22:
-            raise ValueError("Expected the 646-D / 22-action encdec kick actor")
-        self._actor_input = inp.name
+        if path.suffix == ".pt":
+            self._torch_actor = load_kick_teacher(path, gs.device)
+            return
+        checkpoint_path = path.with_suffix(".pt")
+        if not checkpoint_path.exists():
+            convert_onnx_kick_actor(path, checkpoint_path)
+        self._torch_actor = load_kick_teacher(checkpoint_path, gs.device)
 
     def reset(self, envs_idx, robot_reset_fn, field_reset_fn):
         n = envs_idx.shape[0]
@@ -107,7 +104,7 @@ class KickSim2SimMDP(MDP):
         self._last_action = action.detach().clone()
         return action * self._scale + self._home_pose
 
-    def _command(self, body_pos, body_quat, ball_pos):
+    def _command(self, body_pos, body_quat, ball_pos, envs_idx=None):
         ball_b = _quat_rotate_inverse(_yaw_quat(body_quat), ball_pos - body_pos)
         w, x, y, z = body_quat.unbind(-1)
         yaw = torch.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
@@ -117,7 +114,7 @@ class KickSim2SimMDP(MDP):
     def build_observation(self, envs_idx, body_ang_vel=None, body_quat=None, dofs_pos=None, dofs_vel=None, ball_pos=None, body_pos=None, **kwargs):
         if body_quat is None:
             return torch.zeros((envs_idx.shape[0], 646), device=gs.device)
-        cmd = self._command(body_pos, body_quat, ball_pos)
+        cmd = self._command(body_pos, body_quat, ball_pos, envs_idx=envs_idx)
         fresh = ~self._history_valid[envs_idx]
         if fresh.any():
             fresh_idx = envs_idx[fresh]
@@ -145,8 +142,11 @@ class KickSim2SimMDP(MDP):
             obs = self.build_observation(self._all_idx, **state)
         else:
             obs = self._observation_cache
-        output = self._ort.run(None, {self._actor_input: obs.detach().cpu().numpy().astype(np.float32)})[0]
-        return torch.as_tensor(output, device=gs.device)
+        return self._run_actor(obs)
+
+    def _run_actor(self, observation):
+        with torch.inference_mode():
+            return self._torch_actor(observation.float())
 
     def build_reward(self, envs_idx, **kwargs):
         return torch.zeros((envs_idx.shape[0], 1), device=gs.device)

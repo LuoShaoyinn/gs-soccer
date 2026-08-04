@@ -14,7 +14,8 @@ dependencies = [
     "ipython>=9.10.0",
     "setuptools<80.0.0",
     "torchrl",
-    "onnxruntime"
+    "onnxruntime",
+    "onnx"
 ]
 
 [project.optional-dependencies]
@@ -23,6 +24,7 @@ metal = ["torch", "triton"]
 rocm = ["torch", "triton"]
 
 [tool.uv]
+link-mode = "copy"
 conflicts = [[{ extra = "cuda" }, { extra = "rocm" }],
              [{ extra = "metal" }, { extra = "rocm" }],
              [{ extra = "metal" }, { extra = "cuda" }]]
