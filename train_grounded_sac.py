@@ -128,8 +128,16 @@ def collect_initial_demos(collector: Collector, demo_episodes: int) -> None:
     """Collect exactly 20 complete, successful, fully-human trajectories."""
 
     collector.human_suffix_limit = demo_episodes
+    vector_steps = 0
     while collector.successful_human_suffixes < demo_episodes:
         collector.step(force_human=True)
+        vector_steps += 1
+        if vector_steps % 25 == 0:
+            print(
+                f"collect_demos step={vector_steps} successes="
+                f"{collector.successful_human_suffixes}/{demo_episodes}",
+                flush=True,
+            )
     collector.human_suffix_limit = None
     count = int(collector.replay.human_suffix[:collector.replay.size].sum())
     print(f"Collected {demo_episodes} initial successful human demonstrations ({count} transitions).", flush=True)
@@ -151,8 +159,10 @@ def main() -> None:
     if args.num_envs != 512:
         raise ValueError("this first training run is intentionally configured for 512 environments")
     torch.manual_seed(args.seed)
+    print("initializing Genesis scene (512 environments)...", flush=True)
     gs.init(backend=gs.gpu, performance_mode=True, logging_level="warning")
     env = make_env(str(Path(args.actor)), args.num_envs, args.no_viewer)
+    print(f"Genesis scene ready on {gs.device}; allocating replay...", flush=True)
     config = GroundedSACConfig(device=str(gs.device), iql_pretrain_updates=args.pretrain_updates)
     replay = VectorReplayBuffer(
         config.replay_capacity, config.observation_dim, config.action_dim,
@@ -164,12 +174,20 @@ def main() -> None:
     try:
         collect_initial_demos(collector, args.demo_episodes)
         learner.fit_normalizer_once()
+        print(f"starting IQL pretraining for {config.iql_pretrain_updates} updates", flush=True)
         for update in range(config.iql_pretrain_updates):
             metrics = learner._update_iql(replay.sample(config.batch_size, learner.device, human_suffix=True))
-            if update % 100 == 0:
+            if update % 10 == 0:
                 for key, value in metrics.items():
                     writer.add_scalar(key, value.detach().mean().item(), update)
-                print(f"iql_pretrain update={update} td={metrics['iql/critic_td'].item():.5f}", flush=True)
+                writer.flush()
+                print(
+                    f"iql_pretrain update={update}/{config.iql_pretrain_updates} "
+                    f"td={metrics['iql/critic_td'].item():.5f} "
+                    f"expectile={metrics['iql/expectile'].item():.5f} "
+                    f"actor={metrics['iql/actor_loss'].item():.5f}",
+                    flush=True,
+                )
 
         generator = torch.Generator(device=gs.device).manual_seed(args.seed + 1)
         update_budget = 0.0
@@ -186,6 +204,13 @@ def main() -> None:
                 if learner.update_count % 10 == 0:
                     for key, value in metrics.items():
                         writer.add_scalar(key, value, learner.update_count)
+                    writer.flush()
+                    print(
+                        f"update={learner.update_count} td_mse={metrics['sac/td_mse']:.5f} "
+                        f"floor={metrics['floor/loss']:.5f} "
+                        f"q_h350={metrics['sac/q_h350']:.5f}",
+                        flush=True,
+                    )
                 update_budget -= 1.0
             if step % 50 == 0:
                 print(f"train step={step} replay={len(replay)} updates={learner.update_count}", flush=True)
