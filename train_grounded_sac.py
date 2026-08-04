@@ -328,6 +328,8 @@ def main() -> None:
     parser.add_argument("--steps", type=int, default=10_000)
     parser.add_argument("--demo-episodes", type=int, default=2_000)
     parser.add_argument("--pretrain-updates", type=int, default=2_000)
+    parser.add_argument("--warmup-transitions", type=int, default=8_000,
+                        help="total transitions to collect before SAC/IQL online updates")
     # Each simulator advance contributes 32 real transitions, followed by
     # 128 learner updates from replay.
     parser.add_argument("--updates-per-vector-step", type=float, default=128.0)
@@ -342,6 +344,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.num_envs != 32:
         raise ValueError("this revised fall experiment is intentionally configured for 32 environments")
+    if args.warmup_transitions < 0 or args.warmup_transitions % args.num_envs != 0:
+        raise ValueError("warmup-transitions must be a non-negative multiple of num-envs")
     torch.manual_seed(args.seed)
     print("initializing Genesis scene (32 environments: 16 autonomous / 16 rescue-enabled)...", flush=True)
     gs.init(backend=gs.gpu, performance_mode=True, logging_level="warning")
@@ -391,8 +395,36 @@ def main() -> None:
             save_networks(run_dir, learner=learner, vector_step=vector_step, generator=generator)
             save_buffer(run_dir, learner=learner, replay=replay, vector_step=vector_step)
 
+            print(
+                f"starting replay warmup for {args.warmup_transitions} transitions "
+                f"({args.warmup_transitions // args.num_envs} vector steps); learner updates are disabled",
+                flush=True,
+            )
+            for warmup_step in range(args.warmup_transitions // args.num_envs):
+                if len(replay) == replay.capacity:
+                    raise RuntimeError("replay filled during warmup before online training could begin")
+                for episode_metric in collector.step(
+                    intervention_probability=args.teacher_intervention_prob,
+                    exploration_std=config.exploration_std,
+                    generator=generator,
+                ):
+                    for key, value in episode_metric.items():
+                        writer.add_scalar(key, value, vector_step * args.num_envs)
+                vector_step += 1
+                if warmup_step % 100 == 0:
+                    print(
+                        f"warmup step={warmup_step} replay_rows={len(replay)}/{replay.capacity} "
+                        f"transitions={replay.total_transitions}",
+                        flush=True,
+                    )
+            writer.flush()
+            save_networks(run_dir, learner=learner, vector_step=vector_step, generator=generator)
+            save_buffer(run_dir, learner=learner, replay=replay, vector_step=vector_step)
+
         update_budget = 0.0
-        for step in range(vector_step, args.steps):
+        # `steps` counts online-training vector steps. A fresh run performs
+        # the explicit warmup above first; a resumed run continues directly.
+        for training_step in range(args.steps):
             if len(replay) == replay.capacity:
                 print(
                     f"replay buffer already full rows={len(replay)}/{replay.capacity} "
@@ -406,8 +438,8 @@ def main() -> None:
                 generator=generator,
             ):
                 for key, value in episode_metric.items():
-                    writer.add_scalar(key, value, step * args.num_envs)
-            vector_step = step + 1
+                    writer.add_scalar(key, value, vector_step * args.num_envs)
+            vector_step += 1
             if len(replay) == replay.capacity:
                 save_networks(run_dir, learner=learner, vector_step=vector_step, generator=generator)
                 save_buffer(run_dir, learner=learner, replay=replay, vector_step=vector_step)
@@ -438,9 +470,9 @@ def main() -> None:
                 # exact resume, even if the update cadence is changed later.
                 save_networks(run_dir, learner=learner, vector_step=vector_step, generator=generator)
                 save_buffer(run_dir, learner=learner, replay=replay, vector_step=vector_step)
-            if step % 50 == 0:
+            if training_step % 50 == 0:
                 print(
-                    f"train step={step} replay_rows={len(replay)}/{replay.capacity} "
+                    f"train step={training_step} vector_step={vector_step} replay_rows={len(replay)}/{replay.capacity} "
                     f"transitions={replay.total_transitions} updates={learner.update_count}",
                     flush=True,
                 )
