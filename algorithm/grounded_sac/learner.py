@@ -314,3 +314,42 @@ class GroundedSACLearner:
         for name in ("iql_q_optim", "iql_v_optim", "iql_actor_optim", "sac_q_optim", "sac_actor_optim"):
             getattr(self, name).load_state_dict(state[name])
         self.update_count = int(state["update_count"])
+
+    def iql_state_dict(self) -> dict[str, object]:
+        return {
+            "iql_actor": self.iql_actor.state_dict(),
+            "iql_q1": self.iql_q1.state_dict(),
+            "iql_q2": self.iql_q2.state_dict(),
+            "iql_v": self.iql_v.state_dict(),
+            "normalizer": self.normalizer.state_dict(),
+            "iql_q_optim": self.iql_q_optim.state_dict(),
+            "iql_v_optim": self.iql_v_optim.state_dict(),
+            "iql_actor_optim": self.iql_actor_optim.state_dict(),
+            "update_count": self.update_count,
+        }
+
+    def sac_state_dict(self) -> dict[str, object]:
+        return {
+            "sac_actor": self.sac_actor.state_dict(),
+            "sac_q1": self.sac_q1.state_dict(),
+            "sac_q2": self.sac_q2.state_dict(),
+            "target_q1": self.target_q1.state_dict(),
+            "target_q2": self.target_q2.state_dict(),
+            "sac_q_optim": self.sac_q_optim.state_dict(),
+            "sac_actor_optim": self.sac_actor_optim.state_dict(),
+            "update_count": self.update_count,
+        }
+
+    def load_iql_state_dict(self, state: dict[str, object]) -> None:
+        for name in ("iql_actor", "iql_q1", "iql_q2", "iql_v", "normalizer"):
+            getattr(self, name).load_state_dict(state[name])
+        for name in ("iql_q_optim", "iql_v_optim", "iql_actor_optim"):
+            getattr(self, name).load_state_dict(state[name])
+        self.update_count = int(state["update_count"])
+
+    def load_sac_state_dict(self, state: dict[str, object]) -> None:
+        for name in ("sac_actor", "sac_q1", "sac_q2", "target_q1", "target_q2"):
+            getattr(self, name).load_state_dict(state[name])
+        for name in ("sac_q_optim", "sac_actor_optim"):
+            getattr(self, name).load_state_dict(state[name])
+        self.update_count = int(state["update_count"])

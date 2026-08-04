@@ -32,55 +32,91 @@ from robots import KickPI, KickPIConfig
 CHECKPOINT_FORMAT = "grounded-sac-v1"
 
 
-def save_checkpoint(
-    path: Path,
+def _atomic_torch_save(payload: dict[str, object], path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.tmp")
+    torch.save(payload, temporary)
+    os.replace(temporary, path)
+
+
+def save_networks(
+    run_dir: Path,
     *,
     learner: GroundedSACLearner,
-    replay: VectorReplayBuffer,
     vector_step: int,
     generator: torch.Generator,
 ) -> None:
-    """Atomically replace a complete, restartable learner/replay checkpoint."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload: dict[str, object] = {
+    """Save separate IQL and SAC snapshots, matching the reference layout."""
+    common: dict[str, object] = {
         "format": CHECKPOINT_FORMAT,
-        "learner": learner.state_dict(),
-        "replay": replay.state_dict(),
         "vector_step": vector_step,
         "torch_rng_state": torch.get_rng_state(),
         "rollout_rng_state": generator.get_state(),
     }
     if torch.cuda.is_available():
-        payload["cuda_rng_states"] = torch.cuda.get_rng_state_all()
-    temporary = path.with_name(f".{path.name}.tmp")
-    torch.save(payload, temporary)
-    os.replace(temporary, path)
+        common["cuda_rng_states"] = torch.cuda.get_rng_state_all()
+    update = learner.update_count
+    _atomic_torch_save({**common, "state": learner.iql_state_dict()}, run_dir / "iql" / f"model_{update}.pt")
+    _atomic_torch_save({**common, "state": learner.sac_state_dict()}, run_dir / "sac" / f"model_{update}.pt")
     print(
-        f"checkpoint saved path={path} replay={len(replay)} updates={learner.update_count} "
-        f"vector_step={vector_step}",
+        f"networks saved update={update} vector_step={vector_step}",
         flush=True,
     )
 
 
-def load_checkpoint(
-    path: Path,
+def save_buffer(
+    run_dir: Path,
+    *,
+    learner: GroundedSACLearner,
+    replay: VectorReplayBuffer,
+    vector_step: int,
+) -> Path:
+    """Save the complete populated replay separately from network snapshots."""
+    path = run_dir / "buffer" / f"buffer_{vector_step}.pt"
+    _atomic_torch_save({
+        "format": CHECKPOINT_FORMAT,
+        "vector_step": vector_step,
+        "learner_update_count": learner.update_count,
+        "replay": replay.state_dict(),
+    }, path)
+    print(f"buffer saved path={path} replay={len(replay)}", flush=True)
+    return path
+
+
+def load_run(
+    run_dir: Path,
     *,
     learner: GroundedSACLearner,
     replay: VectorReplayBuffer,
     generator: torch.Generator,
 ) -> int:
-    payload = torch.load(path, map_location="cpu", weights_only=False)
-    if payload.get("format") != CHECKPOINT_FORMAT:
-        raise ValueError(f"unsupported checkpoint format in {path}")
-    learner.load_state_dict(payload["learner"])
-    replay.load_state_dict(payload["replay"])
-    torch.set_rng_state(payload["torch_rng_state"])
-    generator.set_state(payload["rollout_rng_state"])
-    if torch.cuda.is_available() and "cuda_rng_states" in payload:
-        torch.cuda.set_rng_state_all(payload["cuda_rng_states"])
-    vector_step = int(payload["vector_step"])
+    candidates = []
+    for path in (run_dir / "buffer").glob("buffer_*.pt"):
+        suffix = path.stem.removeprefix("buffer_")
+        if suffix.isdigit():
+            candidates.append((int(suffix), path))
+    if not candidates:
+        raise FileNotFoundError(f"no replay checkpoint under {run_dir / 'buffer'}")
+    vector_step, buffer_path = max(candidates)
+    buffer_payload = torch.load(buffer_path, map_location="cpu", weights_only=False)
+    if buffer_payload.get("format") != CHECKPOINT_FORMAT:
+        raise ValueError(f"unsupported replay checkpoint format in {buffer_path}")
+    update = int(buffer_payload["learner_update_count"])
+    iql_path = run_dir / "iql" / f"model_{update}.pt"
+    sac_path = run_dir / "sac" / f"model_{update}.pt"
+    if not iql_path.exists() or not sac_path.exists():
+        raise FileNotFoundError(f"missing network pair for replay checkpoint update {update}")
+    iql_payload = torch.load(iql_path, map_location="cpu", weights_only=False)
+    sac_payload = torch.load(sac_path, map_location="cpu", weights_only=False)
+    learner.load_iql_state_dict(iql_payload["state"])
+    learner.load_sac_state_dict(sac_payload["state"])
+    replay.load_state_dict(buffer_payload["replay"])
+    torch.set_rng_state(sac_payload["torch_rng_state"])
+    generator.set_state(sac_payload["rollout_rng_state"])
+    if torch.cuda.is_available() and "cuda_rng_states" in sac_payload:
+        torch.cuda.set_rng_state_all(sac_payload["cuda_rng_states"])
     print(
-        f"checkpoint loaded path={path} replay={len(replay)} updates={learner.update_count} "
+        f"run loaded path={run_dir} replay={len(replay)} updates={learner.update_count} "
         f"vector_step={vector_step}",
         flush=True,
     )
@@ -223,9 +259,7 @@ def main() -> None:
     parser.add_argument("--exploration-std", type=float, default=0.05)
     parser.add_argument("--teacher-intervention-prob", type=float, default=0.0)
     parser.add_argument("--logdir", default="runs/grounded_sac")
-    parser.add_argument("--checkpoint-dir", default="checkpoints/grounded_sac")
-    parser.add_argument("--checkpoint-every", type=int, default=5_000, help="learner updates between full-buffer checkpoints; 0 disables periodic saves")
-    parser.add_argument("--resume", type=Path, default=None, help="resume learner/replay from a checkpoint")
+    parser.add_argument("--resume", type=Path, default=None, help="resume from a run directory containing buffer/, sac/, and iql/")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--no-viewer", action="store_true")
     args = parser.parse_args()
@@ -250,13 +284,13 @@ def main() -> None:
     )
     learner = GroundedSACLearner(config, replay)
     collector = Collector(env, replay, learner, TeacherActor(env))
-    writer = SummaryWriter(args.logdir)
-    checkpoint_path = Path(args.checkpoint_dir) / "latest.pt"
+    run_dir = Path(args.logdir)
+    writer = SummaryWriter(run_dir / "tb")
     generator = torch.Generator(device=gs.device).manual_seed(args.seed + 1)
     vector_step = 0
     try:
         if args.resume is not None:
-            vector_step = load_checkpoint(args.resume, learner=learner, replay=replay, generator=generator)
+            vector_step = load_run(args.resume, learner=learner, replay=replay, generator=generator)
         else:
             collect_initial_demos(collector, args.demo_episodes)
             learner.fit_normalizer_once()
@@ -274,10 +308,18 @@ def main() -> None:
                         f"actor={metrics['iql/actor_loss'].item():.5f}",
                         flush=True,
                     )
-            save_checkpoint(checkpoint_path, learner=learner, replay=replay, vector_step=vector_step, generator=generator)
+            save_networks(run_dir, learner=learner, vector_step=vector_step, generator=generator)
+            save_buffer(run_dir, learner=learner, replay=replay, vector_step=vector_step)
 
         update_budget = 0.0
         for step in range(vector_step, args.steps):
+            if len(replay) == replay.capacity:
+                print(
+                    f"replay buffer already full rows={len(replay)}/{replay.capacity} "
+                    f"transitions={replay.total_transitions}; terminating cleanly",
+                    flush=True,
+                )
+                break
             for episode_metric in collector.step(
                 intervention_probability=args.teacher_intervention_prob,
                 exploration_std=config.exploration_std,
@@ -285,6 +327,16 @@ def main() -> None:
             ):
                 for key, value in episode_metric.items():
                     writer.add_scalar(key, value, step * args.num_envs)
+            vector_step = step + 1
+            if len(replay) == replay.capacity:
+                save_networks(run_dir, learner=learner, vector_step=vector_step, generator=generator)
+                save_buffer(run_dir, learner=learner, replay=replay, vector_step=vector_step)
+                print(
+                    f"replay buffer full rows={len(replay)}/{replay.capacity} "
+                    f"transitions={replay.total_transitions}; terminating cleanly",
+                    flush=True,
+                )
+                break
             update_budget += args.updates_per_vector_step
             while update_budget >= 1.0:
                 metrics = learner.update()
@@ -298,15 +350,25 @@ def main() -> None:
                         f"q_h350={metrics['sac/q_h350']:.5f}",
                         flush=True,
                     )
-                if args.checkpoint_every and learner.update_count % args.checkpoint_every == 0:
-                    save_checkpoint(checkpoint_path, learner=learner, replay=replay, vector_step=step + 1, generator=generator)
+                if learner.update_count % 1_000 == 0:
+                    save_networks(run_dir, learner=learner, vector_step=vector_step, generator=generator)
                 update_budget -= 1.0
+            if vector_step % 20_000 == 0:
+                # A buffer snapshot always has matching network snapshots for
+                # exact resume, even if the update cadence is changed later.
+                save_networks(run_dir, learner=learner, vector_step=vector_step, generator=generator)
+                save_buffer(run_dir, learner=learner, replay=replay, vector_step=vector_step)
             if step % 50 == 0:
-                print(f"train step={step} replay={len(replay)} updates={learner.update_count}", flush=True)
-            vector_step = step + 1
-        save_checkpoint(checkpoint_path, learner=learner, replay=replay, vector_step=vector_step, generator=generator)
+                print(
+                    f"train step={step} replay_rows={len(replay)}/{replay.capacity} "
+                    f"transitions={replay.total_transitions} updates={learner.update_count}",
+                    flush=True,
+                )
+        save_networks(run_dir, learner=learner, vector_step=vector_step, generator=generator)
+        save_buffer(run_dir, learner=learner, replay=replay, vector_step=vector_step)
     except KeyboardInterrupt:
-        save_checkpoint(checkpoint_path, learner=learner, replay=replay, vector_step=vector_step, generator=generator)
+        save_networks(run_dir, learner=learner, vector_step=vector_step, generator=generator)
+        save_buffer(run_dir, learner=learner, replay=replay, vector_step=vector_step)
         raise
     finally:
         writer.close()

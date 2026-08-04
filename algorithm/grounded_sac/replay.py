@@ -41,6 +41,7 @@ class VectorReplayBuffer:
         self.human_suffix = torch.zeros(capacity, dtype=torch.bool, device=self.device)
         self.position = 0
         self.size = 0
+        self.total_transitions = 0
 
     def __len__(self) -> int:
         return self.size
@@ -57,6 +58,7 @@ class VectorReplayBuffer:
         self.human_suffix[indices] = False
         self.position = (self.position + n) % self.capacity
         self.size = min(self.capacity, self.size + n)
+        self.total_transitions += n
         return indices
 
     @torch.no_grad()
@@ -96,6 +98,7 @@ class VectorReplayBuffer:
         return {
             "capacity": self.capacity,
             "size": self.size,
+            "total_transitions": self.total_transitions,
             "fields": {
                 name: getattr(self, name)[indices].detach().cpu()
                 for name in ReplayBatch.__dataclass_fields__
@@ -117,3 +120,4 @@ class VectorReplayBuffer:
             getattr(self, name)[:size] = value.to(self.device)
         self.size = size
         self.position = size % self.capacity
+        self.total_transitions = int(state.get("total_transitions", size))
