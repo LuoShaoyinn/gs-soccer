@@ -1,4 +1,4 @@
-"""Train no-fence human-grounded vector SAC on 256 floor-kick environments.
+"""Train no-fence human-grounded vector SAC on 32 floor-kick environments.
 
 The pretrained teacher is used only to record the initial successful
 human-equivalent demonstrations (and optionally to simulate later human
@@ -169,7 +169,7 @@ class Collector:
         self.completed = 0
         self.invalid_transitions = 0
         self.teacher_takeover = torch.zeros(env.num_envs, dtype=torch.bool, device=gs.device)
-        # Keep one fixed half of the vector purely autonomous.  The remaining
+        # Keep one fixed half of the vector purely autonomous. The remaining
         # half retains sticky probabilistic teacher rescue, providing both
         # irrecoverable failures and recoverable intervention trajectories.
         self.teacher_rescue_enabled = torch.zeros(env.num_envs, dtype=torch.bool, device=gs.device)
@@ -324,12 +324,14 @@ def collect_initial_demos(collector: Collector, demo_episodes: int) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--actor", default="refs/kick_ball_0625/20260624_144537_from20260624_111401/exported/actor.onnx")
-    parser.add_argument("--num-envs", type=int, default=256)
+    parser.add_argument("--num-envs", type=int, default=32)
     parser.add_argument("--steps", type=int, default=10_000)
     parser.add_argument("--demo-episodes", type=int, default=2_000)
     parser.add_argument("--pretrain-updates", type=int, default=2_000)
-    parser.add_argument("--updates-per-vector-step", type=float, default=1.0)
-    parser.add_argument("--exploration-std", type=float, default=0.05)
+    # Each simulator advance contributes 32 real transitions, followed by
+    # 128 learner updates from replay.
+    parser.add_argument("--updates-per-vector-step", type=float, default=128.0)
+    parser.add_argument("--exploration-std", type=float, default=0.01)
     parser.add_argument("--teacher-intervention-prob", type=float, default=0.0)
     parser.add_argument("--logdir", default="runs/grounded_sac")
     restore_group = parser.add_mutually_exclusive_group()
@@ -338,10 +340,10 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--no-viewer", action="store_true")
     args = parser.parse_args()
-    if args.num_envs != 256:
-        raise ValueError("this revised fall experiment is intentionally configured for 256 environments")
+    if args.num_envs != 32:
+        raise ValueError("this revised fall experiment is intentionally configured for 32 environments")
     torch.manual_seed(args.seed)
-    print("initializing Genesis scene (256 environments: 128 autonomous / 128 rescue-enabled)...", flush=True)
+    print("initializing Genesis scene (32 environments: 16 autonomous / 16 rescue-enabled)...", flush=True)
     gs.init(backend=gs.gpu, performance_mode=True, logging_level="warning")
     env = make_env(str(Path(args.actor)), args.num_envs, args.no_viewer)
     print(f"Genesis scene ready on {gs.device}; allocating replay...", flush=True)

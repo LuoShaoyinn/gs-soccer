@@ -110,7 +110,7 @@ the teacher then controls that environment through the end of its episode.
 # Optional explicit conversion; normal teacher loading performs it if actor.pt is absent.
 uv run --extra rocm python convert_kick_actor.py refs/kick_ball_0625/.../actor.onnx
 
-# Uses 256 Genesis environments: 128 autonomous and 128 rescue-enabled.
+# Uses 32 Genesis environments: 16 autonomous and 16 rescue-enabled.
 uv run --extra rocm python train_grounded_sac.py --no-viewer \
   --teacher-intervention-prob 0.01
 ```
