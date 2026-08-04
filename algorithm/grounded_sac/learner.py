@@ -198,6 +198,12 @@ class GroundedSACLearner:
             "iql/advantage": advantage.mean().detach(),
         }
 
+    def pretrain_iql_update(self, batch: ReplayBatch) -> dict[str, torch.Tensor]:
+        """Run one standalone IQL pretraining update and advance checkpoints."""
+        metrics = self._update_iql(batch)
+        self.update_count += 1
+        return metrics
+
     def _floor_loss(self, batch: ReplayBatch) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         obs = batch.observation
         with torch.no_grad():

@@ -230,12 +230,49 @@ class Collector:
 
 
 def collect_initial_demos(collector: Collector, demo_episodes: int) -> None:
-    """Collect the requested complete, successful, fully-human trajectories."""
+    """Store only complete successful teacher trajectories in replay.
 
-    collector.human_suffix_limit = demo_episodes
+    Failed teacher attempts are staged only until their terminal step, then
+    discarded.  This mirrors the fixed successful-demonstration dataset and
+    prevents unsuccessful collection attempts from consuming replay capacity.
+    """
+
+    def cpu_row(batch: ReplayBatch, env_id: int) -> ReplayBatch:
+        return ReplayBatch(**{
+            name: getattr(batch, name)[env_id : env_id + 1].detach().cpu().clone()
+            for name in ReplayBatch.__dataclass_fields__
+        })
+
+    collector.episodes = [[] for _ in range(collector.env.num_envs)]
+    collector.teacher_takeover.zero_()
     vector_steps = 0
     while collector.successful_human_suffixes < demo_episodes:
-        collector.step(force_human=True)
+        state = collector.env.get_state(collector.env.all_envs_idx)
+        action = collector.teacher.act(state)
+        next_obs, reward, terminated, truncated, info = collector.env.step(action)
+        done = (terminated | truncated).squeeze(1)
+        success = info["success"].bool()
+        batch = ReplayBatch(
+            observation=collector.obs, action=action, reward=reward.squeeze(1),
+            next_observation=next_obs, success=success, terminal=done,
+            human_suffix=torch.zeros_like(done),
+        )
+        for env_id in range(collector.env.num_envs):
+            collector.episodes[env_id].append(cpu_row(batch, env_id))
+            if not bool(done[env_id]):
+                continue
+            episode = collector.episodes[env_id]
+            if bool(success[env_id]) and collector.successful_human_suffixes < demo_episodes:
+                successful_batch = ReplayBatch(**{
+                    name: torch.cat([getattr(row, name) for row in episode], dim=0)
+                    for name in ReplayBatch.__dataclass_fields__
+                })
+                ids = collector.replay.add_batch(successful_batch)
+                collector.replay.mark_human_suffix(ids.tolist())
+                collector.successful_human_suffixes += 1
+            collector.episodes[env_id] = []
+            collector.completed += 1
+        collector.obs = next_obs
         vector_steps += 1
         if vector_steps % 100 == 0:
             print(
@@ -243,8 +280,7 @@ def collect_initial_demos(collector: Collector, demo_episodes: int) -> None:
                 f"{collector.successful_human_suffixes}/{demo_episodes}",
                 flush=True,
             )
-    collector.human_suffix_limit = None
-    count = int(collector.replay.human_suffix[:collector.replay.size].sum())
+    count = len(collector.replay)
     print(f"Collected {demo_episodes} initial successful human demonstrations ({count} transitions).", flush=True)
 
 
@@ -296,7 +332,7 @@ def main() -> None:
             learner.fit_normalizer_once()
             print(f"starting IQL pretraining for {config.iql_pretrain_updates} updates", flush=True)
             for update in range(config.iql_pretrain_updates):
-                metrics = learner._update_iql(replay.sample(config.batch_size, learner.device, human_suffix=True))
+                metrics = learner.pretrain_iql_update(replay.sample(config.batch_size, learner.device, human_suffix=True))
                 if update % 100 == 0:
                     for key, value in metrics.items():
                         writer.add_scalar(key, value.detach().mean().item(), update)
