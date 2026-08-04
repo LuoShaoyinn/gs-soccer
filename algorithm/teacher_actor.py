@@ -20,7 +20,7 @@ class TeacherActor(Algorithm):
         raise RuntimeError("TeacherActor is fixed; use act() or eval() to collect demonstrations")
 
     def eval(self, steps: int):
-        observations, actions, rewards, infos = [], [], [], []
+        observations, actions, rewards, infos, mean_infos = [], [], [], [], []
         self.env.reset()
         for _ in range(steps):
             state = self.env.get_state(self.env.all_envs_idx)
@@ -30,6 +30,11 @@ class TeacherActor(Algorithm):
             actions.append(action)
             rewards.append(reward)
             infos.append(info)
+            mean_infos.append({
+                key: value.detach().mean().cpu().item()
+                if hasattr(value, "detach") else value
+                for key, value in info.items()
+            })
             if terminated.any() or truncated.any():
                 break
         return {
@@ -37,4 +42,5 @@ class TeacherActor(Algorithm):
             "actions": actions,
             "rewards": rewards,
             "infos": infos,
+            "mean_infos": mean_infos,
         }

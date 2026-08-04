@@ -72,7 +72,7 @@ uv run python kick_sim2sim.py --no-viewer
 
 This branch adds `FloorIQLMDP` and `TeacherActor`. The floor task places the
 ball at `x=1.0 m`, commands a forward kick, succeeds when `delta_x > 0.1 m`,
-returns `1.0` on success and `-0.1` per non-success step, and truncates after
+returns `1.0` on success and `-1/350` per non-success step, and truncates after
 350 policy steps. Each reset randomizes robot `x/y` by ±0.05 m and yaw by ±10°;
 the ball is placed 1 m along the robot's initial forward frame. Its
 learner-facing observation is the 646-D teacher input plus a

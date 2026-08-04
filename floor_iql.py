@@ -48,7 +48,7 @@ def main():
         new_done = done & ~finished
         if new_done.any():
             done_idx = torch.as_tensor(new_done, dtype=torch.bool, device=reward.device)
-            print(f"episode_end step={step + 1} envs={np.flatnonzero(new_done).tolist()} success={info['success'][done_idx].tolist()} timeout={info['timeout'][done_idx].tolist()} reward={reward.squeeze(1)[done_idx].tolist()} episode_return={info['episode_return'][done_idx].tolist()}")
+            print(f"episode_end step={step + 1} envs={np.flatnonzero(new_done).tolist()} success_mean={info['success'][done_idx].detach().float().mean().item():.3f} timeout_mean={info['timeout'][done_idx].detach().float().mean().item():.3f} reward_mean={reward.squeeze(1)[done_idx].detach().mean().item():+.6f} episode_return_mean={info['episode_return'][done_idx].detach().mean().item():+.6f}")
             finished |= done
         if finished.all():
             break

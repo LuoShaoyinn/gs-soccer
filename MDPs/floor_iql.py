@@ -16,7 +16,8 @@ class FloorIQLConfig(KickSim2SimConfig):
     kick_dir_yaw: float = 0.0
     success_delta_x: float = 0.1
     max_steps: int = 350
-    step_penalty: float = -0.1
+    # 350 * (-1 / 350) = -1.0 on a timeout episode.
+    step_penalty: float = -1.0 / 350.0
     robot_x_randomization: float = 0.05
     robot_y_randomization: float = 0.05
     robot_yaw_randomization: float = 0.1745329252  # 10 degrees
