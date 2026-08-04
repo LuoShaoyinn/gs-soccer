@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import Mapping
 
 import torch
 import torch.nn.functional as F
@@ -31,6 +30,20 @@ def _td_loss(prediction: torch.Tensor, target: torch.Tensor) -> tuple[torch.Tens
     return smooth + 0.5 * mse, smooth, mse
 
 
+def _assert_finite(name: str, *tensors: torch.Tensor) -> None:
+    for tensor in tensors:
+        if tensor.is_floating_point() and not bool(torch.isfinite(tensor).all()):
+            bad = int((~torch.isfinite(tensor)).sum().item())
+            raise FloatingPointError(f"non-finite {name}: {bad}/{tensor.numel()} values")
+
+
+def _lower_bound(horizons: int, gamma: float, step_penalty: float, device: torch.device) -> torch.Tensor:
+    h = torch.arange(1, horizons + 1, dtype=torch.float32, device=device)
+    if gamma == 1.0:
+        return h * step_penalty
+    return step_penalty * (1.0 - gamma ** h) / (1.0 - gamma)
+
+
 def _cat_batches(*batches: ReplayBatch) -> ReplayBatch:
     return ReplayBatch(**{
         name: torch.cat([getattr(batch, name) for batch in batches], dim=0)
@@ -52,13 +65,14 @@ class GroundedSACLearner:
         self.replay = replay
         self.device = torch.device(config.device)
         self.normalizer = FrozenObservationNormalizer(config.observation_dim).to(self.device)
+        self.lower_bound = _lower_bound(config.horizons, config.gamma, config.step_penalty, self.device)
 
         actor_args = (config.observation_dim, config.action_dim, config.hidden_dim)
-        critic_args = (*actor_args, config.horizons)
+        critic_args = (*actor_args, self.lower_bound)
         self.iql_actor = VectorActor(*actor_args).to(self.device)
         self.iql_q1 = VectorCritic(*critic_args).to(self.device)
         self.iql_q2 = VectorCritic(*critic_args).to(self.device)
-        self.iql_v = VectorCritic(config.observation_dim, 0, config.hidden_dim, config.horizons).to(self.device)
+        self.iql_v = VectorCritic(config.observation_dim, 0, config.hidden_dim, self.lower_bound).to(self.device)
         # A value network takes only state; its zero-width action input is
         # explicit and keeps model construction uniform with Q networks.
 
@@ -130,7 +144,20 @@ class GroundedSACLearner:
         if self.cfg.horizons > 1:
             can_continue = (~terminal if mask_terminal else torch.ones_like(terminal)).to(target.dtype)
             target[:, 1:] += self.cfg.gamma * continuation[:, :-1] * can_continue[:, None]
-        return torch.where(success[:, None], torch.ones_like(target), target).detach()
+        target = torch.where(success[:, None], torch.ones_like(target), target)
+        target = torch.maximum(target, self.lower_bound[None, :])
+        return target.clamp_max(1.0).detach()
+
+    def _optimizer_step(self, optimizer: torch.optim.Optimizer, loss: torch.Tensor, parameters, name: str) -> None:
+        if not torch.isfinite(loss):
+            raise FloatingPointError(f"non-finite {name} loss before optimizer step")
+        optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        norm = torch.nn.utils.clip_grad_norm_(parameters, self.cfg.max_grad_norm)
+        if not torch.isfinite(norm):
+            raise FloatingPointError(f"non-finite {name} gradient norm")
+        optimizer.step()
+        _assert_finite(f"{name} parameters after optimizer step", *(parameter for group in optimizer.param_groups for parameter in group["params"]))
 
     def _update_iql(self, batch: ReplayBatch) -> dict[str, torch.Tensor]:
         obs, next_obs, action = batch.observation, batch.next_observation, batch.action
@@ -143,9 +170,7 @@ class GroundedSACLearner:
         q_loss_2, q_smooth_2, q_mse_2 = _td_loss(q2, target)
         q_rank = _rank_loss(q1, self.cfg.step_penalty) + _rank_loss(q2, self.cfg.step_penalty)
         q_loss = q_loss_1 + q_loss_2 + self.cfg.rank_weight * q_rank
-        self.iql_q_optim.zero_grad(set_to_none=True)
-        q_loss.backward()
-        self.iql_q_optim.step()
+        self._optimizer_step(self.iql_q_optim, q_loss, [*self.iql_q1.parameters(), *self.iql_q2.parameters()], "iql_q")
 
         value = self._value(obs)
         with torch.no_grad():
@@ -155,18 +180,14 @@ class GroundedSACLearner:
         v_expectile = (expectile_weight * difference.square()).mean()
         v_rank = _rank_loss(value, self.cfg.step_penalty)
         v_loss = v_expectile + self.cfg.rank_weight * v_rank
-        self.iql_v_optim.zero_grad(set_to_none=True)
-        v_loss.backward()
-        self.iql_v_optim.step()
+        self._optimizer_step(self.iql_v_optim, v_loss, self.iql_v.parameters(), "iql_v")
 
         predicted = self.iql_action(obs)
         with torch.no_grad():
             advantage = (self._iql_q_min(obs, action) - self._value(obs)).mean(dim=1)
             weight = torch.exp(self.cfg.awr_beta * advantage).clamp_max(self.cfg.awr_max_weight)
         actor_loss = (weight[:, None] * (predicted - action).square()).mean()
-        self.iql_actor_optim.zero_grad(set_to_none=True)
-        actor_loss.backward()
-        self.iql_actor_optim.step()
+        self._optimizer_step(self.iql_actor_optim, actor_loss, self.iql_actor.parameters(), "iql_actor")
         return {
             "iql/critic_td": (q_loss_1 + q_loss_2).detach(),
             "iql/critic_smooth_l1": (q_smooth_1 + q_smooth_2).detach(),
@@ -211,15 +232,11 @@ class GroundedSACLearner:
         # and metric to make fence enablement a local change later.
         outside = torch.zeros((), device=self.device)
         critic_loss = td1 + td2 + self.cfg.rank_weight * rank + self.cfg.floor_weight * floor + self.cfg.outside_weight * outside
-        self.sac_q_optim.zero_grad(set_to_none=True)
-        critic_loss.backward()
-        self.sac_q_optim.step()
+        self._optimizer_step(self.sac_q_optim, critic_loss, [*self.sac_q1.parameters(), *self.sac_q2.parameters()], "sac_q")
 
         policy_action = self.sac_action(obs)
         actor_loss = -self._sac_q_min(obs, policy_action).mean()
-        self.sac_actor_optim.zero_grad(set_to_none=True)
-        actor_loss.backward()
-        self.sac_actor_optim.step()
+        self._optimizer_step(self.sac_actor_optim, actor_loss, self.sac_actor.parameters(), "sac_actor")
 
         with torch.no_grad():
             for target_q, online_q in ((self.target_q1, self.sac_q1), (self.target_q2, self.sac_q2)):
@@ -245,22 +262,27 @@ class GroundedSACLearner:
         }
         metrics.update(floor_metrics)
         for horizon in MONITOR_HORIZONS:
-            metrics[f"sac/q_h{horizon}"] = q_sac[:, horizon - 1].mean().detach()
+            if horizon <= self.cfg.horizons:
+                metrics[f"sac/q_h{horizon}"] = q_sac[:, horizon - 1].mean().detach()
         return metrics
 
     def update(self) -> dict[str, float]:
         if len(self.replay) < self.cfg.batch_size:
             raise RuntimeError("not enough replay transitions")
         human_batch = self.replay.sample(self.cfg.batch_size, self.device, human_suffix=True)
+        _assert_finite("human replay batch", human_batch.observation, human_batch.action, human_batch.reward, human_batch.next_observation)
         iql_metrics = self._update_iql(human_batch)
         td_batch = self.replay.sample(self.cfg.batch_size, self.device)
+        _assert_finite("SAC TD replay batch", td_batch.observation, td_batch.action, td_batch.reward, td_batch.next_observation)
         # In the no-fence revision, floor only supported successful human
         # suffixes. Uniform replay rows retain their ordinary SAC TD loss.
         floor_human = self.replay.sample(self.cfg.batch_size, self.device, human_suffix=True)
+        _assert_finite("floor replay batch", floor_human.observation, floor_human.action, floor_human.reward, floor_human.next_observation)
         sac_metrics = self._update_sac(td_batch, floor_human, len(floor_human.reward))
         with torch.no_grad():
             reference = self._iql_q_min(human_batch.observation, self.iql_action(human_batch.observation))
         for horizon in MONITOR_HORIZONS:
-            iql_metrics[f"iql/q_ref_h{horizon}"] = reference[:, horizon - 1].mean().detach()
+            if horizon <= self.cfg.horizons:
+                iql_metrics[f"iql/q_ref_h{horizon}"] = reference[:, horizon - 1].mean().detach()
         self.update_count += 1
         return {key: float(value.detach().mean().cpu()) for key, value in {**iql_metrics, **sac_metrics}.items()}

@@ -44,12 +44,18 @@ class VectorActor(nn.Module):
 
 
 class VectorCritic(nn.Module):
-    """Direct-state critic: no image encoder is used in this experiment."""
+    """Direct-state vector critic with task-valid per-horizon bounds."""
 
-    def __init__(self, observation_dim: int, action_dim: int, hidden_dim: int, horizons: int) -> None:
+    def __init__(self, observation_dim: int, action_dim: int, hidden_dim: int, lower_bound: torch.Tensor) -> None:
         super().__init__()
+        horizons = len(lower_bound)
+        self.register_buffer("lower_bound", lower_bound.detach().clone())
         self.trunk = _trunk(observation_dim + action_dim, hidden_dim)
         self.output = nn.Linear(hidden_dim, horizons)
 
     def forward(self, observation: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
-        return self.output(self.trunk(torch.cat((observation, action), dim=-1)))
+        # Every return in this task lies between the all-step-penalty return
+        # and the immediate-success return of one.  Bounding the head blocks
+        # invalid optimistic values from entering the bootstrap loop.
+        unit = torch.sigmoid(self.output(self.trunk(torch.cat((observation, action), dim=-1))))
+        return self.lower_bound + (1.0 - self.lower_bound) * unit

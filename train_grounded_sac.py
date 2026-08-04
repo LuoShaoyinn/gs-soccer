@@ -50,6 +50,7 @@ class Collector:
         self.obs, _ = env.reset()
         self.episodes: list[list[tuple[int, bool]]] = [[] for _ in range(env.num_envs)]
         self.completed = 0
+        self.invalid_transitions = 0
         self.teacher_takeover = torch.zeros(env.num_envs, dtype=torch.bool, device=gs.device)
         self.human_suffix_limit: int | None = None
         self.successful_human_suffixes = 0
@@ -69,6 +70,18 @@ class Collector:
         that environment's terminal transition are teacher actions.
         """
 
+        # A failed physics state must never be fed through the policy or into
+        # replay. Reset it before proposing an action.
+        invalid_state = ~torch.isfinite(self.obs).all(dim=1)
+        if invalid_state.any():
+            invalid_idx = torch.nonzero(invalid_state).squeeze(1)
+            reset_obs, _ = self.env.reset(invalid_idx)
+            self.obs[invalid_idx] = reset_obs
+            for env_id in invalid_idx.tolist():
+                self.episodes[env_id] = []
+            self.teacher_takeover[invalid_idx] = False
+            self.invalid_transitions += len(invalid_idx)
+            print(f"nan_guard reset {len(invalid_idx)} non-finite pre-action environments; total={self.invalid_transitions}", flush=True)
         if force_human:
             human_mask = torch.ones_like(self.teacher_takeover)
         else:
@@ -93,14 +106,39 @@ class Collector:
         next_obs, reward, terminated, truncated, info = self.env.step(executed)
         done = (terminated | truncated).squeeze(1)
         success = info["success"].bool()
+        valid = (
+            torch.isfinite(self.obs).all(dim=1)
+            & torch.isfinite(executed).all(dim=1)
+            & torch.isfinite(reward.squeeze(1))
+            & torch.isfinite(next_obs).all(dim=1)
+        )
+        if (~valid).any():
+            invalid_idx = torch.nonzero(~valid).squeeze(1)
+            reset_obs, _ = self.env.reset(invalid_idx)
+            next_obs = next_obs.clone()
+            next_obs[invalid_idx] = reset_obs
+            self.teacher_takeover[invalid_idx] = False
+            for env_id in invalid_idx.tolist():
+                self.episodes[env_id] = []
+            self.invalid_transitions += len(invalid_idx)
+            print(f"nan_guard dropped {len(invalid_idx)} non-finite transitions; total={self.invalid_transitions}", flush=True)
         batch = ReplayBatch(
             observation=self.obs.detach(), action=executed.detach(), reward=reward.squeeze(1).detach(),
             next_observation=next_obs.detach(), success=success.detach(), terminal=done.detach(),
             human_suffix=torch.zeros_like(done),
         )
-        ids = self.replay.add_batch(batch)
+        valid_idx = torch.nonzero(valid).squeeze(1)
+        stored = ReplayBatch(**{
+            name: getattr(batch, name)[valid_idx]
+            for name in ReplayBatch.__dataclass_fields__
+        })
+        ids = self.replay.add_batch(stored)
+        row_ids = dict(zip(valid_idx.tolist(), ids.tolist(), strict=True))
         rows: list[dict[str, float]] = []
-        for env_id, raw_id in enumerate(ids.tolist()):
+        for env_id in range(self.env.num_envs):
+            if not bool(valid[env_id]):
+                continue
+            raw_id = row_ids[env_id]
             self.episodes[env_id].append((raw_id, bool(human_mask[env_id])))
             if not bool(done[env_id]):
                 continue
