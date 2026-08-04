@@ -123,6 +123,29 @@ def load_run(
     return vector_step
 
 
+def restore_human_buffer(run_dir: Path, replay: VectorReplayBuffer) -> int:
+    """Load only successful human suffixes from a prior run's latest buffer."""
+    candidates = []
+    for path in (run_dir / "buffer").glob("buffer_*.pt"):
+        suffix = path.stem.removeprefix("buffer_")
+        if suffix.isdigit():
+            candidates.append((int(suffix), path))
+    if not candidates:
+        raise FileNotFoundError(f"no replay checkpoint under {run_dir / 'buffer'}")
+    _, buffer_path = max(candidates)
+    payload = torch.load(buffer_path, map_location="cpu", weights_only=False)
+    if payload.get("format") != CHECKPOINT_FORMAT:
+        raise ValueError(f"unsupported replay checkpoint format in {buffer_path}")
+    replay.load_state_dict(payload["replay"])
+    count = replay.retain_human_suffix()
+    # This is a new experiment seeded by imported demonstrations, so report
+    # collection totals relative to the restored dataset rather than its
+    # source experiment's discarded transitions.
+    replay.total_transitions = count
+    print(f"restored successful human buffer path={buffer_path} transitions={count}", flush=True)
+    return count
+
+
 def make_env(actor_path: str, num_envs: int, no_viewer: bool) -> Env:
     robot_cfg = KickPIConfig()
     field_cfg = BallFieldConfig(
@@ -282,6 +305,12 @@ def collect_initial_demos(collector: Collector, demo_episodes: int) -> None:
             )
     count = len(collector.replay)
     print(f"Collected {demo_episodes} initial successful human demonstrations ({count} transitions).", flush=True)
+    # The success target can be reached while other vector environments still
+    # hold staged demo rows.  Start SAC from fresh episode boundaries so its
+    # normal `(replay_id, intervened)` bookkeeping cannot inherit that staging.
+    collector.obs, _ = collector.env.reset()
+    collector.episodes = [[] for _ in range(collector.env.num_envs)]
+    collector.teacher_takeover.zero_()
 
 
 def main() -> None:
@@ -295,7 +324,9 @@ def main() -> None:
     parser.add_argument("--exploration-std", type=float, default=0.05)
     parser.add_argument("--teacher-intervention-prob", type=float, default=0.0)
     parser.add_argument("--logdir", default="runs/grounded_sac")
-    parser.add_argument("--resume", type=Path, default=None, help="resume from a run directory containing buffer/, sac/, and iql/")
+    restore_group = parser.add_mutually_exclusive_group()
+    restore_group.add_argument("--resume", type=Path, default=None, help="resume all learner state from a run directory containing buffer/, sac/, and iql/")
+    restore_group.add_argument("--restore-human-buffer", type=Path, default=None, help="load only successful human suffixes from a prior run, then retrain fresh IQL")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--no-viewer", action="store_true")
     args = parser.parse_args()
@@ -328,7 +359,10 @@ def main() -> None:
         if args.resume is not None:
             vector_step = load_run(args.resume, learner=learner, replay=replay, generator=generator)
         else:
-            collect_initial_demos(collector, args.demo_episodes)
+            if args.restore_human_buffer is not None:
+                restore_human_buffer(args.restore_human_buffer, replay)
+            else:
+                collect_initial_demos(collector, args.demo_episodes)
             learner.fit_normalizer_once()
             print(f"starting IQL pretraining for {config.iql_pretrain_updates} updates", flush=True)
             for update in range(config.iql_pretrain_updates):

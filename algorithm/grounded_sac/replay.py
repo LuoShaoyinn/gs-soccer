@@ -84,6 +84,20 @@ class VectorReplayBuffer:
         return self.observation[ids]
 
     @torch.no_grad()
+    def retain_human_suffix(self) -> int:
+        """Discard non-human rows and compact successful suffixes in-place."""
+        indices = torch.nonzero(self.human_suffix[:self.size], as_tuple=False).squeeze(1)
+        if len(indices) == 0:
+            raise RuntimeError("cannot retain an empty successful human-suffix replay")
+        for name in ReplayBatch.__dataclass_fields__:
+            source = getattr(self, name)[indices].clone()
+            getattr(self, name)[: len(indices)] = source
+        self.size = len(indices)
+        self.position = self.size % self.capacity
+        self.human_suffix[:self.size] = True
+        return self.size
+
+    @torch.no_grad()
     def state_dict(self) -> dict[str, object]:
         """Serialize only populated rows, compacted into chronological order.
 
