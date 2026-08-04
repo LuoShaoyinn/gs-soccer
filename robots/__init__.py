@@ -1,6 +1,7 @@
 from .robot import Robot, RobotConfig
 from .pi import PI, PIConfig
 from .mos9 import MOS9, MOS9Config
+from .kick_pi import KickPI, KickPIConfig
 
 __all__ = [
     "Robot",
@@ -9,4 +10,6 @@ __all__ = [
     "PIConfig",
     "MOS9",
     "MOS9Config",
+    "KickPI",
+    "KickPIConfig",
 ]

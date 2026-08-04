@@ -57,3 +57,23 @@ uv run --extra rocm python main.py --no-viewer      # headless
 > Note: `Model` has been renamed to `MDP`. New tasks subclass `MDP` (in
 > `MDPs/`) and must implement `reset()`. `DummyMDP` in `MDPs/dummy.py` is the
 > reference example.
+
+## Kick sim2sim
+
+The `tmp/kick-sim2sim` experiment loads the 646-input / 22-action actor from
+`refs/kick_ball_0625`, including its command/history buffers and normalized
+joint-position action mapping.
+
+```bash
+uv run python kick_sim2sim.py --no-viewer
+```
+
+## Floor-IQL teacher task
+
+The `experiment/floor-iql` branch adds a sparse floor task: the ball starts at
+`x=1.0 m`, the command always kicks forward, success is `delta_x > 0.1 m`,
+and non-success steps receive `-0.1` until timeout.
+
+```bash
+uv run python floor_iql.py --no-viewer --diagnostics
+```
