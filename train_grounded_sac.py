@@ -1,6 +1,6 @@
 """Train no-fence human-grounded vector SAC on 512 floor-kick environments.
 
-The pretrained ONNX teacher is used only to record the first 20 successful
+The pretrained teacher is used only to record the initial successful
 human-equivalent demonstrations (and optionally to simulate later human
 intervention suffixes).  It is never an SAC imitation objective.
 """
@@ -58,6 +58,7 @@ class Collector:
         self,
         *,
         intervention_probability: float = 0.0,
+        exploration_std: float = 0.0,
         generator: torch.Generator | None = None,
         force_human: bool = False,
     ) -> list[dict[str, float]]:
@@ -78,6 +79,12 @@ class Collector:
             self.teacher_takeover |= trigger
             human_mask = self.teacher_takeover
         action, _ = self.learner.controller_action(self.obs)
+        if exploration_std > 0.0 and not force_human:
+            noise = torch.randn(
+                action.shape, generator=generator, device=action.device,
+                dtype=action.dtype,
+            ) * exploration_std
+            action = (action + noise).clamp(-1.0, 1.0)
         if bool(human_mask.any()):
             teacher_action = self.teacher.act(self.env.get_state(self.env.all_envs_idx))
             executed = torch.where(human_mask[:, None], teacher_action, action)
@@ -125,7 +132,7 @@ class Collector:
 
 
 def collect_initial_demos(collector: Collector, demo_episodes: int) -> None:
-    """Collect exactly 20 complete, successful, fully-human trajectories."""
+    """Collect the requested complete, successful, fully-human trajectories."""
 
     collector.human_suffix_limit = demo_episodes
     vector_steps = 0
@@ -148,9 +155,10 @@ def main() -> None:
     parser.add_argument("--actor", default="refs/kick_ball_0625/20260624_144537_from20260624_111401/exported/actor.onnx")
     parser.add_argument("--num-envs", type=int, default=512)
     parser.add_argument("--steps", type=int, default=10_000)
-    parser.add_argument("--demo-episodes", type=int, default=20)
+    parser.add_argument("--demo-episodes", type=int, default=2_000)
     parser.add_argument("--pretrain-updates", type=int, default=2_000)
-    parser.add_argument("--updates-per-vector-step", type=float, default=10.0)
+    parser.add_argument("--updates-per-vector-step", type=float, default=1.0)
+    parser.add_argument("--exploration-std", type=float, default=0.05)
     parser.add_argument("--teacher-intervention-prob", type=float, default=0.0)
     parser.add_argument("--logdir", default="runs/grounded_sac")
     parser.add_argument("--seed", type=int, default=0)
@@ -164,6 +172,13 @@ def main() -> None:
     env = make_env(str(Path(args.actor)), args.num_envs, args.no_viewer)
     print(f"Genesis scene ready on {gs.device}; allocating replay...", flush=True)
     config = GroundedSACConfig(device=str(gs.device), iql_pretrain_updates=args.pretrain_updates)
+    config.exploration_std = args.exploration_std
+    utd = args.updates_per_vector_step * config.batch_size / args.num_envs
+    print(
+        f"batch_size={config.batch_size} updates_per_vector_step={args.updates_per_vector_step:g} "
+        f"effective_UTD={utd:g} exploration_std={config.exploration_std:g}",
+        flush=True,
+    )
     replay = VectorReplayBuffer(
         config.replay_capacity, config.observation_dim, config.action_dim,
         device=gs.device,
@@ -194,6 +209,7 @@ def main() -> None:
         for step in range(args.steps):
             for episode_metric in collector.step(
                 intervention_probability=args.teacher_intervention_prob,
+                exploration_std=config.exploration_std,
                 generator=generator,
             ):
                 for key, value in episode_metric.items():

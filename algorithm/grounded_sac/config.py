@@ -22,7 +22,8 @@ class GroundedSACConfig:
     expectile: float = 0.7
     awr_beta: float = 3.0
     awr_max_weight: float = 100.0
-    batch_size: int = 1024
+    batch_size: int = 4_096
+    exploration_std: float = 0.05
     # Lean GPU replay: ~9.85 GiB at 2M rows for 649-D obs/next-obs, one 22-D
     # executed action, scalar reward, and three boolean labels.
     replay_capacity: int = 2_000_000

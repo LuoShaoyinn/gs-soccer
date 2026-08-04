@@ -101,7 +101,7 @@ The learner uses 350-head Q/V vectors (one head per policy step to timeout),
 moving human-only IQL (`τ=0.7`), a
 detached executable reference `min(Q_IQL,1,Q_IQL,2)(s, π_IQL(s))`, standard
 vector SAC TD, squared reference-floor violations, and horizon ranking. The
-initial 20 successful teacher demonstrations fit and freeze the observation
+initial 2,000 successful teacher demonstrations fit and freeze the observation
 normalizer; IQL never trains from SAC replay. A fake human intervention is
 sticky: an exploring environment triggers with probability `p` each step, and
 the teacher then controls that environment through the end of its episode.

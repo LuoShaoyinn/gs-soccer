@@ -254,9 +254,10 @@ class GroundedSACLearner:
         human_batch = self.replay.sample(self.cfg.batch_size, self.device, human_suffix=True)
         iql_metrics = self._update_iql(human_batch)
         td_batch = self.replay.sample(self.cfg.batch_size, self.device)
-        familiar_batch = self.replay.sample(self.cfg.batch_size // 2, self.device)
-        floor_human = self.replay.sample(self.cfg.batch_size // 2, self.device, human_suffix=True)
-        sac_metrics = self._update_sac(td_batch, _cat_batches(floor_human, familiar_batch), len(floor_human.reward))
+        # In the no-fence revision, floor only supported successful human
+        # suffixes. Uniform replay rows retain their ordinary SAC TD loss.
+        floor_human = self.replay.sample(self.cfg.batch_size, self.device, human_suffix=True)
+        sac_metrics = self._update_sac(td_batch, floor_human, len(floor_human.reward))
         with torch.no_grad():
             reference = self._iql_q_min(human_batch.observation, self.iql_action(human_batch.observation))
         for horizon in MONITOR_HORIZONS:
