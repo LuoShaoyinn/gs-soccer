@@ -41,6 +41,9 @@ class GroundedSACConfig:
     learning_rate: float = 3e-4
     iql_learning_rate: float = 3e-4
     actor_learning_rate: float = 3e-4
+    # A vector critic must not be able to hide one severely wrong horizon in
+    # the mean over 350 heads.
+    td_max_head_weight: float = 0.1
     target_tau: float = 0.005
     rank_weight: float = 0.1
     floor_weight: float = 1.0

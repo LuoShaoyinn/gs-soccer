@@ -19,10 +19,21 @@ def _rank_loss(value: torch.Tensor, max_horizon_drop: float) -> torch.Tensor:
     return torch.relu(value[:, :-1] - max_horizon_drop - value[:, 1:]).square().mean()
 
 
-def _td_loss(prediction: torch.Tensor, target: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def _td_loss(
+    prediction: torch.Tensor, target: torch.Tensor, max_head_weight: float
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Combined TD loss with an explicit worst-horizon penalty.
+
+    The usual mean losses retain broad supervision across the horizon vector.
+    ``max_head`` makes a single badly fitted head costly instead of allowing
+    it to disappear inside a 350-head reduction.
+    """
+
+    squared_error = (prediction - target).square()
     smooth = F.smooth_l1_loss(prediction, target)
-    mse = F.mse_loss(prediction, target)
-    return smooth + 0.5 * mse, smooth, mse
+    mse = squared_error.mean()
+    max_head = squared_error.max(dim=1).values.mean()
+    return smooth + 0.5 * mse + max_head_weight * max_head, smooth, mse, max_head
 
 
 def _assert_finite(name: str, *tensors: torch.Tensor) -> None:
@@ -164,8 +175,8 @@ class GroundedSACLearner:
             target = self._bellman(batch.reward, batch.success, batch.terminal, self._value(next_obs), mask_terminal=False)
         normalized = self._obs(obs)
         q1, q2 = self.iql_q1(normalized, action), self.iql_q2(normalized, action)
-        q_loss_1, q_smooth_1, q_mse_1 = _td_loss(q1, target)
-        q_loss_2, q_smooth_2, q_mse_2 = _td_loss(q2, target)
+        q_loss_1, q_smooth_1, q_mse_1, q_max_1 = _td_loss(q1, target, self.cfg.td_max_head_weight)
+        q_loss_2, q_smooth_2, q_mse_2, q_max_2 = _td_loss(q2, target, self.cfg.td_max_head_weight)
         q_rank = _rank_loss(q1, self.cfg.max_horizon_drop) + _rank_loss(q2, self.cfg.max_horizon_drop)
         q_loss = q_loss_1 + q_loss_2 + self.cfg.rank_weight * q_rank
         self._optimizer_step(self.iql_q_optim, q_loss, [*self.iql_q1.parameters(), *self.iql_q2.parameters()], "iql_q")
@@ -190,6 +201,7 @@ class GroundedSACLearner:
             "iql/critic_td": (q_loss_1 + q_loss_2).detach(),
             "iql/critic_smooth_l1": (q_smooth_1 + q_smooth_2).detach(),
             "iql/critic_mse": (q_mse_1 + q_mse_2).detach(),
+            "iql/critic_max_head_mse": (q_max_1 + q_max_2).detach(),
             "iql/expectile": v_expectile.detach(),
             "iql/actor_loss": actor_loss.detach(),
             "iql/horizon": (q_rank + v_rank).detach(),
@@ -228,8 +240,8 @@ class GroundedSACLearner:
             target = self._bellman(td_batch.reward, td_batch.success, td_batch.terminal, continuation, mask_terminal=True)
         normalized = self._obs(obs)
         q1, q2 = self.sac_q1(normalized, action), self.sac_q2(normalized, action)
-        td1, smooth1, mse1 = _td_loss(q1, target)
-        td2, smooth2, mse2 = _td_loss(q2, target)
+        td1, smooth1, mse1, max1 = _td_loss(q1, target, self.cfg.td_max_head_weight)
+        td2, smooth2, mse2, max2 = _td_loss(q2, target, self.cfg.td_max_head_weight)
         rank = _rank_loss(q1, self.cfg.max_horizon_drop) + _rank_loss(q2, self.cfg.max_horizon_drop)
         floor, floor_metrics = self._floor_loss(floor_batch)
         # No unfamiliar states exist in this revision; retain the named term
@@ -251,6 +263,7 @@ class GroundedSACLearner:
         metrics = {
             "sac/td_smooth_l1": (smooth1 + smooth2).detach(),
             "sac/td_mse": (mse1 + mse2).detach(),
+            "sac/td_max_head_mse": (max1 + max2).detach(),
             "sac/actor_loss": actor_loss.detach(),
             "sac/horizon": rank.detach(),
             "sac/outside_loss": outside,
