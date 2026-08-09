@@ -3,14 +3,7 @@ from dataclasses import dataclass
 
 @dataclass(kw_only=True)
 class GroundedSACConfig:
-    """Configuration for the first no-fence grounded SAC experiment.
-
-    The familiarity ensemble/controller is deliberately absent.  Consequently
-    every replay state is treated as familiar, the SAC controller is always
-    selected, and the outside-fence field has zero weight.  The data fields and
-    loss boundary are kept explicit so the frozen fence can be added later
-    without changing the replay format.
-    """
+    """Moving human-IQL floor plus an action-likeness critic constraint."""
 
     observation_dim: int = 649
     action_dim: int = 22
@@ -47,8 +40,14 @@ class GroundedSACConfig:
     target_tau: float = 0.005
     rank_weight: float = 0.1
     floor_weight: float = 1.0
-    outside_weight: float = 0.0
-    action_penalty: float = 1.0
+    # H(s, a) is continuously fitted on successful teacher suffixes.  Its
+    # distance labels live in per-joint standardized action coordinates.
+    action_likeness_weight: float = 1.0
+    action_likeness_noise_std: float = 1.0
+    action_likeness_noise_samples: int = 2
+    action_likeness_threshold: float = 0.7
+    action_limit_weight: float = 1.0
+    action_limit_margin: float = 1.0 / 350.0
     updates_per_env_step: float = 1.0
     iql_pretrain_updates: int = 2_000
     warmup_transitions: int = 20_000

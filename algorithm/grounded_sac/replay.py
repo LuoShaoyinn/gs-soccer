@@ -83,6 +83,12 @@ class VectorReplayBuffer:
             raise RuntimeError("no successful human suffixes have been recorded")
         return self.observation[ids]
 
+    def all_human_actions(self) -> torch.Tensor:
+        ids = torch.nonzero(self.human_suffix[:self.size], as_tuple=False).squeeze(1)
+        if len(ids) == 0:
+            raise RuntimeError("no successful human suffixes have been recorded")
+        return self.action[ids]
+
     @torch.no_grad()
     def retain_human_suffix(self) -> int:
         """Discard non-human rows and compact successful suffixes in-place."""

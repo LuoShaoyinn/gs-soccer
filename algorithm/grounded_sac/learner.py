@@ -6,7 +6,7 @@ import torch
 import torch.nn.functional as F
 
 from .config import GroundedSACConfig
-from .networks import FrozenObservationNormalizer, VectorActor, VectorCritic
+from .networks import ActionLikeness, FrozenActionNormalizer, FrozenObservationNormalizer, VectorActor, VectorCritic
 from .replay import ReplayBatch, VectorReplayBuffer
 
 
@@ -61,12 +61,11 @@ def _cat_batches(*batches: ReplayBatch) -> ReplayBatch:
 
 
 class GroundedSACLearner:
-    """Moving human IQL reference plus vector SAC, without the fence.
+    """Moving human IQL reference plus action-limited vector SAC.
 
-    IQL is updated exclusively from successful human suffix rows.  SAC gets
-    every real transition.  In this first experiment every state is considered
-    familiar, so the controller and SAC continuation are always SAC and the
-    outside-fence loss is deliberately zero.
+    IQL and H(s,a) learn only from successful teacher suffixes. SAC learns from
+    every real transition. H never enters the actor objective: it only selects
+    SAC proposals for the relative critic constraint against the IQL action.
     """
 
     def __init__(self, config: GroundedSACConfig, replay: VectorReplayBuffer) -> None:
@@ -74,6 +73,7 @@ class GroundedSACLearner:
         self.replay = replay
         self.device = torch.device(config.device)
         self.normalizer = FrozenObservationNormalizer(config.observation_dim).to(self.device)
+        self.action_normalizer = FrozenActionNormalizer(config.action_dim).to(self.device)
         self.lower_bound = _lower_bound(config.horizons, config.value_lower_bound, self.device)
 
         actor_args = (config.observation_dim, config.action_dim, config.hidden_dim, config.action_limit)
@@ -90,6 +90,9 @@ class GroundedSACLearner:
         self.sac_q2 = VectorCritic(*critic_args).to(self.device)
         self.target_q1 = copy.deepcopy(self.sac_q1).eval().requires_grad_(False)
         self.target_q2 = copy.deepcopy(self.sac_q2).eval().requires_grad_(False)
+        self.action_likeness = ActionLikeness(
+            config.observation_dim, config.action_dim, config.hidden_dim
+        ).to(self.device)
 
         self.iql_q_optim = torch.optim.Adam(
             [*self.iql_q1.parameters(), *self.iql_q2.parameters()], lr=config.iql_learning_rate
@@ -100,11 +103,15 @@ class GroundedSACLearner:
             [*self.sac_q1.parameters(), *self.sac_q2.parameters()], lr=config.learning_rate
         )
         self.sac_actor_optim = torch.optim.Adam(self.sac_actor.parameters(), lr=config.actor_learning_rate)
+        self.action_likeness_optim = torch.optim.Adam(
+            self.action_likeness.parameters(), lr=config.iql_learning_rate
+        )
         self.update_count = 0
 
     @torch.no_grad()
     def fit_normalizer_once(self) -> None:
         self.normalizer.fit(self.replay.all_human_observations().to(self.device))
+        self.action_normalizer.fit(self.replay.all_human_actions().to(self.device))
 
     def _obs(self, observation: torch.Tensor) -> torch.Tensor:
         # During initial fully-human collection, learner proposals are recorded
@@ -133,8 +140,11 @@ class GroundedSACLearner:
     def sac_action(self, observation: torch.Tensor) -> torch.Tensor:
         return self.sac_actor(self._obs(observation))
 
+    def human_likeness(self, observation: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
+        return self.action_likeness(self._obs(observation), self.action_normalizer(action))
+
     def controller_action(self, observation: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        """No-fence runtime controller: SAC is always executable for now."""
+        """The critic fence never directly overrides the executable SAC actor."""
         with torch.no_grad():
             sac = self.sac_action(observation)
             iql = self.iql_action(observation)
@@ -143,7 +153,7 @@ class GroundedSACLearner:
             "sac_proposal": sac,
             "iql_proposal": iql,
             "familiar": flags,
-            "familiarity_score": torch.zeros(len(observation), device=observation.device),
+            "familiarity_score": self.human_likeness(observation, sac),
             "familiarity_smoothed_score": torch.zeros(len(observation), device=observation.device),
             "controller_mode": torch.zeros(len(observation), dtype=torch.long, device=observation.device),
         }
@@ -208,9 +218,40 @@ class GroundedSACLearner:
             "iql/advantage": advantage.mean().detach(),
         }
 
+    def _update_action_likeness(self, batch: ReplayBatch) -> dict[str, torch.Tensor]:
+        """Fit H on teacher actions and controlled perturbations around them."""
+        obs = batch.observation
+        normalized_human = self.action_normalizer(batch.action)
+        sample_count = self.cfg.action_likeness_noise_samples
+        expanded_obs = obs[:, None, :].expand(-1, sample_count, -1)
+        noise = torch.randn(
+            len(obs), sample_count, self.cfg.action_dim, device=self.device
+        ) * self.cfg.action_likeness_noise_std
+        noisy_action = normalized_human[:, None, :] + noise
+        # RMS distance avoids making the same per-joint deviation exponentially
+        # harsher merely because this teacher has 22 outputs.
+        noisy_target = torch.exp(-0.5 * noise.square().mean(dim=-1))
+        clean_prediction = self.action_likeness(self._obs(obs), normalized_human)
+        noisy_prediction = self.action_likeness(
+            self._obs(expanded_obs.reshape(-1, self.cfg.observation_dim)),
+            noisy_action.reshape(-1, self.cfg.action_dim),
+        ).reshape(len(obs), sample_count)
+        loss = F.binary_cross_entropy(clean_prediction, torch.ones_like(clean_prediction))
+        loss = loss + F.binary_cross_entropy(noisy_prediction, noisy_target)
+        self._optimizer_step(
+            self.action_likeness_optim, self.cfg.action_likeness_weight * loss,
+            self.action_likeness.parameters(), "action_likeness",
+        )
+        return {
+            "action_likeness/loss": loss.detach(),
+            "action_likeness/human_score": clean_prediction.mean().detach(),
+            "action_likeness/noisy_score": noisy_prediction.mean().detach(),
+            "action_likeness/noisy_target": noisy_target.mean().detach(),
+        }
+
     def pretrain_iql_update(self, batch: ReplayBatch) -> dict[str, torch.Tensor]:
         """Run one standalone IQL pretraining update and advance checkpoints."""
-        metrics = self._update_iql(batch)
+        metrics = {**self._update_iql(batch), **self._update_action_likeness(batch)}
         self.update_count += 1
         return metrics
 
@@ -232,6 +273,39 @@ class GroundedSACLearner:
             "floor/fraction_above_0.01": (violations > 0.01).float().mean().detach(),
         }
 
+    def _action_limit_loss(self, observation: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+        """Push rejected SAC proposals below the moving IQL proposal.
+
+        This is intentionally not an intervention-boundary correction loss.
+        It uses no takeover event and no recorded human action ranking.
+        """
+        with torch.no_grad():
+            sac_action = self.sac_action(observation)
+            iql_action = self.iql_action(observation)
+            score = self.human_likeness(observation, sac_action)
+            rejected = score < self.cfg.action_likeness_threshold
+        normalized = self._obs(observation)
+        q1_sac = self.sac_q1(normalized, sac_action)
+        q2_sac = self.sac_q2(normalized, sac_action)
+        q1_iql = self.sac_q1(normalized, iql_action)
+        q2_iql = self.sac_q2(normalized, iql_action)
+        violation1 = torch.relu(q1_sac + self.cfg.action_limit_margin - q1_iql)
+        violation2 = torch.relu(q2_sac + self.cfg.action_limit_margin - q2_iql)
+        mask = rejected[:, None].to(violation1.dtype)
+        denominator = mask.sum().clamp_min(1.0) * self.cfg.horizons
+        loss = ((violation1.square() + violation2.square()) * mask).sum() / denominator
+        return loss, {
+            "action_limit/loss": loss.detach(),
+            "action_limit/rejected_fraction": rejected.float().mean().detach(),
+            "action_limit/sac_score": score.mean().detach(),
+            "action_limit/mean_violation": (
+                ((violation1 + violation2) * mask).sum() / (2.0 * denominator)
+            ).detach(),
+            "action_limit/sac_minus_iql_q": (
+                (torch.minimum(q1_sac, q2_sac) - torch.minimum(q1_iql, q2_iql)).mean()
+            ).detach(),
+        }
+
     def _update_sac(self, td_batch: ReplayBatch, floor_batch: ReplayBatch, human_count: int) -> dict[str, torch.Tensor]:
         obs, next_obs, action = td_batch.observation, td_batch.next_observation, td_batch.action
         with torch.no_grad():
@@ -244,10 +318,12 @@ class GroundedSACLearner:
         td2, smooth2, mse2, max2 = _td_loss(q2, target, self.cfg.td_max_head_weight)
         rank = _rank_loss(q1, self.cfg.max_horizon_drop) + _rank_loss(q2, self.cfg.max_horizon_drop)
         floor, floor_metrics = self._floor_loss(floor_batch)
-        # No unfamiliar states exist in this revision; retain the named term
-        # and metric to make fence enablement a local change later.
-        outside = torch.zeros((), device=self.device)
-        critic_loss = td1 + td2 + self.cfg.rank_weight * rank + self.cfg.floor_weight * floor + self.cfg.outside_weight * outside
+        action_limit, action_limit_metrics = self._action_limit_loss(obs)
+        critic_loss = (
+            td1 + td2 + self.cfg.rank_weight * rank
+            + self.cfg.floor_weight * floor
+            + self.cfg.action_limit_weight * action_limit
+        )
         self._optimizer_step(self.sac_q_optim, critic_loss, [*self.sac_q1.parameters(), *self.sac_q2.parameters()], "sac_q")
 
         policy_action = self.sac_action(obs)
@@ -266,7 +342,6 @@ class GroundedSACLearner:
             "sac/td_max_head_mse": (max1 + max2).detach(),
             "sac/actor_loss": actor_loss.detach(),
             "sac/horizon": rank.detach(),
-            "sac/outside_loss": outside,
             "floor/human_suffix_samples": torch.tensor(float(human_count), device=self.device),
             "floor/familiar_samples": torch.tensor(float(len(floor_batch.reward) - human_count), device=self.device),
             "comparison/inside_sac_minus_iql": (q_sac - q_iql).mean().detach(),
@@ -278,6 +353,7 @@ class GroundedSACLearner:
             "fence/return_to_familiar_fraction": torch.ones((), device=self.device),
         }
         metrics.update(floor_metrics)
+        metrics.update(action_limit_metrics)
         for horizon in MONITOR_HORIZONS:
             if horizon <= self.cfg.horizons:
                 metrics[f"sac/q_h{horizon}"] = q_sac[:, horizon - 1].mean().detach()
@@ -288,11 +364,12 @@ class GroundedSACLearner:
             raise RuntimeError("not enough replay transitions")
         human_batch = self.replay.sample(self.cfg.batch_size, self.device, human_suffix=True)
         _assert_finite("human replay batch", human_batch.observation, human_batch.action, human_batch.reward, human_batch.next_observation)
-        iql_metrics = self._update_iql(human_batch)
+        iql_metrics = {**self._update_iql(human_batch), **self._update_action_likeness(human_batch)}
         td_batch = self.replay.sample(self.cfg.batch_size, self.device)
         _assert_finite("SAC TD replay batch", td_batch.observation, td_batch.action, td_batch.reward, td_batch.next_observation)
-        # In the no-fence revision, floor only supported successful human
-        # suffixes. Uniform replay rows retain their ordinary SAC TD loss.
+        # The floor is supported only on successful teacher suffixes. Uniform
+        # replay rows retain their factual SAC TD loss and may trigger the
+        # separate action-likeness inequality.
         floor_human = self.replay.sample(self.cfg.batch_size, self.device, human_suffix=True)
         _assert_finite("floor replay batch", floor_human.observation, floor_human.action, floor_human.reward, floor_human.next_observation)
         sac_metrics = self._update_sac(td_batch, floor_human, len(floor_human.reward))
@@ -317,18 +394,21 @@ class GroundedSACLearner:
             "target_q1": self.target_q1.state_dict(),
             "target_q2": self.target_q2.state_dict(),
             "normalizer": self.normalizer.state_dict(),
+            "action_normalizer": self.action_normalizer.state_dict(),
+            "action_likeness": self.action_likeness.state_dict(),
             "iql_q_optim": self.iql_q_optim.state_dict(),
             "iql_v_optim": self.iql_v_optim.state_dict(),
             "iql_actor_optim": self.iql_actor_optim.state_dict(),
             "sac_q_optim": self.sac_q_optim.state_dict(),
             "sac_actor_optim": self.sac_actor_optim.state_dict(),
+            "action_likeness_optim": self.action_likeness_optim.state_dict(),
             "update_count": self.update_count,
         }
 
     def load_state_dict(self, state: dict[str, object]) -> None:
-        for name in ("iql_actor", "iql_q1", "iql_q2", "iql_v", "sac_actor", "sac_q1", "sac_q2", "target_q1", "target_q2", "normalizer"):
+        for name in ("iql_actor", "iql_q1", "iql_q2", "iql_v", "sac_actor", "sac_q1", "sac_q2", "target_q1", "target_q2", "normalizer", "action_normalizer", "action_likeness"):
             getattr(self, name).load_state_dict(state[name])
-        for name in ("iql_q_optim", "iql_v_optim", "iql_actor_optim", "sac_q_optim", "sac_actor_optim"):
+        for name in ("iql_q_optim", "iql_v_optim", "iql_actor_optim", "sac_q_optim", "sac_actor_optim", "action_likeness_optim"):
             getattr(self, name).load_state_dict(state[name])
         self.update_count = int(state["update_count"])
 
@@ -339,9 +419,12 @@ class GroundedSACLearner:
             "iql_q2": self.iql_q2.state_dict(),
             "iql_v": self.iql_v.state_dict(),
             "normalizer": self.normalizer.state_dict(),
+            "action_normalizer": self.action_normalizer.state_dict(),
+            "action_likeness": self.action_likeness.state_dict(),
             "iql_q_optim": self.iql_q_optim.state_dict(),
             "iql_v_optim": self.iql_v_optim.state_dict(),
             "iql_actor_optim": self.iql_actor_optim.state_dict(),
+            "action_likeness_optim": self.action_likeness_optim.state_dict(),
             "update_count": self.update_count,
         }
 
@@ -358,9 +441,9 @@ class GroundedSACLearner:
         }
 
     def load_iql_state_dict(self, state: dict[str, object]) -> None:
-        for name in ("iql_actor", "iql_q1", "iql_q2", "iql_v", "normalizer"):
+        for name in ("iql_actor", "iql_q1", "iql_q2", "iql_v", "normalizer", "action_normalizer", "action_likeness"):
             getattr(self, name).load_state_dict(state[name])
-        for name in ("iql_q_optim", "iql_v_optim", "iql_actor_optim"):
+        for name in ("iql_q_optim", "iql_v_optim", "iql_actor_optim", "action_likeness_optim"):
             getattr(self, name).load_state_dict(state[name])
         self.update_count = int(state["update_count"])
 

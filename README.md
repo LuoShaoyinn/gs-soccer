@@ -88,21 +88,27 @@ The environment `info` contains `success`, `timeout`, forward-frame `delta_x`,
 uv run python floor_iql.py --no-viewer --diagnostics
 ```
 
-## Grounded vector SAC (no fence, first experiment)
+## Grounded vector SAC with teacher-action limit
 
 `algorithm/grounded_sac/` cleanly separates the experiment into direct
-observation MLP models, a single transition replay with a successful-human
-suffix view, and the learner. It has no image encoder. The frozen familiarity
-ensemble and controller fence are deliberately deferred: all states are
-temporarily familiar, SAC always controls, and the outside-fence loss remains
-zero and explicitly logged.
+observation MLP models, a single transition replay with a successful-teacher
+suffix view, and the learner. It has no image encoder or state-familiarity
+ensemble. SAC always controls the rollout.
 
 The learner uses 350-head Q/V vectors (one head per policy step to timeout),
 moving human-only IQL (`τ=0.7`), a
 detached executable reference `min(Q_IQL,1,Q_IQL,2)(s, π_IQL(s))`, standard
-vector SAC TD, squared reference-floor violations, and horizon ranking. The
-initial 2,000 successful teacher demonstrations fit and freeze the observation
-normalizer; IQL never trains from SAC replay. A fake human intervention is
+vector SAC TD, squared reference-floor violations, and horizon ranking. A
+moving action-likeness model `H(s,a)` is trained on successful teacher suffixes
+and action-standardized Gaussian perturbations. When the current SAC proposal
+has `H(s,a)<0.7`, the critic receives the relative constraint
+`Q(s,a_IQL) >= Q(s,a_SAC) + 1/350`; `H` and IQL remain detached and the SAC
+actor still optimizes only SAC Q. There is deliberately no intervention-start
+buffer or direct `Q(s,a_H)>Q(s,a_SAC)` boundary loss.
+
+The initial 2,000 successful teacher demonstrations fit and freeze the observation
+and raw-action normalizers; IQL and `H` continue to train only from successful
+teacher suffixes and never from ordinary SAC replay. A fake human intervention is
 sticky: an exploring environment triggers with probability `p` each step, and
 the teacher then controls that environment through the end of its episode.
 

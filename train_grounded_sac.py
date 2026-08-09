@@ -1,4 +1,4 @@
-"""Train no-fence human-grounded vector SAC on 32 floor-kick environments.
+"""Train action-limited human-grounded vector SAC on 32 floor-kick environments.
 
 The pretrained teacher is used only to record the initial successful
 human-equivalent demonstrations (and optionally to simulate later human
@@ -335,6 +335,8 @@ def main() -> None:
     parser.add_argument("--updates-per-vector-step", type=float, default=128.0)
     parser.add_argument("--exploration-std", type=float, default=0.01)
     parser.add_argument("--teacher-intervention-prob", type=float, default=0.0)
+    parser.add_argument("--action-likeness-threshold", type=float, default=0.7)
+    parser.add_argument("--action-limit-weight", type=float, default=1.0)
     parser.add_argument("--logdir", default="runs/grounded_sac")
     restore_group = parser.add_mutually_exclusive_group()
     restore_group.add_argument("--resume", type=Path, default=None, help="resume all learner state from a run directory containing buffer/, sac/, and iql/")
@@ -353,10 +355,13 @@ def main() -> None:
     print(f"Genesis scene ready on {gs.device}; allocating replay...", flush=True)
     config = GroundedSACConfig(device=str(gs.device), iql_pretrain_updates=args.pretrain_updates)
     config.exploration_std = args.exploration_std
+    config.action_likeness_threshold = args.action_likeness_threshold
+    config.action_limit_weight = args.action_limit_weight
     utd = args.updates_per_vector_step * config.batch_size / args.num_envs
     print(
         f"batch_size={config.batch_size} updates_per_vector_step={args.updates_per_vector_step:g} "
-        f"effective_UTD={utd:g} exploration_std={config.exploration_std:g}",
+        f"effective_UTD={utd:g} exploration_std={config.exploration_std:g} "
+        f"H_threshold={config.action_likeness_threshold:g} action_limit_weight={config.action_limit_weight:g}",
         flush=True,
     )
     replay = VectorReplayBuffer(
