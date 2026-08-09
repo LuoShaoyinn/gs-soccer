@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -70,17 +71,83 @@ def save_buffer(
     learner: GroundedSACLearner,
     replay: VectorReplayBuffer,
     vector_step: int,
+    shard_count: int,
 ) -> Path:
-    """Save the complete populated replay separately from network snapshots."""
-    path = run_dir / "buffer" / f"buffer_{vector_step}.pt"
-    _atomic_torch_save({
+    """Save replay as an atomic directory of bounded-size shard files."""
+    path = run_dir / "buffer" / f"buffer_{vector_step}"
+    return save_replay_shards(
+        path, replay=replay, shard_count=shard_count, vector_step=vector_step,
+        learner_update_count=learner.update_count,
+    )
+
+
+def save_replay_shards(
+    path: Path,
+    *,
+    replay: VectorReplayBuffer,
+    shard_count: int,
+    vector_step: int = 0,
+    learner_update_count: int = 0,
+    human_suffix_only: bool = False,
+) -> Path:
+    """Write a replay snapshot without constructing one giant CPU object."""
+    temporary = path.with_name(f".{path.name}.tmp")
+    if temporary.exists():
+        shutil.rmtree(temporary)
+    temporary.mkdir(parents=True)
+    replay_manifest, shards = replay.iter_state_shards(
+        shard_count, human_suffix_only=human_suffix_only
+    )
+    for shard in shards:
+        torch.save(shard, temporary / f"shard_{int(shard['shard_id']):05d}.pt")
+    torch.save({
         "format": CHECKPOINT_FORMAT,
         "vector_step": vector_step,
-        "learner_update_count": learner.update_count,
-        "replay": replay.state_dict(),
-    }, path)
-    print(f"buffer saved path={path} replay={len(replay)}", flush=True)
+        "learner_update_count": learner_update_count,
+        "replay": replay_manifest,
+    }, temporary / "manifest.pt")
+    if path.exists():
+        shutil.rmtree(path)
+    os.replace(temporary, path)
+    print(
+        f"buffer saved path={path} replay={replay_manifest['size']} "
+        f"shards={replay_manifest['shard_count']}", flush=True,
+    )
     return path
+
+
+def _load_replay_snapshot(path: Path, replay: VectorReplayBuffer) -> dict[str, object]:
+    """Load either a new sharded directory or a legacy monolithic checkpoint."""
+    if path.is_dir():
+        payload = torch.load(path / "manifest.pt", map_location="cpu", weights_only=False)
+        shard_count = int(payload["replay"]["shard_count"])
+
+        def shards():
+            for shard_id in range(shard_count):
+                yield torch.load(
+                    path / f"shard_{shard_id:05d}.pt", map_location="cpu", weights_only=False
+                )
+
+        replay.load_state_shards(payload["replay"], shards())
+    else:
+        payload = torch.load(path, map_location="cpu", weights_only=False)
+        replay.load_state_dict(payload["replay"])
+    if payload.get("format") != CHECKPOINT_FORMAT:
+        raise ValueError(f"unsupported replay checkpoint format in {path}")
+    return payload
+
+
+def _latest_buffer_path(run_dir: Path) -> tuple[int, Path]:
+    candidates: list[tuple[int, Path]] = []
+    for path in (run_dir / "buffer").glob("buffer_*"):
+        suffix = path.name.removeprefix("buffer_").removesuffix(".pt")
+        if suffix.isdigit() and (path.is_dir() or path.suffix == ".pt"):
+            candidates.append((int(suffix), path))
+    if not candidates:
+        raise FileNotFoundError(f"no replay checkpoint under {run_dir / 'buffer'}")
+    # Prefer the new sharded directory if a legacy file and its converted
+    # replacement share the same vector-step suffix.
+    return max(candidates, key=lambda item: (item[0], item[1].is_dir()))
 
 
 def load_run(
@@ -90,17 +157,8 @@ def load_run(
     replay: VectorReplayBuffer,
     generator: torch.Generator,
 ) -> int:
-    candidates = []
-    for path in (run_dir / "buffer").glob("buffer_*.pt"):
-        suffix = path.stem.removeprefix("buffer_")
-        if suffix.isdigit():
-            candidates.append((int(suffix), path))
-    if not candidates:
-        raise FileNotFoundError(f"no replay checkpoint under {run_dir / 'buffer'}")
-    vector_step, buffer_path = max(candidates)
-    buffer_payload = torch.load(buffer_path, map_location="cpu", weights_only=False)
-    if buffer_payload.get("format") != CHECKPOINT_FORMAT:
-        raise ValueError(f"unsupported replay checkpoint format in {buffer_path}")
+    vector_step, buffer_path = _latest_buffer_path(run_dir)
+    buffer_payload = _load_replay_snapshot(buffer_path, replay)
     update = int(buffer_payload["learner_update_count"])
     iql_path = run_dir / "iql" / f"model_{update}.pt"
     sac_path = run_dir / "sac" / f"model_{update}.pt"
@@ -110,7 +168,6 @@ def load_run(
     sac_payload = torch.load(sac_path, map_location="cpu", weights_only=False)
     learner.load_iql_state_dict(iql_payload["state"])
     learner.load_sac_state_dict(sac_payload["state"])
-    replay.load_state_dict(buffer_payload["replay"])
     torch.set_rng_state(sac_payload["torch_rng_state"])
     generator.set_state(sac_payload["rollout_rng_state"])
     if torch.cuda.is_available() and "cuda_rng_states" in sac_payload:
@@ -123,20 +180,10 @@ def load_run(
     return vector_step
 
 
-def restore_human_buffer(run_dir: Path, replay: VectorReplayBuffer) -> int:
-    """Load only successful human suffixes from a prior run's latest buffer."""
-    candidates = []
-    for path in (run_dir / "buffer").glob("buffer_*.pt"):
-        suffix = path.stem.removeprefix("buffer_")
-        if suffix.isdigit():
-            candidates.append((int(suffix), path))
-    if not candidates:
-        raise FileNotFoundError(f"no replay checkpoint under {run_dir / 'buffer'}")
-    _, buffer_path = max(candidates)
-    payload = torch.load(buffer_path, map_location="cpu", weights_only=False)
-    if payload.get("format") != CHECKPOINT_FORMAT:
-        raise ValueError(f"unsupported replay checkpoint format in {buffer_path}")
-    replay.load_state_dict(payload["replay"])
+def restore_human_buffer(source: Path, replay: VectorReplayBuffer) -> int:
+    """Load successful suffixes from a snapshot, symlink, or prior run."""
+    buffer_path = _latest_buffer_path(source)[1] if (source / "buffer").is_dir() else source
+    _load_replay_snapshot(buffer_path, replay)
     count = replay.retain_human_suffix()
     # This is a new experiment seeded by imported demonstrations, so report
     # collection totals relative to the restored dataset rather than its
@@ -328,19 +375,29 @@ def main() -> None:
     parser.add_argument("--steps", type=int, default=10_000)
     parser.add_argument("--demo-episodes", type=int, default=2_000)
     parser.add_argument("--pretrain-updates", type=int, default=2_000)
+    parser.add_argument("--batch-size", type=int, default=4_096)
+    parser.add_argument("--replay-capacity", type=int, default=3_000_000)
+    parser.add_argument("--iql-expectile", type=float, default=0.7)
     parser.add_argument("--warmup-transitions", type=int, default=65_536,
                         help="total transitions to collect before SAC/IQL online updates")
     # At the default width, one simulator advance contributes 256 real
-    # transitions and one update consumes a 4096-row replay batch (UTD 16).
-    parser.add_argument("--updates-per-vector-step", type=float, default=1.0)
+    # transitions and four updates each consume a 4096-row batch (UTD 64).
+    parser.add_argument("--updates-per-vector-step", type=float, default=4.0)
     parser.add_argument("--exploration-std", type=float, default=0.05)
     parser.add_argument("--teacher-intervention-prob", type=float, default=0.0)
-    parser.add_argument("--action-likeness-threshold", type=float, default=0.7)
+    parser.add_argument("--action-likeness-threshold", type=float, default=0.95)
     parser.add_argument("--action-limit-weight", type=float, default=1.0)
+    parser.add_argument(
+        "--buffer-shards", type=int, default=100,
+        help="number of files in each replay snapshot directory",
+    )
     parser.add_argument("--logdir", default="runs/grounded_sac")
     restore_group = parser.add_mutually_exclusive_group()
     restore_group.add_argument("--resume", type=Path, default=None, help="resume all learner state from a run directory containing buffer/, sac/, and iql/")
-    restore_group.add_argument("--restore-human-buffer", type=Path, default=None, help="load only successful human suffixes from a prior run, then retrain fresh IQL")
+    restore_group.add_argument(
+        "--restore-human-buffer", type=Path, default=None,
+        help="load successful suffixes from a sharded snapshot, symlink, or prior run",
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--no-viewer", action="store_true")
     args = parser.parse_args()
@@ -348,6 +405,14 @@ def main() -> None:
         raise ValueError("num-envs must be a positive even number")
     if args.warmup_transitions < 0 or args.warmup_transitions % args.num_envs != 0:
         raise ValueError("warmup-transitions must be a non-negative multiple of num-envs")
+    if args.buffer_shards <= 0:
+        raise ValueError("buffer-shards must be positive")
+    if args.batch_size <= 0:
+        raise ValueError("batch-size must be positive")
+    if args.replay_capacity <= args.batch_size:
+        raise ValueError("replay-capacity must be larger than batch-size")
+    if not 0.0 < args.iql_expectile < 1.0:
+        raise ValueError("iql-expectile must be in (0, 1)")
     torch.manual_seed(args.seed)
     print(
         f"initializing Genesis scene ({args.num_envs} environments: "
@@ -357,7 +422,13 @@ def main() -> None:
     gs.init(backend=gs.gpu, performance_mode=True, logging_level="warning")
     env = make_env(str(Path(args.actor)), args.num_envs, args.no_viewer)
     print(f"Genesis scene ready on {gs.device}; allocating replay...", flush=True)
-    config = GroundedSACConfig(device=str(gs.device), iql_pretrain_updates=args.pretrain_updates)
+    config = GroundedSACConfig(
+        device=str(gs.device),
+        iql_pretrain_updates=args.pretrain_updates,
+        batch_size=args.batch_size,
+        replay_capacity=args.replay_capacity,
+        expectile=args.iql_expectile,
+    )
     config.exploration_std = args.exploration_std
     config.action_likeness_threshold = args.action_likeness_threshold
     config.action_limit_weight = args.action_limit_weight
@@ -365,6 +436,7 @@ def main() -> None:
     print(
         f"batch_size={config.batch_size} updates_per_vector_step={args.updates_per_vector_step:g} "
         f"effective_UTD={utd:g} exploration_std={config.exploration_std:g} "
+        f"replay_capacity={config.replay_capacity} iql_expectile={config.expectile:g} "
         f"H_threshold={config.action_likeness_threshold:g} action_limit_weight={config.action_limit_weight:g}",
         flush=True,
     )
@@ -386,6 +458,10 @@ def main() -> None:
                 restore_human_buffer(args.restore_human_buffer, replay)
             else:
                 collect_initial_demos(collector, args.demo_episodes)
+                save_replay_shards(
+                    run_dir / "teacher_buffer", replay=replay,
+                    shard_count=args.buffer_shards, human_suffix_only=True,
+                )
             learner.fit_normalizer_once()
             print(f"starting IQL pretraining for {config.iql_pretrain_updates} updates", flush=True)
             for update in range(config.iql_pretrain_updates):
@@ -402,7 +478,10 @@ def main() -> None:
                         flush=True,
                     )
             save_networks(run_dir, learner=learner, vector_step=vector_step, generator=generator)
-            save_buffer(run_dir, learner=learner, replay=replay, vector_step=vector_step)
+            save_buffer(
+                run_dir, learner=learner, replay=replay, vector_step=vector_step,
+                shard_count=args.buffer_shards,
+            )
 
             print(
                 f"starting replay warmup for {args.warmup_transitions} transitions "
@@ -428,7 +507,10 @@ def main() -> None:
                     )
             writer.flush()
             save_networks(run_dir, learner=learner, vector_step=vector_step, generator=generator)
-            save_buffer(run_dir, learner=learner, replay=replay, vector_step=vector_step)
+            save_buffer(
+                run_dir, learner=learner, replay=replay, vector_step=vector_step,
+                shard_count=args.buffer_shards,
+            )
 
         update_budget = 0.0
         # `steps` counts online-training vector steps. A fresh run performs
@@ -451,7 +533,10 @@ def main() -> None:
             vector_step += 1
             if len(replay) == replay.capacity:
                 save_networks(run_dir, learner=learner, vector_step=vector_step, generator=generator)
-                save_buffer(run_dir, learner=learner, replay=replay, vector_step=vector_step)
+                save_buffer(
+                    run_dir, learner=learner, replay=replay, vector_step=vector_step,
+                    shard_count=args.buffer_shards,
+                )
                 print(
                     f"replay buffer full rows={len(replay)}/{replay.capacity} "
                     f"transitions={replay.total_transitions}; terminating cleanly",
@@ -478,7 +563,10 @@ def main() -> None:
                 # A buffer snapshot always has matching network snapshots for
                 # exact resume, even if the update cadence is changed later.
                 save_networks(run_dir, learner=learner, vector_step=vector_step, generator=generator)
-                save_buffer(run_dir, learner=learner, replay=replay, vector_step=vector_step)
+                save_buffer(
+                    run_dir, learner=learner, replay=replay, vector_step=vector_step,
+                    shard_count=args.buffer_shards,
+                )
             if training_step % 50 == 0:
                 print(
                     f"train step={training_step} vector_step={vector_step} replay_rows={len(replay)}/{replay.capacity} "
@@ -486,10 +574,16 @@ def main() -> None:
                     flush=True,
                 )
         save_networks(run_dir, learner=learner, vector_step=vector_step, generator=generator)
-        save_buffer(run_dir, learner=learner, replay=replay, vector_step=vector_step)
+        save_buffer(
+            run_dir, learner=learner, replay=replay, vector_step=vector_step,
+            shard_count=args.buffer_shards,
+        )
     except KeyboardInterrupt:
         save_networks(run_dir, learner=learner, vector_step=vector_step, generator=generator)
-        save_buffer(run_dir, learner=learner, replay=replay, vector_step=vector_step)
+        save_buffer(
+            run_dir, learner=learner, replay=replay, vector_step=vector_step,
+            shard_count=args.buffer_shards,
+        )
         raise
     finally:
         writer.close()

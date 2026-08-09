@@ -118,5 +118,22 @@ uv run --extra rocm python convert_kick_actor.py refs/kick_ball_0625/.../actor.o
 
 # Uses 256 Genesis environments: 128 autonomous and 128 rescue-enabled.
 uv run --extra rocm python train_grounded_sac.py --no-viewer \
-  --teacher-intervention-prob 0.01
+  --teacher-intervention-prob 0.01 \
+  --updates-per-vector-step 4 \
+  --replay-capacity 3000000 \
+  --action-likeness-threshold 0.95
 ```
+
+Replay checkpoints are directories containing 100 shards plus `manifest.pt`,
+rather than one multi-gigabyte file. Initial successful teacher trajectories
+are also saved separately under `<run>/teacher_buffer`. Reuse them without a
+copy by symlinking that directory and passing the link as the restore source:
+
+```bash
+ln -s "$(realpath runs/limit_action_1/teacher_buffer)" runs/kick_teacher_buffer
+uv run --extra rocm python train_grounded_sac.py --no-viewer \
+  --restore-human-buffer runs/kick_teacher_buffer \
+  --logdir runs/limit_action_2
+```
+
+Legacy monolithic `buffer_*.pt` snapshots remain loadable.

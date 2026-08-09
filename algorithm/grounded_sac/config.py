@@ -28,9 +28,9 @@ class GroundedSACConfig:
     batch_size: int = 4_096
     exploration_std: float = 0.05
     max_grad_norm: float = 10.0
-    # Lean GPU replay: ~9.85 GiB at 2M rows for 649-D obs/next-obs, one 22-D
+    # Lean GPU replay: ~14.8 GiB at 3M rows for 649-D obs/next-obs, one 22-D
     # executed action, scalar reward, and three boolean labels.
-    replay_capacity: int = 2_000_000
+    replay_capacity: int = 3_000_000
     learning_rate: float = 3e-4
     iql_learning_rate: float = 3e-4
     actor_learning_rate: float = 3e-4
@@ -45,10 +45,10 @@ class GroundedSACConfig:
     action_likeness_weight: float = 1.0
     action_likeness_noise_std: float = 1.0
     action_likeness_noise_samples: int = 2
-    action_likeness_threshold: float = 0.7
+    action_likeness_threshold: float = 0.95
     action_limit_weight: float = 1.0
     action_limit_margin: float = 1.0 / 350.0
-    updates_per_env_step: float = 1.0
+    updates_per_env_step: float = 4.0
     iql_pretrain_updates: int = 2_000
     warmup_transitions: int = 65_536
     device: str = "cuda"

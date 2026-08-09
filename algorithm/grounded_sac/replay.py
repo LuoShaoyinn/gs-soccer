@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections.abc import Iterator
 
 import torch
 
@@ -124,6 +125,82 @@ class VectorReplayBuffer:
                 for name in ReplayBatch.__dataclass_fields__
             },
         }
+
+    @torch.no_grad()
+    def iter_state_shards(
+        self, shard_count: int, *, human_suffix_only: bool = False
+    ) -> tuple[dict[str, int], Iterator[dict[str, object]]]:
+        """Return a small manifest and lazily materialized CPU replay shards."""
+        if shard_count <= 0:
+            raise ValueError("shard_count must be positive")
+        if human_suffix_only:
+            indices = torch.nonzero(
+                self.human_suffix[:self.size], as_tuple=False
+            ).squeeze(1)
+        elif self.size < self.capacity:
+            indices = torch.arange(self.size, device=self.device)
+        else:
+            indices = (
+                torch.arange(self.capacity, device=self.device) + self.position
+            ) % self.capacity
+        size = int(len(indices))
+        if size == 0:
+            raise RuntimeError("cannot save an empty replay snapshot")
+        actual_shards = min(int(shard_count), size)
+        boundaries = torch.linspace(
+            0, size, actual_shards + 1, dtype=torch.int64
+        ).tolist()
+
+        def shards() -> Iterator[dict[str, object]]:
+            for shard_id, (begin, end) in enumerate(zip(boundaries[:-1], boundaries[1:], strict=True)):
+                shard_indices = indices[begin:end]
+                yield {
+                    "shard_id": shard_id,
+                    "start": begin,
+                    "end": end,
+                    "fields": {
+                        name: getattr(self, name)[shard_indices].detach().cpu()
+                        for name in ReplayBatch.__dataclass_fields__
+                    },
+                }
+
+        manifest = {
+            "capacity": self.capacity,
+            "size": size,
+            "total_transitions": size if human_suffix_only else self.total_transitions,
+            "shard_count": actual_shards,
+        }
+        return manifest, shards()
+
+    @torch.no_grad()
+    def load_state_shards(
+        self, manifest: dict[str, object], shards: Iterator[dict[str, object]]
+    ) -> None:
+        """Load shards directly into replay storage without joining them in RAM."""
+        size = int(manifest["size"])
+        if size > self.capacity:
+            raise ValueError(f"checkpoint replay has {size} rows but capacity is {self.capacity}")
+        expected_start = 0
+        for expected_id, shard in enumerate(shards):
+            if int(shard["shard_id"]) != expected_id:
+                raise ValueError(f"unexpected replay shard id {shard['shard_id']}")
+            begin, end = int(shard["start"]), int(shard["end"])
+            if begin != expected_start or end <= begin or end > size:
+                raise ValueError(f"invalid replay shard range [{begin}, {end})")
+            fields = shard["fields"]
+            if not isinstance(fields, dict):
+                raise TypeError("checkpoint replay shard fields must be a dictionary")
+            for name in ReplayBatch.__dataclass_fields__:
+                value = fields.get(name)
+                if not isinstance(value, torch.Tensor) or len(value) != end - begin:
+                    raise ValueError(f"invalid replay shard field: {name}")
+                getattr(self, name)[begin:end] = value.to(self.device)
+            expected_start = end
+        if expected_start != size:
+            raise ValueError(f"replay shards cover {expected_start} rows, expected {size}")
+        self.size = size
+        self.position = size % self.capacity
+        self.total_transitions = int(manifest.get("total_transitions", size))
 
     @torch.no_grad()
     def load_state_dict(self, state: dict[str, object]) -> None:
