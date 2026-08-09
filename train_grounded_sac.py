@@ -1,4 +1,4 @@
-"""Train action-limited human-grounded vector SAC on 32 floor-kick environments.
+"""Train action-limited human-grounded vector SAC on parallel floor-kick environments.
 
 The pretrained teacher is used only to record the initial successful
 human-equivalent demonstrations (and optionally to simulate later human
@@ -324,16 +324,16 @@ def collect_initial_demos(collector: Collector, demo_episodes: int) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--actor", default="refs/kick_ball_0625/20260624_144537_from20260624_111401/exported/actor.onnx")
-    parser.add_argument("--num-envs", type=int, default=32)
+    parser.add_argument("--num-envs", type=int, default=256)
     parser.add_argument("--steps", type=int, default=10_000)
     parser.add_argument("--demo-episodes", type=int, default=2_000)
     parser.add_argument("--pretrain-updates", type=int, default=2_000)
-    parser.add_argument("--warmup-transitions", type=int, default=8_000,
+    parser.add_argument("--warmup-transitions", type=int, default=65_536,
                         help="total transitions to collect before SAC/IQL online updates")
-    # Each simulator advance contributes 32 real transitions, followed by
-    # 128 learner updates from replay.
-    parser.add_argument("--updates-per-vector-step", type=float, default=128.0)
-    parser.add_argument("--exploration-std", type=float, default=0.01)
+    # At the default width, one simulator advance contributes 256 real
+    # transitions and one update consumes a 4096-row replay batch (UTD 16).
+    parser.add_argument("--updates-per-vector-step", type=float, default=1.0)
+    parser.add_argument("--exploration-std", type=float, default=0.05)
     parser.add_argument("--teacher-intervention-prob", type=float, default=0.0)
     parser.add_argument("--action-likeness-threshold", type=float, default=0.7)
     parser.add_argument("--action-limit-weight", type=float, default=1.0)
@@ -344,12 +344,16 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--no-viewer", action="store_true")
     args = parser.parse_args()
-    if args.num_envs != 32:
-        raise ValueError("this revised fall experiment is intentionally configured for 32 environments")
+    if args.num_envs <= 0 or args.num_envs % 2 != 0:
+        raise ValueError("num-envs must be a positive even number")
     if args.warmup_transitions < 0 or args.warmup_transitions % args.num_envs != 0:
         raise ValueError("warmup-transitions must be a non-negative multiple of num-envs")
     torch.manual_seed(args.seed)
-    print("initializing Genesis scene (32 environments: 16 autonomous / 16 rescue-enabled)...", flush=True)
+    print(
+        f"initializing Genesis scene ({args.num_envs} environments: "
+        f"{args.num_envs // 2} autonomous / {args.num_envs // 2} rescue-enabled)...",
+        flush=True,
+    )
     gs.init(backend=gs.gpu, performance_mode=True, logging_level="warning")
     env = make_env(str(Path(args.actor)), args.num_envs, args.no_viewer)
     print(f"Genesis scene ready on {gs.device}; allocating replay...", flush=True)

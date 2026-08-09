@@ -26,7 +26,7 @@ class GroundedSACConfig:
     awr_beta: float = 3.0
     awr_max_weight: float = 100.0
     batch_size: int = 4_096
-    exploration_std: float = 0.01
+    exploration_std: float = 0.05
     max_grad_norm: float = 10.0
     # Lean GPU replay: ~9.85 GiB at 2M rows for 649-D obs/next-obs, one 22-D
     # executed action, scalar reward, and three boolean labels.
@@ -50,5 +50,5 @@ class GroundedSACConfig:
     action_limit_margin: float = 1.0 / 350.0
     updates_per_env_step: float = 1.0
     iql_pretrain_updates: int = 2_000
-    warmup_transitions: int = 20_000
+    warmup_transitions: int = 65_536
     device: str = "cuda"
