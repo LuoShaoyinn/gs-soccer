@@ -133,3 +133,26 @@ The first teacher episode inside the fresh training process also succeeded:
 This is logged in the run's `teacher_collection.jsonl` and TensorBoard. At the
 handoff the process is collecting its initial 2048 teacher transitions, before
 IQL pretraining and online learning.
+
+## Four environments and block replay
+
+The older branch's runtime takeover condition is a per-step random trigger,
+restricted to a fixed rescue-enabled half of environments, sticky until terminal.
+Its CLI default probability is zero; H threshold 0.95 is a critic-training
+constraint rather than an execution takeover gate. This branch uses p=0.01,
+and adds an explicit first-action learner guard as requested.
+
+The 4-env preflight (`runs/archive/mos9_before_block4/block4_preflight`) verified
+online masks starting [learner, learner, learner, learner], then remaining
+[learner, learner, teacher, teacher] with p=1. It stopped exactly at 832 rows,
+with 320 online transitions and 80 updates: UTD 64. CPU and ROCm checks covered
+filtered teacher sampling, immutable terminal next observations, and availability
+of the teacher view when the random RAM cache contains no teacher rows.
+
+Current run: `runs/mos9_limit_action/onnx_10mm_block4_utd64`, p=0.01, 4 envs,
+100 million rows, 4096-row blocks, 4096 RAM blocks, and 16 GiB GPU pool. RAM
+cache maximum is 9.7 GiB; raw disk data maximum is 58 GiB. On 2026-10-09 02:40
+local time, after GPU pool allocation, total VRAM usage was 17.0/24.0 GiB,
+host available RAM was 18.9/30.5 GiB, and the trainer RSS was about 2.8 GiB.
+RAM cache grows as replay rows arrive; GPU pool is allocated at schema setup.
+A timestamped live snapshot is saved in the run's `resource_snapshot.json`.

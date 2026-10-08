@@ -111,8 +111,9 @@ MOS9 limit-action training uses the branch-local learner copied from
 `experiment/limit-action`, with factual teacher transitions (including falls)
 for IQL and action likeness. Terminal states stop both reference and online
 bootstrapping. The critic floor and rejected-action ranking remain enabled;
-the fence does not override the actor at execution time. Each episode uses
-teacher control with probability 0.5, otherwise the learned actor. This differs
+the fence does not override the actor at execution time. Every online episode starts with the learner. A fixed half of environments
+allow per-step probabilistic teacher takeover, which lasts until episode end;
+the other half remains autonomous. The first action is always the learner's. This differs
 from the earlier success-only reference dataset because the simple walking
 teacher does not yet reliably complete the task.
 
@@ -122,7 +123,7 @@ teacher does not yet reliably complete the task.
 ```
 
 Training defaults to the generated flat-sole contact model used by the workable
-teacher, gentle 0–3 mm uniform terrain, 20 mm reset clearance, 50 Hz control,
+teacher, gentle 0–1 mm uniform terrain, 20 mm reset clearance, 50 Hz control,
 and 500 steps per episode. Training uses the full `implicitfast` integrator,
 CG constraints, 50 solver iterations, tolerance 1e-5, full scene resets at
 episode boundaries, and 4000 Hz physics and limits learner
@@ -138,7 +139,7 @@ update also samples an IQL batch and a floor batch, and trains action likeness;
 those auxiliary samples are excluded from the named UTD. Initial IQL/H
 pretraining (500 updates after 2048 teacher transitions) is reported separately.
 `metrics.jsonl` records achieved online UTD and factual episode outcomes.
-`checkpoint.pt` stores networks, optimizers, replay, counters, update credit,
+`checkpoint.pt` stores networks, optimizers, replay metadata, counters, update credit,
 and Torch RNG state. The trainer saves on completion, interruption, and failure;
 `failure.json` records errors. A checkpoint is a training artifact, not an exact
 physics-state resume; automatic resume is not implemented. Existing run
@@ -198,3 +199,41 @@ The ONNX teacher holds its default pose during the first 50 steps **inside**
 the 500-step horizon, then walks. ONNX inference uses one CPU thread; simulation
 and learning run on GPU 0. Teacher state tracks the learner's actually applied
 joint targets during learner control.
+
+
+The current four-environment run uses disk replay from the pinned private
+`torch-block-replay` package. Install it without changing the existing ROCm
+PyTorch build:
+
+```sh
+uv pip install --python .venv/bin/python --no-deps \
+  'git+ssh://git@github.com/LuoShaoyinn/torch-block-replay.git@f276e76ef480ea209d4975c6c841a4301814097b'
+.venv/bin/python launch_mos9_limit_action.py \
+  --run-dir runs/mos9_limit_action/onnx_10mm_block4_utd64 \
+  --teacher onnx --no-flat-soles --terrain-height .01 --num-envs 4 \
+  --utd 64 --teacher-intervention-prob .01 --replay-backend block \
+  --replay-capacity 100000000 --replay-block-size 4096 \
+  --replay-ram-blocks 4096 --replay-gpu-cache-mib 16384 \
+  --checkpoint-every 4096
+```
+
+Environments 0 and 1 stay autonomous; 2 and 3 allow sticky takeover. Initial
+2048-row teacher collection remains separate from online learner-first episodes.
+`training/teacher_fraction` now measures cumulative online teacher rows, while
+`training/current_teacher_env_fraction` reports the instantaneous controller
+mask. Episode records include takeover step and actual teacher-step fraction.
+
+Replay has one physical disk store with teacher tags and an index view over
+immutable cached rows. Sampling is uniform within the current caches rather
+than exact uniform sampling across the entire disk history. Newly collected
+rows become sampleable when a block is published; checkpoints flush partial
+blocks. Extra disk block slots prevent pruning of partial checkpoint blocks
+before the 100-million-row quota is reached. Network checkpoints reference
+the durable disk replay instead of copying it into the checkpoint. The package
+currently cannot reopen replay for resume; this run starts fresh.
+
+Each row is 623 bytes: the RAM cache budget is about 9.7 GiB, the GPU pool
+budget is 16 GiB, and the full disk replay is about 58 GiB before serialization
+overhead. These budgets exclude simulator, learner, and staging allocations.
+A four-environment preflight verified GPU sampling, teacher-only sampling,
+learner-first sticky takeover, UTD 64, and clean stop exactly at buffer capacity.

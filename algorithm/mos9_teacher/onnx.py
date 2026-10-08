@@ -44,6 +44,7 @@ class OnnxWalkingTeacher:
         options.intra_op_num_threads = options.inter_op_num_threads = 1
         self.session = ort.InferenceSession(str(policy), sess_options=options, providers=['CPUExecutionProvider'])
         self.input_name = self.session.get_inputs()[0].name
+        self.fixed_batch_one = self.session.get_inputs()[0].shape[0] == 1
         self.metadata = dict(kind='onnx', policy=str(policy), sha256=hashlib.sha256(Path(policy).read_bytes()).hexdigest(),
                              actuator_model=str(actuator_model), actuator_sha256=hashlib.sha256(Path(actuator_model).read_bytes()).hexdigest(),
                              kp=kp, kv=kv, torque_limits=limits.tolist(), armature=0., vx=vx,
@@ -60,7 +61,12 @@ class OnnxWalkingTeacher:
         gravity = transform_by_quat(gravity, inverse)
         obs = torch.cat((angular*.2, gravity, self.command, state['dofs_pos']-self.home,
                          state['dofs_vel']*.05, self.previous), dim=1)
-        raw = self.session.run(None, {self.input_name: obs.cpu().numpy().astype(np.float32)})[0]
+        cpu_obs = obs.cpu().numpy().astype(np.float32)
+        if self.fixed_batch_one and len(cpu_obs) > 1:
+            raw = np.concatenate([self.session.run(None, {self.input_name: row[None]})[0]
+                                  for row in cpu_obs], axis=0)
+        else:
+            raw = self.session.run(None, {self.input_name: cpu_obs})[0]
         self.previous.copy_(torch.as_tensor(raw, device=self.device))
         target = (self.home+self.previous*self.scales).clamp(self.lower, self.upper)
         standing = steps < 50

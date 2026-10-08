@@ -17,6 +17,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+block-replay = ["torch-block-replay @ git+ssh://git@github.com/LuoShaoyinn/torch-block-replay.git@f276e76ef480ea209d4975c6c841a4301814097b"]
 reference = ["onnxruntime>=1.20"]
 cuda = ["torch", "triton"]
 metal = ["torch", "triton"]
