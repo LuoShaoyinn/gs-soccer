@@ -108,14 +108,13 @@ uv run --extra rocm python main.py --no-viewer      # headless
 > reference example.
 
 MOS9 limit-action training uses the branch-local learner copied from
-`experiment/limit-action`, with factual teacher transitions (including falls)
-for IQL and action likeness. Terminal states stop both reference and online
-bootstrapping. The critic floor and rejected-action ranking remain enabled;
+`experiment/limit-action`, with only success-confirmed teacher suffixes
+for IQL and action likeness. Reference IQL matches the old success-only update (no done masking); SAC
+uses physical terminal masking. The critic floor and rejected-action ranking remain enabled;
 the fence does not override the actor at execution time. Every online episode starts with the learner. A fixed half of environments
 allow per-step probabilistic teacher takeover, which lasts until episode end;
-the other half remains autonomous. The first action is always the learner's. This differs
-from the earlier success-only reference dataset because the simple walking
-teacher does not yet reliably complete the task.
+the other half remains autonomous. The first action is always the learner's. Initial demos must be complete successful teacher episodes. Failed rescues
+and learner prefixes stay in ordinary replay, excluded from IQL/H/floor.
 
 ```bash
 .venv/bin/python launch_mos9_limit_action.py \
@@ -223,7 +222,7 @@ Environments 0 and 1 stay autonomous; 2 and 3 allow sticky takeover. Initial
 `training/current_teacher_env_fraction` reports the instantaneous controller
 mask. Episode records include takeover step and actual teacher-step fraction.
 
-Replay has one physical disk store with teacher tags and an index view over
+Replay has one physical disk store with a success-confirmed suffix index over
 immutable cached rows. Sampling is uniform within the current caches rather
 than exact uniform sampling across the entire disk history. Newly collected
 rows become sampleable when a block is published; checkpoints flush partial
@@ -232,8 +231,8 @@ before the 100-million-row quota is reached. Network checkpoints reference
 the durable disk replay instead of copying it into the checkpoint. The package
 currently cannot reopen replay for resume; this run starts fresh.
 
-Each row is 623 bytes: the RAM cache budget is about 9.7 GiB, the GPU pool
-budget is 16 GiB, and the full disk replay is about 58 GiB before serialization
+Each block row is 631 bytes (including a global row ID): the RAM cache budget is about 9.9 GiB, the GPU pool
+budget is 16 GiB, and the full disk replay is about 59 GiB before serialization
 overhead. These budgets exclude simulator, learner, and staging allocations.
 A four-environment preflight verified GPU sampling, teacher-only sampling,
 learner-first sticky takeover, UTD 64, and clean stop exactly at buffer capacity.
@@ -249,3 +248,10 @@ relays these 16 tags from its original events into `tensorboard_selected/`.
 The current dashboard at `http://localhost:6006/` reads that selected directory.
 Future trainers use the 16-tag writer directly in their normal `tensorboard/`
 directory. Original current-run event files are preserved for diagnostics.
+
+
+The prior all-teacher-reference runs are invalid as algorithm experiments.
+They have been stopped and archived with explicit invalid-run metadata.
+See [ALGORITHM_CONTRACT.md](ALGORITHM_CONTRACT.md) for the restored dataset
+and update rules. A separate persisted suffix index confirms row eligibility
+only after success, including rows already published or cached on GPU.

@@ -62,7 +62,7 @@ def _cat_batches(*batches: ReplayBatch) -> ReplayBatch:
 class GroundedSACLearner:
     """Moving human IQL reference plus action-limited vector SAC.
 
-    IQL and H(s,a) learn from factual teacher transitions, including failures. SAC learns from
+    IQL and H(s,a) learn only from successful teacher suffixes. SAC learns from
     every real transition. H never enters the actor objective: it only selects
     SAC proposals for the relative critic constraint against the IQL action.
     """
@@ -137,10 +137,7 @@ class GroundedSACLearner:
         return self.iql_actor(self._obs(observation))
 
     def sac_action(self, observation: torch.Tensor) -> torch.Tensor:
-        proposal = self.sac_actor(self._obs(observation))
-        previous = observation[:, 2*self.cfg.action_dim:3*self.cfg.action_dim]
-        return torch.maximum(previous-self.cfg.action_slew,
-                             torch.minimum(previous+self.cfg.action_slew, proposal))
+        return self.sac_actor(self._obs(observation))
 
     def human_likeness(self, observation: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
         return self.action_likeness(self._obs(observation), self.action_normalizer(action))
@@ -183,8 +180,8 @@ class GroundedSACLearner:
     def _update_iql(self, batch: ReplayBatch) -> dict[str, torch.Tensor]:
         obs, next_obs, action = batch.observation, batch.next_observation, batch.action
         with torch.no_grad():
-            # Reference IQL uses teacher transitions and masks real terminal states.
-            target = self._bellman(batch.reward, batch.success, batch.terminal, self._value(next_obs), mask_terminal=True)
+            # Reference IQL matches the older branch: successful suffixes only, no done masking.
+            target = self._bellman(batch.reward, batch.success, batch.terminal, self._value(next_obs), mask_terminal=False)
         normalized = self._obs(obs)
         q1, q2 = self.iql_q1(normalized, action), self.iql_q2(normalized, action)
         q_loss_1, q_smooth_1, q_mse_1, q_max_1 = _td_loss(q1, target, self.cfg.td_max_head_weight)
@@ -369,7 +366,7 @@ class GroundedSACLearner:
         iql_metrics = {**self._update_iql(human_batch), **self._update_action_likeness(human_batch)}
         td_batch = self.replay.sample(self.cfg.batch_size, self.device)
         _assert_finite("SAC TD replay batch", td_batch.observation, td_batch.action, td_batch.reward, td_batch.next_observation)
-        # The floor is supported only on teacher transitions. Uniform
+        # The floor is supported only on successful teacher suffixes. Uniform
         # replay rows retain their factual SAC TD loss and may trigger the
         # separate action-likeness inequality.
         floor_human = self.replay.sample(self.cfg.batch_size, self.device, human_suffix=True)

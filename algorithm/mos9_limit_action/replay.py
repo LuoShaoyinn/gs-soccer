@@ -21,10 +21,10 @@ class ReplayBatch:
 
 
 class VectorReplayBuffer:
-    """One physical replay with an index view for factual teacher transitions.
+    """One physical replay with an index view for successful teacher suffixes.
 
-    The inherited human_suffix field means teacher provenance on this branch;
-    success is a separate factual terminal label.
+    human_suffix is assigned only after successful episode completion to the
+    contiguous teacher-controlled suffix ending at that success.
 
     Every row stores its own next observation, so vector-environment resets do
     not corrupt terminal transitions. `human_suffix` is an index-only view in

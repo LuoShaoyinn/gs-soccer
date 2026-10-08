@@ -11,16 +11,20 @@ from .replay import ReplayBatch
 
 
 class TaggedBlockBuffer(BlockReplayBuffer):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, suffix_index, **kwargs):
+        self.suffix_index = suffix_index
         self.teacher_blocks = set()
+        self.row_ranges = []
         super().__init__(*args, **kwargs)
 
     def _publish(self):
         index = self._next
-        teacher = bool(self._building['human_suffix'][:self._used].any())
+        start = int(self._building['row_id'][0])
+        stop = int(self._building['row_id'][self._used-1])+1
         super()._publish()
-        if teacher:
-            with self._lock:
+        with self._lock:
+            self.row_ranges.append((start, stop))
+            if bool(self.suffix_index[start:stop].any()):
                 self.teacher_blocks.add(index)
 
 
@@ -31,11 +35,13 @@ class DiskReplayBuffer:
         self.capacity = capacity
         self.device = torch.device(device)
         self.size = self.total_transitions = 0
+        self.suffix_index = torch.zeros(capacity, dtype=torch.bool, device="cpu")
+        self._tag_version = 0
         # A checkpoint/warmup flush publishes partial blocks. Reserve slots for
         # these too, so FIFO pruning cannot occur before the row quota fills.
         slots = math.ceil(capacity/block_size) + math.ceil(capacity/checkpoint_every) + 4
         self.store = TaggedBlockBuffer(directory, capacity=slots*block_size,
-            block_size=block_size, ram_blocks=ram_blocks, batch_size=batch_size,
+            block_size=block_size, ram_blocks=ram_blocks, batch_size=batch_size, suffix_index=self.suffix_index,
             device=device, prefetch=4, refresh_every=4,
             gpu_cache_bytes=gpu_cache_bytes, device_chunk_size=4096,
             device_refresh_every=8, device_refresh_chunks=8, seed=seed)
@@ -53,6 +59,8 @@ class DiskReplayBuffer:
             raise BufferError('replay full; stop collection')
         n = min(len(batch.reward), self.capacity-self.size)
         fields = {k:getattr(batch,k)[:n].to(self.device) for k in ReplayBatch.__dataclass_fields__}
+        fields["human_suffix"] = torch.zeros(n, dtype=torch.bool, device=self.device)
+        fields["row_id"] = torch.arange(self.size, self.size+n, device=self.device)
         self.store.append_async(fields)
         ids = torch.arange(self.size, self.size+n, device=self.device)
         self.size += n
@@ -60,9 +68,20 @@ class DiskReplayBuffer:
         return ids
 
     def mark_human_suffix(self, indices):
-        # Trainer passes actual teacher provenance in ReplayBatch before append.
-        # Immutable disk rows cannot be retagged after asynchronous publication.
-        pass
+        if not indices:
+            return
+        import bisect
+        ids = torch.tensor(indices, dtype=torch.long, device='cpu')
+        if int(ids.min()) < 0 or int(ids.max()) >= self.size:
+            raise IndexError('suffix index outside accepted replay rows')
+        with self.store._lock:
+            self.suffix_index[ids] = True
+            self._tag_version += 1
+            starts = [start for start,stop in self.store.row_ranges]
+            for row_id in indices:
+                block = bisect.bisect_right(starts, row_id)-1
+                if block >= 0 and row_id < self.store.row_ranges[block][1]:
+                    self.store.teacher_blocks.add(block)
 
     def flush(self):
         self.store.flush()
@@ -73,7 +92,7 @@ class DiskReplayBuffer:
         values = []
         for path in sorted(self.store.directory.glob('block_*.pt')):
             data = torch.load(path, map_location='cpu', weights_only=True)
-            values.append(data[field][data['human_suffix']])
+            values.append(data[field][self.suffix_index[data['row_id']]])
         if not values or not sum(len(v) for v in values):
             raise RuntimeError('no teacher rows')
         return torch.cat(values).to(self.device)
@@ -89,7 +108,9 @@ class DiskReplayBuffer:
             if count != self.store.batch_size:
                 raise ValueError('block sampler batch size must match learner batch size')
             data = self.store.sample_async().wait()
-            return ReplayBatch(**{k:data[k].to(target_device) for k in ReplayBatch.__dataclass_fields__})
+            result = {k:data[k].to(target_device) for k in ReplayBatch.__dataclass_fields__}
+            result['human_suffix'] = self.suffix_index[data['row_id'].cpu()].to(target_device)
+            return ReplayBatch(**result)
         with self.store._lock:
             entries = list(self.store._cache.items())
         valid_ids = {i for i,_ in entries}
@@ -97,11 +118,11 @@ class DiskReplayBuffer:
         views = []
         for index, data in entries:
             previous = self._teacher_indices.get(index)
-            if previous is None or previous[0] is not data:
-                previous = (data, torch.nonzero(data['human_suffix']).flatten())
+            if previous is None or previous[0] is not data or previous[2] != self._tag_version:
+                previous = (data, torch.nonzero(self.suffix_index[data['row_id']]).flatten(), self._tag_version)
                 self._teacher_indices[index] = previous
             if len(previous[1]):
-                views.append(previous)
+                views.append(previous[:2])
         if not views:
             # Rescue sampling must remain available if random RAM admission has
             # temporarily omitted all teacher blocks. Load one known tagged block.
@@ -125,11 +146,16 @@ class DiskReplayBuffer:
                     offset = int(cumulative[i-1]) if i else 0
                     out[selected] = data[k][ids[draws[selected]-offset]]
             result[k] = out.to(target_device)
+        result["human_suffix"] = torch.ones(count, dtype=torch.bool, device=target_device)
         return ReplayBatch(**result)
 
     def state_dict(self):
         self.flush()
-        return dict(backend='torch-block-replay',directory=str(self.store.directory),
+        path = self.store.directory/'suffix_index.pt'
+        temporary = path.with_suffix('.tmp')
+        torch.save(self.suffix_index[:self.size].clone(), temporary)
+        temporary.replace(path)
+        return dict(suffix_index=str(path),suffix_rows=int(self.suffix_index[:self.size].sum()),backend='torch-block-replay',directory=str(self.store.directory),
                     capacity=self.capacity,size=self.size,total_transitions=self.total_transitions,
                     stats=self.store.stats(),resumable=False)
 

@@ -13,6 +13,7 @@ from algorithm.mos9_teacher.phase import PhaseWalkingTeacher
 from algorithm.mos9_limit_action.config import GroundedSACConfig
 from algorithm.mos9_limit_action.learner import GroundedSACLearner
 from algorithm.mos9_limit_action.replay import ReplayBatch, VectorReplayBuffer
+from algorithm.mos9_limit_action.suffix import SuccessfulSuffixTracker
 
 
 from algorithm.mos9_teacher.environment import WalkingEnv as TrainingEnv
@@ -94,20 +95,22 @@ def main():
     budget = UpdateBudget(args.utd, args.batch_size)
     if args.teacher_checkpoint is not None:
         initial = torch.load(args.teacher_checkpoint, map_location='cpu', weights_only=False)
+        if initial['config'].get('algorithm_contract') != 'success_only_teacher_suffix_v1':
+            raise ValueError('checkpoint does not certify success-only teacher suffix semantics; collect fresh demos')
         if initial['config']['environment'] != {'policy_hz':50,'max_steps':500,'integrator':'implicitfast','solver_iterations':50,'solver_tolerance':1e-5,'sim_freq':settings.sim_freq,'action_slew':args.action_slew,'terrain_height':settings.terrain_height,'flat_soles':args.flat_soles}:
             raise ValueError('teacher checkpoint task/model settings differ')
         if initial['online_transitions'] != 0:
             raise ValueError('seed import requires a teacher-only checkpoint')
         replay.load_state_dict(initial['replay'])
         seed_transitions = replay.size
-        print(f'imported factual teacher transitions={seed_transitions}', flush=True)
+        print(f'imported successful teacher suffix transitions={seed_transitions}', flush=True)
     stopped = False
     def stop(*_):
         nonlocal stopped
         stopped = True
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
-    manifest = {'arguments': {k:str(v) if isinstance(v, Path) else v for k,v in vars(args).items()}, 'learner':asdict(cfg), 'environment':{'policy_hz':50,'max_steps':500,'integrator':'implicitfast','solver_iterations':50,'solver_tolerance':1e-5,'sim_freq':settings.sim_freq,'action_slew':args.action_slew,'terrain_height':settings.terrain_height,'flat_soles':args.flat_soles}, 'teacher':teacher_metadata, 'physics_solver':'CG with full scene reset on episode boundaries', 'reference_data':'all factual teacher transitions, including terminal failures', 'replay_policy':'one physical buffer with teacher index view; stop at capacity without overwriting; final vector step truncated to remaining rows', 'controller':{'learner_first':True,'sticky_until_episode_end':True,'rescue_envs':list(range(args.num_envs//2,args.num_envs)),'per_step_probability':args.teacher_intervention_prob}, 'utd_definition':'primary SAC TD minibatch rows / new online transitions; pretraining excluded; each update also samples one IQL batch and one floor batch'}
+    manifest = {'algorithm_contract':'success_only_teacher_suffix_v1','arguments': {k:str(v) if isinstance(v, Path) else v for k,v in vars(args).items()}, 'learner':asdict(cfg), 'environment':{'policy_hz':50,'max_steps':500,'integrator':'implicitfast','solver_iterations':50,'solver_tolerance':1e-5,'sim_freq':settings.sim_freq,'action_slew':args.action_slew,'terrain_height':settings.terrain_height,'flat_soles':args.flat_soles}, 'teacher':teacher_metadata, 'physics_solver':'CG with full scene reset on episode boundaries', 'reference_data':'only confirmed successful teacher suffixes; initial demos are complete successful teacher episodes; SAC retains all online transitions', 'replay_policy':'one physical buffer with success-confirmed suffix index; failed rescues and learner prefixes excluded from reference view; stop at capacity without overwriting', 'controller':{'learner_first':True,'sticky_until_episode_end':True,'rescue_envs':list(range(args.num_envs//2,args.num_envs)),'per_step_probability':args.teacher_intervention_prob}, 'utd_definition':'primary SAC TD minibatch rows / new online transitions; pretraining excluded; each update also samples one IQL batch and one floor batch'}
     (args.run_dir/'config.json').write_text(json.dumps(manifest, indent=2)+'\n')
     writer = SummaryWriter(str(args.run_dir / "tensorboard"), flush_secs=10)
     writer.add_text("config", json.dumps(manifest, indent=2), 0)
@@ -119,7 +122,9 @@ def main():
         temp = args.run_dir/'checkpoint.tmp'
         torch.save(checkpoint, temp)
         temp.replace(args.run_dir/'checkpoint.pt')
-    def collect(action, teacher_mask):
+    suffix_tracker = SuccessfulSuffixTracker(args.num_envs, replay)
+    demo_staging = [[] for _ in range(args.num_envs)]
+    def collect(action, teacher_mask, *, warmup=False):
         nonlocal obs
         with torch.no_grad():
             if not torch.isfinite(action).all() or not torch.isfinite(obs).all():
@@ -130,16 +135,41 @@ def main():
             next_obs, reward, term, trunc, info = env.step(action)
             if not torch.isfinite(info['final_observation']).all() or not torch.isfinite(reward).all():
                 raise FloatingPointError('non-finite physical transition')
-            indices = replay.add_batch(ReplayBatch(obs.clone(),action.clone(),reward.flatten(),info['final_observation'],reward.flatten()>0,(term|trunc).flatten(),teacher_mask))
-            replay.mark_human_suffix(indices[teacher_mask[:len(indices)]].tolist())
+            batch = ReplayBatch(obs.clone(),action.clone(),reward.flatten(),info['final_observation'],reward.flatten()>0,(term|trunc).flatten(),torch.zeros_like(teacher_mask))
             obs = next_obs
+            if warmup:
+                # Match old initial-demo collection: stage until termination;
+                # failed or unfinished attempts never enter initial replay.
+                cpu = batch.to('cpu')
+                inserted = 0
+                for env_id in range(args.num_envs):
+                    demo_staging[env_id].append(ReplayBatch(**{k:getattr(cpu,k)[env_id:env_id+1].clone() for k in ReplayBatch.__dataclass_fields__}))
+                    if not bool(cpu.terminal[env_id]):
+                        continue
+                    episode = demo_staging[env_id]
+                    if bool(cpu.success[env_id]) and seed_transitions+inserted < args.teacher_transitions:
+                        if len(episode) > replay.capacity-len(replay):
+                            raise RuntimeError('replay cannot fit the complete successful initial demo')
+                        successful = ReplayBatch(**{k:torch.cat([getattr(row,k) for row in episode]) for k in ReplayBatch.__dataclass_fields__})
+                        ids = replay.add_batch(successful)
+                        replay.mark_human_suffix(ids.tolist())
+                        inserted += len(ids)
+                    demo_staging[env_id] = []
+                return inserted
+            indices = replay.add_batch(batch)
+            suffix_tracker.record(indices,teacher_mask,batch.success,batch.terminal)
             return len(indices)
     try:
         seed_cursor = len(env.MDP.completed)
+        demo_ticks = 0
         while seed_transitions < args.teacher_transitions and not replay.full and not stopped:
             state = env.get_state(env.all_envs_idx)
             action = teacher.act(state,env.MDP.steps,env.MDP.origins,env.MDP.yaws)
-            seed_transitions += collect(action, torch.ones(args.num_envs, dtype=torch.bool, device=obs.device))
+            demo_ticks += 1
+            if demo_ticks % 100 == 0:
+                print(f'initial demo vector steps={demo_ticks} successful rows={seed_transitions}',flush=True)
+            previous_seed = seed_transitions
+            seed_transitions += collect(action, torch.ones(args.num_envs, dtype=torch.bool, device=obs.device), warmup=True)
             writer.add_scalar("collection/teacher_transitions", seed_transitions, seed_transitions)
             for row in env.MDP.completed[seed_cursor:]:
                 with (args.run_dir/'teacher_collection.jsonl').open('a') as log:
@@ -148,7 +178,7 @@ def main():
                     writer.add_scalar('collection/teacher/'+metric, float(row[metric]), seed_transitions)
                 print(f'teacher collection episode={row}', flush=True)
             seed_cursor = len(env.MDP.completed)
-            if seed_transitions % 250 < args.num_envs:
+            if seed_transitions != previous_seed:
                 print(f'teacher transitions={seed_transitions} episodes={len(env.MDP.completed)}',flush=True)
         if stopped:
             return

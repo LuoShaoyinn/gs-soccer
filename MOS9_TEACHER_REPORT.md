@@ -1,3 +1,9 @@
+> Algorithm correction: earlier runs described below that used all teacher
+> transitions as reference data are invalid algorithm experiments. They are
+> stopped and archived. The current contract is success-confirmed teacher
+> suffixes only; see ALGORITHM_CONTRACT.md. Historical measurements are retained
+> as records, not evidence for the corrected algorithm.
+
 # MOS9 traditional walking teacher
 
 Branch: `experiment/mos9-planned-walk`, based on shared infrastructure at
@@ -156,3 +162,32 @@ local time, after GPU pool allocation, total VRAM usage was 17.0/24.0 GiB,
 host available RAM was 18.9/30.5 GiB, and the trainer RSS was about 2.8 GiB.
 RAM cache grows as replay rows arrive; GPU pool is allocated at schema setup.
 A timestamped live snapshot is saved in the run's `resource_snapshot.json`.
+
+## Success-only suffix correction
+
+The previous all-teacher reference implementation was wrong for this algorithm.
+It has been stopped, marked invalid, and archived; its replay and trained weights
+are not reused. The learner computations were compared against the old branch:
+after removing docstrings and the monitored-horizon constant, their ASTs match.
+Reference IQL's original unmasked target and raw SAC proposals are restored.
+
+Regression tests passed on RAM, CPU disk, and GPU disk replay: failed rescues,
+autonomous successes, learner prefixes and unfinished rescues remain ineligible;
+a successful contiguous teacher suffix becomes eligible only after terminal
+success, including rows already published/cached. The authoritative persisted
+suffix index is separate from immutable physical transitions. Initial collection
+retains only complete successful teacher demonstrations.
+
+The full 4-env preflight saved exactly 1032 rows: a complete successful 500-row
+teacher demo plus 532 ordinary online rows. Its suffix index contains exactly
+the first 500 rows; failed/unfinished rescues are excluded. It stopped at capacity
+with 133 online updates, giving UTD 64. Artifacts are preserved under
+`runs/archive/success_suffix_preflight_verified/`.
+
+Fresh corrected run: `runs/mos9_limit_action/onnx_10mm_block4_success_suffix`.
+It keeps the 100-million-row limit, 16 GiB GPU cache, roughly 9.9 GiB RAM cache,
+4 environments, 10 mm terrain, UTD 64, sticky p=0.01 takeover, and 16 dashboard
+signals. Each disk block row is now 631 bytes including its global row ID;
+a 100 MB CPU suffix bitmap gives post-success eligibility without duplicating
+physical transitions. Checkpoints persist the suffix index. See
+`ALGORITHM_CONTRACT.md` for the exact data and update contract.
