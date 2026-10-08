@@ -50,15 +50,22 @@ class VectorReplayBuffer:
     def __len__(self) -> int:
         return self.size
 
+    @property
+    def full(self) -> bool:
+        return self.size == self.capacity
+
     @torch.no_grad()
     def add_batch(self, batch: ReplayBatch) -> torch.Tensor:
         batch = batch.to(self.device)
         n = len(batch.reward)
-        if n > self.capacity:
-            raise ValueError("one vector step exceeds replay capacity")
-        indices = (torch.arange(n, device=self.device) + self.position) % self.capacity
+        if self.full:
+            raise BufferError("replay is full; stop collection before overwriting rows")
+        # Accept only the remaining rows from the final vector step. This
+        # experiment stops at capacity and never evicts teacher or online data.
+        n = min(n, self.capacity-self.size)
+        indices = torch.arange(n, device=self.device) + self.size
         for name in ReplayBatch.__dataclass_fields__:
-            getattr(self, name)[indices] = getattr(batch, name)
+            getattr(self, name)[indices] = getattr(batch, name)[:n]
         self.human_suffix[indices] = False
         self.position = (self.position + n) % self.capacity
         self.size = min(self.capacity, self.size + n)

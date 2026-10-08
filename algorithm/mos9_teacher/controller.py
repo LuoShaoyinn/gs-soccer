@@ -13,6 +13,7 @@ class WalkingTeacher:
     def __init__(self, robot, plan, position_gains, velocity_gains, attitude_gains, angular_damping):
         self.robot = robot
         self.names = list(plan["names"])
+        self.home = torch.as_tensor(plan["home"], device=position_gains.device)
         self.device = position_gains.device
         self.position_gains = position_gains
         self.velocity_gains = velocity_gains
@@ -49,9 +50,9 @@ class WalkingTeacher:
         command = reference-correction
         command_world = torch.stack((c*command[:, 0]-s*command[:, 1], s*command[:, 0]+c*command[:, 1]), dim=1)
         q = self.robot.get_qpos().clone()
-        for index, name in zip(self.q_indices, self.names):
+        for column, (index, name) in enumerate(zip(self.q_indices, self.names)):
             if "shoulder" in name or "elbow" in name:
-                q[:, index] = 0.0
+                q[:, index] = self.home[column]
         q[:, :2] = origins[:, :2]+command_world
         q[:, 2] = self.height
         commanded_roll = self.roll[steps]-(self.attitude_gains*(roll-self.roll[steps])+self.angular_damping*state["body_ang_vel"][:, 0]).clamp(-0.15, 0.15)

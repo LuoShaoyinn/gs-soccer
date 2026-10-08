@@ -7,60 +7,15 @@ import json
 from pathlib import Path
 import signal
 import torch
-import genesis as gs
 from torch.utils.tensorboard import SummaryWriter
-from mos9_walk import parse_args as walk_args, build_walking_env, SimpleWalkingTeacher, Env
+from mos9_walk import parse_args as walk_args, build_walking_env
+from algorithm.mos9_teacher.phase import PhaseWalkingTeacher
 from algorithm.mos9_limit_action.config import GroundedSACConfig
 from algorithm.mos9_limit_action.learner import GroundedSACLearner
 from algorithm.mos9_limit_action.replay import ReplayBatch, VectorReplayBuffer
 
 
-class TrainingEnv(Env):
-    """Preserve physical terminal observations before automatic reset."""
-    def __init__(self, cfg):
-        # Keep the shared Env unchanged; configure only this experiment scene.
-        self.cfg = cfg
-        self.num_envs = cfg.num_envs
-        self.num_agents = 1
-        self.is_vector_env = True
-        self.all_envs_idx = torch.arange(cfg.num_envs, dtype=torch.long, device=gs.device)
-        self.scene = gs.Scene(
-            sim_options=gs.options.SimOptions(dt=1/cfg.policy_freq,
-                                             substeps=cfg.sim_freq//cfg.policy_freq),
-            rigid_options=gs.options.RigidOptions(
-                enable_self_collision=cfg.self_collision,
-                integrator=gs.integrator.implicitfast,
-                constraint_solver=gs.constraint_solver.CG,
-                iterations=50, tolerance=1e-5,
-                max_collision_pairs=cfg.max_collision_pairs,
-                multiplier_collision_broad_phase=cfg.multiplier_collision_broad_phase),
-            show_viewer=cfg.show_viewer)
-        self.build()
-        self.scene.build(n_envs=cfg.num_envs, env_spacing=(cfg.env_spacing,cfg.env_spacing))
-        self.config()
-
-    def reset(self, envs_idx=None):
-        idx = self.all_envs_idx if envs_idx is None else envs_idx
-        # Reset solver/contact/sensor history as well as robot pose and velocity.
-        self.scene.reset(envs_idx=idx)
-        return super().reset(idx)
-
-    def step(self, action):
-        action = self.MDP.preprocess_action(action)
-        self.robot.step(action=action)
-        self.gs_step()
-        state = self.get_state(self.all_envs_idx)
-        obs = self.MDP.build_observation(envs_idx=self.all_envs_idx, **state)
-        reward = self.MDP.build_reward(envs_idx=self.all_envs_idx, **state)
-        terminated = self.MDP.build_terminated(envs_idx=self.all_envs_idx, **state)
-        truncated = self.MDP.build_truncated(envs_idx=self.all_envs_idx, **state)
-        self.MDP.build_info(envs_idx=self.all_envs_idx, **state)
-        final_obs = obs.clone()
-        done = (terminated | truncated).flatten()
-        if done.any():
-            idx = done.nonzero().flatten()
-            obs[idx] = self.reset(idx)[0]
-        return obs, reward, terminated, truncated, {"final_observation": final_obs}
+from algorithm.mos9_teacher.environment import WalkingEnv as TrainingEnv
 
 
 class UpdateBudget:
@@ -82,7 +37,8 @@ def main():
     p.add_argument('--run-dir', type=Path, default=Path('runs/mos9_limit_action/run1'))
     p.add_argument('--num-envs', type=int, default=1)
     p.add_argument('--seed', type=int, default=0)
-    p.add_argument('--transitions', type=int, default=100000)
+    p.add_argument('--transitions', type=int, default=None, help='optional online transition limit; otherwise stop when replay fills')
+    p.add_argument('--replay-capacity', type=int, default=3000000)
     p.add_argument('--teacher-checkpoint', type=Path, default=None)
     p.add_argument('--teacher-transitions', type=int, default=2048)
     p.add_argument('--pretrain-updates', type=int, default=500)
@@ -94,17 +50,28 @@ def main():
     p.add_argument('--action-slew', type=float, default=0.05)
     p.add_argument('--checkpoint-every', type=int, default=1000)
     p.add_argument('--flat-soles', action=argparse.BooleanOptionalAction, default=True)
+    p.add_argument('--terrain-height', type=float, default=0.001)
+    p.add_argument('--teacher', choices=('planned', 'onnx'), default='planned')
+    p.add_argument('--teacher-policy', type=Path, default=Path('/home/luoshaoyinn/workspace/URSoccerLab/py_example/models/policies/mos9_walk_v11_5500.onnx'))
     args = p.parse_args()
-    if min(args.num_envs, args.transitions, args.teacher_transitions, args.batch_size, args.checkpoint_every) <= 0 or args.utd <= 0 or args.pretrain_updates < 0 or not 0 <= args.teacher_probability <= 1 or args.exploration_std < 0 or args.action_slew <= 0 or args.sim_freq <= 0 or args.sim_freq % 50:
+    if min(args.num_envs, args.replay_capacity, args.teacher_transitions, args.batch_size, args.checkpoint_every) <= 0 or (args.transitions is not None and args.transitions <= 0) or args.utd <= 0 or args.pretrain_updates < 0 or not 0 <= args.teacher_probability <= 1 or args.exploration_std < 0 or args.action_slew <= 0 or args.sim_freq <= 0 or args.sim_freq % 50:
         p.error('invalid positive counts, UTD, exploration, or teacher probability')
     if args.teacher_transitions < args.batch_size:
         p.error('teacher-transitions must be at least batch-size')
+    if args.replay_capacity < args.teacher_transitions:
+        p.error('replay-capacity must fit initial teacher transitions')
     args.run_dir.mkdir(parents=True, exist_ok=False)
-    settings = walk_args(['--num-envs', str(args.num_envs), '--seed', str(args.seed), '--sim-freq', str(args.sim_freq)] + (['--flat-soles'] if args.flat_soles else []))
-    env, plan, kin, *_ = build_walking_env(settings, TrainingEnv)
-    teacher = SimpleWalkingTeacher(plan, env.MDP.home.device)
+    settings = walk_args(['--num-envs', str(args.num_envs), '--seed', str(args.seed), '--sim-freq', str(args.sim_freq), '--terrain-height', str(args.terrain_height)] + (['--flat-soles'] if args.flat_soles else []))
+    env, plan, kin, _, _, _, gait = build_walking_env(settings, TrainingEnv)
+    if args.teacher == 'onnx':
+        from algorithm.mos9_teacher.onnx import OnnxWalkingTeacher
+        teacher = OnnxWalkingTeacher(env, plan['names'], kin, settings, args.teacher_policy)
+        teacher_metadata = teacher.metadata
+    else:
+        teacher = PhaseWalkingTeacher(plan, env.MDP.home.device, gait)
+        teacher_metadata = {'kind':'planned','adaptive_phase':True,'gait':asdict(gait),'position_gain':teacher.position_gain.tolist(),'velocity_gain':teacher.velocity_gain.tolist(),'roll_gain':teacher.roll_gain,'pitch_gain':teacher.pitch_gain}
     lower, upper = torch.tensor([kin.bounds[n] for n in plan['names']], device=env.MDP.home.device).T
-    cfg = GroundedSACConfig(observation_dim=env.observation_space.shape[0], action_dim=len(plan['names']), action_limit=3., action_slew=args.action_slew, horizons=500, hidden_dim=128, gamma=1., step_penalty=0., value_lower_bound=-1., action_limit_margin=1./500, batch_size=args.batch_size, exploration_std=args.exploration_std, iql_pretrain_updates=args.pretrain_updates, warmup_transitions=args.teacher_transitions, replay_capacity=args.transitions+args.teacher_transitions+2*args.num_envs, device=str(env.MDP.home.device))
+    cfg = GroundedSACConfig(observation_dim=env.observation_space.shape[0], action_dim=len(plan['names']), action_limit=3., action_slew=args.action_slew, horizons=500, hidden_dim=128, gamma=1., step_penalty=0., value_lower_bound=-1., action_limit_margin=1./500, batch_size=args.batch_size, exploration_std=args.exploration_std, iql_pretrain_updates=args.pretrain_updates, warmup_transitions=args.teacher_transitions, replay_capacity=args.replay_capacity, device=str(env.MDP.home.device))
     replay = VectorReplayBuffer(cfg.replay_capacity, cfg.observation_dim, cfg.action_dim, device=cfg.device)
     learner = GroundedSACLearner(cfg, replay)
     for actor in (learner.iql_actor, learner.sac_actor):
@@ -128,7 +95,7 @@ def main():
         stopped = True
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
-    manifest = {'arguments': {k:str(v) if isinstance(v, Path) else v for k,v in vars(args).items()}, 'learner':asdict(cfg), 'environment':{'policy_hz':50,'max_steps':500,'integrator':'implicitfast','solver_iterations':50,'solver_tolerance':1e-5,'sim_freq':settings.sim_freq,'action_slew':args.action_slew,'terrain_height':settings.terrain_height,'flat_soles':args.flat_soles}, 'physics_solver':'CG with full scene reset on episode boundaries', 'reference_data':'all factual teacher transitions, including terminal failures', 'utd_definition':'primary SAC TD minibatch rows / new online transitions; pretraining excluded; each update also samples one IQL batch and one floor batch'}
+    manifest = {'arguments': {k:str(v) if isinstance(v, Path) else v for k,v in vars(args).items()}, 'learner':asdict(cfg), 'environment':{'policy_hz':50,'max_steps':500,'integrator':'implicitfast','solver_iterations':50,'solver_tolerance':1e-5,'sim_freq':settings.sim_freq,'action_slew':args.action_slew,'terrain_height':settings.terrain_height,'flat_soles':args.flat_soles}, 'teacher':teacher_metadata, 'physics_solver':'CG with full scene reset on episode boundaries', 'reference_data':'all factual teacher transitions, including terminal failures', 'replay_policy':'one physical buffer with teacher index tags; stop at capacity without overwriting; final vector step truncated to remaining rows', 'utd_definition':'primary SAC TD minibatch rows / new online transitions; pretraining excluded; each update also samples one IQL batch and one floor batch'}
     (args.run_dir/'config.json').write_text(json.dumps(manifest, indent=2)+'\n')
     writer = SummaryWriter(str(args.run_dir / "tensorboard"), flush_secs=10)
     writer.add_text("config", json.dumps(manifest, indent=2), 0)
@@ -146,19 +113,29 @@ def main():
             if not torch.isfinite(action).all() or not torch.isfinite(obs).all():
                 raise FloatingPointError("non-finite policy action or observation")
             action = action.clamp(lower, upper)
+            if args.teacher == 'onnx':
+                teacher.observe_applied_action(action, teacher_mask)
             next_obs, reward, term, trunc, info = env.step(action)
             if not torch.isfinite(info['final_observation']).all() or not torch.isfinite(reward).all():
                 raise FloatingPointError('non-finite physical transition')
             indices = replay.add_batch(ReplayBatch(obs.clone(),action.clone(),reward.flatten(),info['final_observation'],reward.flatten()>0,(term|trunc).flatten(),teacher_mask))
-            replay.mark_human_suffix(indices[teacher_mask].tolist())
+            replay.mark_human_suffix(indices[teacher_mask[:len(indices)]].tolist())
             obs = next_obs
+            return len(indices)
     try:
-        while seed_transitions < args.teacher_transitions and not stopped:
+        seed_cursor = len(env.MDP.completed)
+        while seed_transitions < args.teacher_transitions and not replay.full and not stopped:
             state = env.get_state(env.all_envs_idx)
             action = teacher.act(state,env.MDP.steps,env.MDP.origins,env.MDP.yaws)
-            collect(action, torch.ones(args.num_envs, dtype=torch.bool, device=obs.device))
-            seed_transitions += args.num_envs
+            seed_transitions += collect(action, torch.ones(args.num_envs, dtype=torch.bool, device=obs.device))
             writer.add_scalar("collection/teacher_transitions", seed_transitions, seed_transitions)
+            for row in env.MDP.completed[seed_cursor:]:
+                with (args.run_dir/'teacher_collection.jsonl').open('a') as log:
+                    log.write(json.dumps(row)+'\n')
+                for metric in ('steps', 'distance', 'success', 'fallen'):
+                    writer.add_scalar('collection/teacher/'+metric, float(row[metric]), seed_transitions)
+                print(f'teacher collection episode={row}', flush=True)
+            seed_cursor = len(env.MDP.completed)
             if seed_transitions % 250 < args.num_envs:
                 print(f'teacher transitions={seed_transitions} episodes={len(env.MDP.completed)}',flush=True)
         if stopped:
@@ -184,16 +161,16 @@ def main():
         metrics = {}
         metrics_transition = 0
         with (args.run_dir/'metrics.jsonl').open('a') as log:
-            while online_transitions < args.transitions and not stopped:
+            while not replay.full and (args.transitions is None or online_transitions < args.transitions) and not stopped:
                 state = env.get_state(env.all_envs_idx)
                 with torch.no_grad():
                     proposed = learner.sac_action(obs) + args.exploration_std*torch.randn_like(env.MDP.last_action)
                     proposed = torch.maximum(env.MDP.last_action-args.action_slew, torch.minimum(env.MDP.last_action+args.action_slew, proposed))
                     guided = teacher.act(state,env.MDP.steps,env.MDP.origins,env.MDP.yaws)
                     action = torch.where(teacher_mode[:,None],guided,proposed)
-                collect(action,teacher_mode)
-                online_transitions += args.num_envs
-                budget.add(args.num_envs)
+                collected = collect(action,teacher_mode)
+                online_transitions += collected
+                budget.add(collected)
                 while budget.take():
                     metrics = learner.update()
                     online_updates += 1
@@ -224,15 +201,20 @@ def main():
                     writer.add_scalar('training/transitions_per_second', online_transitions/max(time.monotonic()-started, 1e-6), online_transitions)
                     writer.add_scalar('training/teacher_fraction', float(teacher_mode.float().mean()), online_transitions)
                     writer.add_scalar('training/num_envs', args.num_envs, online_transitions)
+                    writer.add_scalar('replay/size', len(replay), online_transitions)
+                    writer.add_scalar('replay/capacity', replay.capacity, online_transitions)
                     log.write(json.dumps(record)+'\n');log.flush()
                     print(f'transitions={online_transitions} updates={online_updates} UTD={record["effective_utd"]:.3f}',flush=True)
                 if online_transitions % args.checkpoint_every < args.num_envs:
                     save()
+        if replay.full:
+            print(f'replay buffer full rows={len(replay)}/{replay.capacity}; stopping training', flush=True)
     except Exception as error:
         (args.run_dir/'failure.json').write_text(json.dumps({'error':str(error),'online_transitions':online_transitions,'online_updates':online_updates},indent=2)+'\n')
         raise
     finally:
         save()
+        (args.run_dir/'status.json').write_text(json.dumps({'reason':'buffer_full' if replay.full else ('signal' if stopped else 'transition_limit_or_error'),'replay_size':len(replay),'replay_capacity':replay.capacity,'online_transitions':online_transitions,'online_updates':online_updates},indent=2)+'\n')
         (args.run_dir/'episodes.json').write_text(json.dumps(env.MDP.completed,indent=2)+'\n')
         writer.close()
         env.scene.destroy()

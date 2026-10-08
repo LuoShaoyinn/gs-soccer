@@ -164,3 +164,37 @@ this run uses one environment and minibatch 256.
 ```bash
 .venv/bin/tensorboard --logdir runs/mos9_limit_action --port 6006
 ```
+
+The URSoccerLab ONNX walking policy can be tested here as a separate reference:
+
+```sh
+uv pip install --python .venv/bin/python onnxruntime
+HIP_VISIBLE_DEVICES=0 .venv/bin/python test_mos9_onnx.py --render --episodes 3
+```
+
+The evaluator reads the local URSoccerLab policy and MOS9 actuator settings,
+uses its 63-value observation, arms-down default pose, raw previous action,
+and joint target scaling. It settles for one second, then evaluates the same
+500-step walking task. JSON and PNG artifacts are saved under
+`runs/mos9_teacher/onnx_reference/`. The default uses the original URDF contact
+geometry; `--flat-soles` explicitly selects the experimental sole variant.
+This learned reference is separate from the traditional planning teacher.
+
+Fresh training with the validated ONNX reference and higher uniform terrain:
+
+```sh
+.venv/bin/python launch_mos9_limit_action.py \
+  --run-dir runs/mos9_limit_action/onnx_10mm_utd64 \
+  --teacher onnx --no-flat-soles --terrain-height 0.01 \
+  --num-envs 1 --utd 64 --replay-capacity 3000000
+```
+
+The replay capacity includes initial teacher collection and online transitions.
+Training stops at capacity, saves the final checkpoint and `status.json`, and
+never overwrites rows. A final vector batch is truncated to the remaining space;
+UTD uses the number of rows actually inserted. `--transitions` optionally sets
+an earlier online limit; by default the buffer determines the stopping point.
+The ONNX teacher holds its default pose during the first 50 steps **inside**
+the 500-step horizon, then walks. ONNX inference uses one CPU thread; simulation
+and learning run on GPU 0. Teacher state tracks the learner's actually applied
+joint targets during learner control.

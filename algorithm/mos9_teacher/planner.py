@@ -15,7 +15,7 @@ from scipy.spatial.transform import Rotation
 
 @dataclass
 class GaitConfig:
-    step_length: float = 0.025
+    step_length: float = 0.035
     step_time: float = 0.6
     swing_height: float = 0.012
     double_support: float = 0.6
@@ -25,7 +25,7 @@ class GaitConfig:
     zmp_y_scale: float = 0.95
     com_x_offset: float = 0.0
     stance_width: float = 0.12
-    lean_gain: float = 1.5
+    lean_gain: float = 1.7
 
 
 class Kinematics:
@@ -136,6 +136,10 @@ class Kinematics:
 def make_reference(cfg: GaitConfig, dt=0.02, duration=12.0, model_path="assets/MOS9/MOS9_walk.urdf"):
     kin = Kinematics(model_path)
     zero = np.zeros(len(kin.names))
+    # MOS9's zero shoulder rolls form a T pose. Use the walking model's
+    # arms-down posture before calculating COM and solving leg IK.
+    zero[kin.index["right_shoulder_roll"]] = -1.4
+    zero[kin.index["left_shoulder_roll"]] = 1.4
     transforms = kin.forward(zero)
     foot0 = np.array([transforms[name][:3, 3] for name in ("Rfoot", "Lfoot")])
     rotations = [transforms[name][:3, :3] for name in ("Rfoot", "Lfoot")]

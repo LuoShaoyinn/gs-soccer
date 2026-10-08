@@ -93,3 +93,43 @@ The extracted simple teacher reproduced recorded baseline joint commands
 within 5.96e-8 radians. Its independent simulator run is saved as
 `runs/mos9_teacher/simple_teacher.json`: 360 steps (7.2 s), 0.346 m, terminal
 fall. This is useful guidance, not a successful 10-second demonstration.
+
+## URSoccerLab reference policy and arm posture
+
+The local `py_example/examples/mos9_walk/mos9_walk.py` loads
+`mos9_walk_v11_5500.onnx`. Its default shoulder rolls are right -1.4 rad and
+left +1.4 rad. Rendering the previous planner home pose confirmed that zero
+shoulder rolls produce a T pose. The planner now includes the arms-down pose
+before COM calculation and leg IK; this changes the plan cache key. The online
+IK controller also preserves the planned arm pose.
+
+`test_mos9_onnx.py` is a separate learned-policy reference evaluator. It uses
+the source observation/action contract and actuator gains/torque limits from
+`external/robots/mos9/model.xml`, with zero armature. It holds the default pose
+for one simulated second before starting the 500-step MDP. Reference results
+are not evidence that the classical teacher succeeds.
+
+The first reference episode on 0–1 mm uniform terrain, original URDF contacts,
+50 Hz control and 4000 Hz physics survived 500 steps and moved 3.2704 m.
+Its result and T-pose comparison render are preserved in
+`runs/mos9_teacher/onnx_reference_first/`. Learner training remains stopped.
+
+The higher-terrain reference test on 0–10 mm uniform terrain completed a full
+500-step episode without falling, with 3.0838 m forward displacement. See
+`runs/mos9_teacher/onnx_10mm/result.json` and its pose PNGs. This test was stopped
+after the first complete episode to release GPU 0 for the requested fresh run;
+it does not establish success across terrain seeds.
+
+Fresh run: `runs/mos9_limit_action/onnx_10mm_utd64`, explicitly using the learned
+ONNX teacher, original URDF contacts, 0–10 mm terrain, UTD 64, one environment,
+and 3,000,000 replay rows. Initial teacher data is newly collected; no old
+checkpoint or replay is imported. The teacher's 50-step standing phase is
+included in the 500-step training horizon. The replay stops at capacity,
+never overwrites rows, saves the final checkpoint and records `buffer_full`
+in `status.json`. Older runs were moved to `runs/archive/`.
+
+The first teacher episode inside the fresh training process also succeeded:
+500 steps, no fall, 2.9307 m forward displacement, including the standing phase.
+This is logged in the run's `teacher_collection.jsonl` and TensorBoard. At the
+handoff the process is collecting its initial 2048 teacher transitions, before
+IQL pretraining and online learning.

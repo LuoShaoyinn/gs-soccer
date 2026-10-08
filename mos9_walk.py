@@ -11,7 +11,9 @@ import genesis as gs
 from algorithm.mos9_teacher.planner import GaitConfig, Kinematics, make_plan
 from algorithm.mos9_teacher.controller import WalkingTeacher
 from algorithm.mos9_teacher.simple import SimpleWalkingTeacher
+from algorithm.mos9_teacher.phase import PhaseWalkingTeacher
 from algorithm.mos9_teacher.model import model_path
+from algorithm.mos9_teacher.environment import WalkingEnv
 from MDPs.mos9_walk import MOS9WalkConfig, MOS9WalkMDP
 from robots.mos9 import MOS9, MOS9Config
 from fields.terrain_field import TerrainField, TerrainFieldConfig
@@ -47,29 +49,32 @@ def parse_args(argv=None):
     parser.add_argument("--num-envs", type=int, default=1)
     parser.add_argument("--terrain", choices=("flat", "gentle"), default="gentle",
                         help="gentle: uniform random heights between 0 and terrain-height")
-    parser.add_argument("--terrain-height", type=float, default=0.003)
+    parser.add_argument("--terrain-height", type=float, default=0.001)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--viewer", action="store_true")
     parser.add_argument("--output", type=Path, default=Path("runs/mos9_teacher/eval.json"))
     parser.add_argument("--reset-xy", type=float, default=0.0)
     parser.add_argument("--reset-yaw", type=float, default=0.0)
     parser.add_argument("--feedback", type=float, default=0.2)
-    parser.add_argument("--pitch-feedback", type=float, default=None,
+    parser.add_argument("--pitch-feedback", type=float, default=0.6,
                         help="override ankle pitch gain independently of roll")
     parser.add_argument("--kp", type=float, default=250)
     parser.add_argument("--kv", type=float, default=8)
     parser.add_argument("--feedback-sweep", action="store_true", help="evaluate eight ankle feedback gains in parallel")
     parser.add_argument("--angular-damping", type=float, default=0.0)
-    parser.add_argument("--sim-freq", type=int, default=2000)
+    parser.add_argument("--sim-freq", type=int, default=4000)
     parser.add_argument("--spawn-clearance", type=float, default=0.02,
                         help="clearance of the lowest collision point above the highest terrain")
     parser.add_argument("--self-collision", action="store_true")
-    parser.add_argument("--position-feedback", type=float, default=2.0)
-    parser.add_argument("--velocity-feedback", type=float, default=0.3)
+    parser.add_argument("--position-feedback", type=float, default=1.0)
+    parser.add_argument("--velocity-feedback", type=float, default=0.15)
+    parser.add_argument("--lateral-position-feedback", type=float, default=6.0)
+    parser.add_argument("--lateral-velocity-feedback", type=float, default=0.9)
     parser.add_argument("--tracking-limit", type=float, default=1.0,
                         help="maximum paired hip/ankle tracking correction in radians")
     parser.add_argument("--ik-backend", choices=("gpu", "cpu"), default="gpu")
     parser.add_argument("--tracking-sweep", action="store_true")
+    parser.add_argument("--adaptive-phase", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--online-ik", action=argparse.BooleanOptionalAction, default=False,
                         help="experimental online Cartesian feedback; offline GPU IK is the default")
     parser.add_argument("--flat-soles", action="store_true", help="use a generated URDF with flat contacts fitted to visual soles")
@@ -92,7 +97,7 @@ def parse_args(argv=None):
     return args
 
 
-def build_walking_env(args, env_class=Env):
+def build_walking_env(args, env_class=WalkingEnv):
     gait = GaitConfig(**{name: getattr(args, name) for name in asdict(GaitConfig())})
     robot_urdf = model_path(args.flat_soles)
     if args.viewer:
@@ -175,10 +180,13 @@ def main():
         velocity_gains = position_gains*0.15
     teacher = (WalkingTeacher(env.robot.robot, plan, position_gains, velocity_gains, gains, args.angular_damping)
                if args.online_ik else None)
-    simple_teacher = SimpleWalkingTeacher(plan, gs.device, args.position_feedback,
-                                         args.velocity_feedback, args.feedback,
-                                         args.feedback if args.pitch_feedback is None else args.pitch_feedback,
-                                         args.tracking_limit)
+    teacher_kwargs = dict(position_gain=(args.position_feedback,args.lateral_position_feedback),
+                          velocity_gain=(args.velocity_feedback,args.lateral_velocity_feedback),
+                          roll_gain=args.feedback,
+                          pitch_gain=args.feedback if args.pitch_feedback is None else args.pitch_feedback,
+                          tracking_limit=args.tracking_limit)
+    simple_teacher = (PhaseWalkingTeacher(plan,gs.device,gait,**teacher_kwargs)
+                      if args.adaptive_phase else SimpleWalkingTeacher(plan,gs.device,**teacher_kwargs))
     traces = []
     rows = []
     quotas = [args.episodes//args.num_envs + int(i < args.episodes % args.num_envs) for i in range(args.num_envs)]
@@ -250,8 +258,12 @@ def main():
               "spawn_clearance": args.spawn_clearance,
               "self_collision": args.self_collision,
               "position_feedback": args.position_feedback, "velocity_feedback": args.velocity_feedback,
+              "lateral_position_feedback": args.lateral_position_feedback,
+              "lateral_velocity_feedback": args.lateral_velocity_feedback,
+              "physics_solver": "CG", "integrator": "implicitfast",
               "tracking_limit": args.tracking_limit,
               "ik_backend": args.ik_backend,
+              "adaptive_phase": args.adaptive_phase,
               "online_ik": args.online_ik, "online_ik_max_error": teacher.max_error if teacher else 0.0,
               "flat_soles": args.flat_soles,
               "build_height": build_height, "reset_height": reset_height,
