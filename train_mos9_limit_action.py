@@ -41,30 +41,36 @@ def main():
     p.add_argument('--transitions', type=int, default=None, help='optional online transition limit; otherwise stop when replay fills')
     p.add_argument('--replay-capacity', type=int, default=100000000)
     p.add_argument('--teacher-checkpoint', type=Path, default=None)
-    p.add_argument('--teacher-transitions', type=int, default=2048)
-    p.add_argument('--pretrain-updates', type=int, default=500)
-    p.add_argument('--batch-size', type=int, default=256)
+    p.add_argument('--teacher-transitions', type=int, default=None, help='optional row target overriding the successful-demo count')
+    p.add_argument('--demo-episodes', type=int, default=2000)
+    p.add_argument('--pretrain-updates', type=int, default=2000)
+    p.add_argument('--hidden-dim', type=int, default=512)
+    p.add_argument('--warmup-transitions', type=int, default=65536)
+    p.add_argument('--batch-size', type=int, default=4096)
     p.add_argument('--utd', type=float, default=64.0)
     p.add_argument('--teacher-intervention-prob', type=float, default=0.01)
     p.add_argument('--replay-backend', choices=('memory','block'), default='block')
     p.add_argument('--replay-block-size', type=int, default=4096)
     p.add_argument('--replay-ram-blocks', type=int, default=4096)
     p.add_argument('--replay-gpu-cache-mib', type=int, default=16384)
-    p.add_argument('--exploration-std', type=float, default=0.02)
+    p.add_argument('--exploration-std', type=float, default=0.05)
     p.add_argument('--sim-freq', type=int, default=4000)
-    p.add_argument('--action-slew', type=float, default=0.05)
+    p.add_argument('--action-slew', type=float, default=0.0, help='optional robot-interface limiter; disabled for old-branch fidelity')
     p.add_argument('--checkpoint-every', type=int, default=4096)
     p.add_argument('--flat-soles', action=argparse.BooleanOptionalAction, default=True)
     p.add_argument('--terrain-height', type=float, default=0.001)
     p.add_argument('--teacher', choices=('planned', 'onnx'), default='planned')
     p.add_argument('--teacher-policy', type=Path, default=Path('/home/luoshaoyinn/workspace/URSoccerLab/py_example/models/policies/mos9_walk_v11_5500.onnx'))
     args = p.parse_args()
-    if min(args.num_envs, args.replay_capacity, args.teacher_transitions, args.batch_size, args.checkpoint_every) <= 0 or (args.transitions is not None and args.transitions <= 0) or args.utd <= 0 or args.pretrain_updates < 0 or not 0 <= args.teacher_intervention_prob <= 1 or args.exploration_std < 0 or args.action_slew <= 0 or args.sim_freq <= 0 or args.sim_freq % 50:
+    teacher_target = args.teacher_transitions if args.teacher_transitions is not None else args.demo_episodes*500
+    if min(args.num_envs, args.replay_capacity, teacher_target, args.batch_size, args.checkpoint_every, args.hidden_dim) <= 0 or (args.transitions is not None and args.transitions <= 0) or args.utd <= 0 or args.pretrain_updates < 0 or not 0 <= args.teacher_intervention_prob <= 1 or args.exploration_std < 0 or args.action_slew < 0 or args.sim_freq <= 0 or args.sim_freq % 50:
         p.error('invalid positive counts, UTD, exploration, or teacher probability')
-    if args.teacher_transitions < args.batch_size:
-        p.error('teacher-transitions must be at least batch-size')
-    if args.replay_capacity < args.teacher_transitions:
-        p.error('replay-capacity must fit initial teacher transitions')
+    if args.num_envs % 2 or args.warmup_transitions < 0 or args.warmup_transitions % args.num_envs:
+        p.error('num-envs must be even; warmup-transitions must be a nonnegative multiple of num-envs')
+    if args.demo_episodes < 1 or args.replay_capacity <= args.batch_size:
+        p.error('positive demo-episodes and replay-capacity larger than batch-size required')
+    if args.replay_capacity < ((teacher_target+499)//500)*500:
+        p.error('replay-capacity must fit complete successful initial demos')
     if min(args.replay_block_size,args.replay_ram_blocks) < 1 or args.replay_gpu_cache_mib < 0:
         p.error('invalid replay cache budgets')
     args.run_dir.mkdir(parents=True, exist_ok=False)
@@ -77,8 +83,7 @@ def main():
     else:
         teacher = PhaseWalkingTeacher(plan, env.MDP.home.device, gait)
         teacher_metadata = {'kind':'planned','adaptive_phase':True,'gait':asdict(gait),'position_gain':teacher.position_gain.tolist(),'velocity_gain':teacher.velocity_gain.tolist(),'roll_gain':teacher.roll_gain,'pitch_gain':teacher.pitch_gain}
-    lower, upper = torch.tensor([kin.bounds[n] for n in plan['names']], device=env.MDP.home.device).T
-    cfg = GroundedSACConfig(observation_dim=env.observation_space.shape[0], action_dim=len(plan['names']), action_limit=3., action_slew=args.action_slew, horizons=500, hidden_dim=128, gamma=1., step_penalty=0., value_lower_bound=-1., action_limit_margin=1./500, batch_size=args.batch_size, exploration_std=args.exploration_std, iql_pretrain_updates=args.pretrain_updates, warmup_transitions=args.teacher_transitions, replay_capacity=args.replay_capacity, device=str(env.MDP.home.device))
+    cfg = GroundedSACConfig(observation_dim=env.observation_space.shape[0], action_dim=len(plan['names']), action_limit=3., action_slew=args.action_slew, horizons=500, hidden_dim=args.hidden_dim, gamma=0.99, step_penalty=0., value_lower_bound=-1., action_limit_margin=1./500, batch_size=args.batch_size, exploration_std=args.exploration_std, iql_pretrain_updates=args.pretrain_updates, warmup_transitions=args.warmup_transitions, replay_capacity=args.replay_capacity, device=str(env.MDP.home.device))
     if args.replay_backend == 'block':
         if args.teacher_checkpoint is not None:
             p.error('block replay does not support importing/resuming an existing replay')
@@ -87,15 +92,12 @@ def main():
     else:
         replay = VectorReplayBuffer(cfg.replay_capacity, cfg.observation_dim, cfg.action_dim, device=cfg.device)
     learner = GroundedSACLearner(cfg, replay)
-    for actor in (learner.iql_actor, learner.sac_actor):
-        actor.joint_lower.copy_(lower)
-        actor.joint_upper.copy_(upper)
     obs = env.reset()[0]
-    online_transitions = online_updates = seed_transitions = 0
+    online_transitions = online_updates = seed_transitions = warmup_transitions = 0
     budget = UpdateBudget(args.utd, args.batch_size)
     if args.teacher_checkpoint is not None:
         initial = torch.load(args.teacher_checkpoint, map_location='cpu', weights_only=False)
-        if initial['config'].get('algorithm_contract') != 'success_only_teacher_suffix_v1':
+        if initial['config'].get('algorithm_contract') != 'old_branch_fidelity_v2':
             raise ValueError('checkpoint does not certify success-only teacher suffix semantics; collect fresh demos')
         if initial['config']['environment'] != {'policy_hz':50,'max_steps':500,'integrator':'implicitfast','solver_iterations':50,'solver_tolerance':1e-5,'sim_freq':settings.sim_freq,'action_slew':args.action_slew,'terrain_height':settings.terrain_height,'flat_soles':args.flat_soles}:
             raise ValueError('teacher checkpoint task/model settings differ')
@@ -110,7 +112,7 @@ def main():
         stopped = True
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
-    manifest = {'algorithm_contract':'success_only_teacher_suffix_v1','arguments': {k:str(v) if isinstance(v, Path) else v for k,v in vars(args).items()}, 'learner':asdict(cfg), 'environment':{'policy_hz':50,'max_steps':500,'integrator':'implicitfast','solver_iterations':50,'solver_tolerance':1e-5,'sim_freq':settings.sim_freq,'action_slew':args.action_slew,'terrain_height':settings.terrain_height,'flat_soles':args.flat_soles}, 'teacher':teacher_metadata, 'physics_solver':'CG with full scene reset on episode boundaries', 'reference_data':'only confirmed successful teacher suffixes; initial demos are complete successful teacher episodes; SAC retains all online transitions', 'replay_policy':'one physical buffer with success-confirmed suffix index; failed rescues and learner prefixes excluded from reference view; stop at capacity without overwriting', 'controller':{'learner_first':True,'sticky_until_episode_end':True,'rescue_envs':list(range(args.num_envs//2,args.num_envs)),'per_step_probability':args.teacher_intervention_prob}, 'utd_definition':'primary SAC TD minibatch rows / new online transitions; pretraining excluded; each update also samples one IQL batch and one floor batch'}
+    manifest = {'algorithm_contract':'old_branch_fidelity_v2','arguments': {k:str(v) if isinstance(v, Path) else v for k,v in vars(args).items()}, 'learner':asdict(cfg), 'environment':{'policy_hz':50,'max_steps':500,'integrator':'implicitfast','solver_iterations':50,'solver_tolerance':1e-5,'sim_freq':settings.sim_freq,'action_slew':args.action_slew,'terrain_height':settings.terrain_height,'flat_soles':args.flat_soles}, 'teacher':teacher_metadata, 'physics_solver':'CG with full scene reset on episode boundaries', 'baseline_training_budgets':{'demo_episodes':args.demo_episodes,'initial_row_target':teacher_target,'pretrain_updates':args.pretrain_updates,'hidden_dim':args.hidden_dim,'batch_size':args.batch_size,'warmup_transitions':args.warmup_transitions},'reference_data':'only confirmed successful teacher suffixes; initial demos are complete successful teacher episodes; SAC retains all online transitions', 'replay_policy':'one physical buffer with success-confirmed suffix index; failed rescues and learner prefixes excluded from reference view; stop at capacity without overwriting', 'controller':{'learner_first':True,'sticky_until_episode_end':True,'rescue_envs':list(range(args.num_envs//2,args.num_envs)),'per_step_probability':args.teacher_intervention_prob}, 'utd_definition':'primary SAC TD minibatch rows / new online transitions; pretraining excluded; each update also samples one IQL batch and one floor batch'}
     (args.run_dir/'config.json').write_text(json.dumps(manifest, indent=2)+'\n')
     writer = SummaryWriter(str(args.run_dir / "tensorboard"), flush_secs=10)
     writer.add_text("config", json.dumps(manifest, indent=2), 0)
@@ -118,10 +120,13 @@ def main():
     episode_counts = defaultdict(int)
     started = time.monotonic()
     def save():
-        checkpoint = {'learner':learner.state_dict(), 'replay':replay.state_dict(), 'config':manifest, 'online_transitions':online_transitions,'online_updates':online_updates, 'seed_transitions':seed_transitions, 'utd_credit':budget.credit, 'torch_rng':torch.get_rng_state(), 'cuda_rng':torch.cuda.get_rng_state_all()}
+        checkpoint = {'learner':learner.state_dict(), 'replay':replay.state_dict(), 'config':manifest, 'online_transitions':online_transitions,'online_updates':online_updates, 'seed_transitions':seed_transitions,'warmup_transitions':warmup_transitions,'collector_rng':generator.get_state(), 'utd_credit':budget.credit, 'torch_rng':torch.get_rng_state(), 'cuda_rng':torch.cuda.get_rng_state_all()}
         temp = args.run_dir/'checkpoint.tmp'
         torch.save(checkpoint, temp)
         temp.replace(args.run_dir/'checkpoint.pt')
+        if args.replay_backend == 'block':
+            replay.prune_checkpoint_indices()
+    generator = torch.Generator(device=env.MDP.home.device).manual_seed(args.seed+1)
     suffix_tracker = SuccessfulSuffixTracker(args.num_envs, replay)
     demo_staging = [[] for _ in range(args.num_envs)]
     def collect(action, teacher_mask, *, warmup=False):
@@ -129,7 +134,7 @@ def main():
         with torch.no_grad():
             if not torch.isfinite(action).all() or not torch.isfinite(obs).all():
                 raise FloatingPointError("non-finite policy action or observation")
-            action = action.clamp(lower, upper)
+            action = action.clamp(-cfg.action_limit, cfg.action_limit)
             if args.teacher == 'onnx':
                 teacher.observe_applied_action(action, teacher_mask)
             next_obs, reward, term, trunc, info = env.step(action)
@@ -147,7 +152,7 @@ def main():
                     if not bool(cpu.terminal[env_id]):
                         continue
                     episode = demo_staging[env_id]
-                    if bool(cpu.success[env_id]) and seed_transitions+inserted < args.teacher_transitions:
+                    if bool(cpu.success[env_id]) and seed_transitions+inserted < teacher_target:
                         if len(episode) > replay.capacity-len(replay):
                             raise RuntimeError('replay cannot fit the complete successful initial demo')
                         successful = ReplayBatch(**{k:torch.cat([getattr(row,k) for row in episode]) for k in ReplayBatch.__dataclass_fields__})
@@ -162,7 +167,7 @@ def main():
     try:
         seed_cursor = len(env.MDP.completed)
         demo_ticks = 0
-        while seed_transitions < args.teacher_transitions and not replay.full and not stopped:
+        while seed_transitions < teacher_target and not replay.full and not stopped:
             state = env.get_state(env.all_envs_idx)
             action = teacher.act(state,env.MDP.steps,env.MDP.origins,env.MDP.yaws)
             demo_ticks += 1
@@ -192,8 +197,7 @@ def main():
                     writer.add_scalar("pretrain/"+key, float(value), i+1)
             if (i+1)%50 == 0:
                 print(f'pretrain={i+1} actor_loss={float(metrics["iql/actor_loss"]):.6f}',flush=True)
-        # Start the actor at the fitted reference rather than random joint targets.
-        learner.sac_actor.load_state_dict(learner.iql_actor.state_dict())
+        # Keep independently initialized SAC parameters, matching the old branch.
         save()
         writer.flush()
         started = time.monotonic()
@@ -207,30 +211,40 @@ def main():
         metrics = {}
         metrics_transition = 0
         with (args.run_dir/'metrics.jsonl').open('a') as log:
-            while not replay.full and (args.transitions is None or online_transitions < args.transitions) and not stopped:
+            while not replay.full and (warmup_transitions < args.warmup_transitions or args.transitions is None or online_transitions < args.transitions) and not stopped:
                 state = env.get_state(env.all_envs_idx)
                 with torch.no_grad():
-                    proposed = learner.sac_action(obs) + args.exploration_std*torch.randn_like(env.MDP.last_action)
-                    proposed = torch.maximum(env.MDP.last_action-args.action_slew, torch.minimum(env.MDP.last_action+args.action_slew, proposed))
-                    trigger = (torch.rand(args.num_envs,device=obs.device) < args.teacher_intervention_prob) & rescue_enabled & ~teacher_mode & (env.MDP.steps > 0)
+                    warming_up = warmup_transitions < args.warmup_transitions
+                    trigger = (torch.rand(args.num_envs,device=obs.device,generator=generator) < args.teacher_intervention_prob) & rescue_enabled & ~teacher_mode & (env.MDP.steps > 0)
                     episode_takeover_step[trigger] = env.MDP.steps[trigger]
                     teacher_mode |= trigger
-                    guided = teacher.act(state,env.MDP.steps,env.MDP.origins,env.MDP.yaws)
-                    action = torch.where(teacher_mode[:,None],guided,proposed)
+                    proposed = learner.sac_action(obs) + args.exploration_std*torch.randn(env.MDP.last_action.shape,device=obs.device,generator=generator)
+                    proposed = proposed.clamp(-cfg.action_limit,cfg.action_limit)
+                    if args.action_slew > 0:
+                        proposed = torch.maximum(env.MDP.last_action-args.action_slew, torch.minimum(env.MDP.last_action+args.action_slew, proposed))
+                    if teacher_mode.any():
+                        guided = teacher.act(state,env.MDP.steps,env.MDP.origins,env.MDP.yaws)
+                        action = torch.where(teacher_mode[:,None],guided,proposed)
+                    else:
+                        action = proposed
                 episode_teacher_steps += teacher_mode.long()
                 collected = collect(action,teacher_mode)
-                teacher_transitions += int(teacher_mode[:collected].sum())
-                online_transitions += collected
-                budget.add(collected)
-                while budget.take():
-                    metrics = learner.update()
-                    online_updates += 1
-                    metrics_transition = online_transitions
+                if warming_up:
+                    warmup_transitions += collected
+                else:
+                    teacher_transitions += int(teacher_mode[:collected].sum())
+                    online_transitions += collected
+                    budget.add(collected)
+                    # Match old stop-at-full: no learner update after capacity is reached.
+                    while not replay.full and budget.take():
+                        metrics = learner.update()
+                        online_updates += 1
+                        metrics_transition = online_transitions
                 episodes = env.MDP.completed[cursor:]
                 for row in episodes:
                     env_id = row['env_id']
                     row = {**row,'teacher':bool(teacher_mode[env_id]),'teacher_steps':int(episode_teacher_steps[env_id]),'teacher_fraction':float(episode_teacher_steps[env_id])/row['steps'],'takeover_step':int(episode_takeover_step[env_id]),'rescue_enabled':bool(rescue_enabled[env_id])}
-                    log.write(json.dumps({'episode':row,'online_transitions':online_transitions})+'\n')
+                    log.write(json.dumps({'episode':row,'online_transitions':online_transitions,'warmup':warming_up})+'\n')
                     group = "teacher" if row['teacher'] else "learner"
                     recent[group].append(row)
                     episode_counts[group] += 1
@@ -244,6 +258,13 @@ def main():
                     episode_teacher_steps[env_id] = 0
                     episode_takeover_step[env_id] = -1
                 cursor = len(env.MDP.completed)
+                if warming_up:
+                    if warmup_transitions % 100 < args.num_envs:
+                        print(f'warmup transitions={warmup_transitions}/{args.warmup_transitions} learner_updates=0',flush=True)
+                    if warmup_transitions >= args.warmup_transitions:
+                        save()
+                        started = time.monotonic()
+                    continue
                 if online_transitions % 100 < args.num_envs:
                     record = {'online_transitions':online_transitions,'online_updates':online_updates,'effective_utd':online_updates*args.batch_size/online_transitions,'update_credit':budget.credit,'metrics_transition':metrics_transition,**metrics}
                     for key, value in metrics.items():
@@ -265,11 +286,11 @@ def main():
         if replay.full:
             print(f'replay buffer full rows={len(replay)}/{replay.capacity}; stopping training', flush=True)
     except Exception as error:
-        (args.run_dir/'failure.json').write_text(json.dumps({'error':str(error),'online_transitions':online_transitions,'online_updates':online_updates},indent=2)+'\n')
+        (args.run_dir/'failure.json').write_text(json.dumps({'error':str(error),'online_transitions':online_transitions,'online_updates':online_updates,'warmup_transitions':warmup_transitions},indent=2)+'\n')
         raise
     finally:
         save()
-        (args.run_dir/'status.json').write_text(json.dumps({'reason':'buffer_full' if replay.full else ('signal' if stopped else 'transition_limit_or_error'),'replay_size':len(replay),'replay_capacity':replay.capacity,'online_transitions':online_transitions,'online_updates':online_updates},indent=2)+'\n')
+        (args.run_dir/'status.json').write_text(json.dumps({'reason':'buffer_full' if replay.full else ('signal' if stopped else 'transition_limit_or_error'),'replay_size':len(replay),'replay_capacity':replay.capacity,'online_transitions':online_transitions,'online_updates':online_updates,'warmup_transitions':warmup_transitions},indent=2)+'\n')
         (args.run_dir/'episodes.json').write_text(json.dumps(env.MDP.completed,indent=2)+'\n')
         writer.close()
         if args.replay_backend == 'block':

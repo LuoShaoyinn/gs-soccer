@@ -28,18 +28,34 @@ newer formulation.
   pretraining and auxiliary IQL/H/floor samples are excluded.
 - Stop at replay capacity; never overwrite stored rows. An unfinished episode
   at stopping time has no confirmed suffix. Disk replay keeps an authoritative
-  CPU suffix bitmap keyed by stored global row IDs, persisted as suffix_index.pt.
+  CPU suffix bitmap keyed by stored global row IDs, persisted in versioned suffix-index snapshots referenced by checkpoints.
   GPU/RAM sampling consults this index, so cached rows cannot become eligible
   prematurely and later confirmation does not require a second transition store.
 
 Task/interface changes: 18 MOS9 joints, 68 observations, 500 steps at 50 Hz,
-sparse terminal reward, gamma 1, task lower bound -1, hidden width 128,
-batch size 256, ONNX teacher, original sole contacts, and 0–10 mm terrain.
-Executed learner targets have the existing 0.05-rad step limit in the robot
-interface; algorithm proposals remain the raw actor output, as in the baseline.
+sparse terminal reward, task lower bound -1, ONNX teacher, original sole
+contacts, and 0–10 mm terrain. Gamma remains 0.99, hidden width 512, and
+batch size 4096, matching the older branch. Actor computations match the
+baseline exactly; the MOS9 scalar action limit is 3 radians. Additional
+slew limiting is disabled.
+
+The collection protocol retains 2000 complete successful initial demos,
+2000 IQL/H pretraining updates, and 65536 online warmup transitions without
+optimizer updates. The SAC actor is independently initialized and is never
+copied from the IQL actor. Normalizers are fitted once. Warmup and training
+share collector state without a reset at the boundary. Exploration standard
+deviation remains 0.05. Four environments and larger block caches are
+explicitly requested resource changes. On reaching capacity, collection
+stops before another optimizer update, preserving the old stopping order;
+remaining fractional UTD credit is recorded.
 Disk-block sampling is uniform within its current cache, not exactly uniform
 across the entire disk history. The block library currently cannot reopen
 replay for resume, so corrected training starts from new weights and data.
 
 The previous all-teacher-reference runs violated this contract. Their weights
 and replay are archived as invalid and must not initialize a corrected run.
+
+The subsequent success-suffix run also changed SAC initialization, warmup,
+and actor/action constraints. It is superseded and must not initialize a
+fully audited run. Source-computation regression checks pin the learner and
+networks to baseline 9778c66; runtime validation remains separate.

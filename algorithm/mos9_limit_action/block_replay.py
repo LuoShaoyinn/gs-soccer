@@ -151,13 +151,20 @@ class DiskReplayBuffer:
 
     def state_dict(self):
         self.flush()
-        path = self.store.directory/'suffix_index.pt'
+        path = self.store.directory/f'suffix_index_{self.size:012d}_{self._tag_version:08d}.pt'
         temporary = path.with_suffix('.tmp')
         torch.save(self.suffix_index[:self.size].clone(), temporary)
         temporary.replace(path)
         return dict(suffix_index=str(path),suffix_rows=int(self.suffix_index[:self.size].sum()),backend='torch-block-replay',directory=str(self.store.directory),
                     capacity=self.capacity,size=self.size,total_transitions=self.total_transitions,
                     stats=self.store.stats(),resumable=False)
+
+    def prune_checkpoint_indices(self):
+        # Called only after the network checkpoint commits. Keep the latest two
+        # immutable index snapshots, not one growing file per checkpoint.
+        paths = sorted(self.store.directory.glob('suffix_index_*.pt'))
+        for path in paths[:-2]:
+            path.unlink()
 
     def close(self):
         self.store.close()

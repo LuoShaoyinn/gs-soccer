@@ -155,7 +155,7 @@ with 320 online transitions and 80 updates: UTD 64. CPU and ROCm checks covered
 filtered teacher sampling, immutable terminal next observations, and availability
 of the teacher view when the random RAM cache contains no teacher rows.
 
-Current run: `runs/mos9_limit_action/onnx_10mm_block4_utd64`, p=0.01, 4 envs,
+Historical invalid run: `runs/mos9_limit_action/onnx_10mm_block4_utd64`, p=0.01, 4 envs,
 100 million rows, 4096-row blocks, 4096 RAM blocks, and 16 GiB GPU pool. RAM
 cache maximum is 9.7 GiB; raw disk data maximum is 58 GiB. On 2026-10-09 02:40
 local time, after GPU pool allocation, total VRAM usage was 17.0/24.0 GiB,
@@ -184,10 +184,25 @@ the first 500 rows; failed/unfinished rescues are excluded. It stopped at capaci
 with 133 online updates, giving UTD 64. Artifacts are preserved under
 `runs/archive/success_suffix_preflight_verified/`.
 
-Fresh corrected run: `runs/mos9_limit_action/onnx_10mm_block4_success_suffix`.
+Superseded partial correction: `runs/mos9_limit_action/onnx_10mm_block4_success_suffix`.
 It keeps the 100-million-row limit, 16 GiB GPU cache, roughly 9.9 GiB RAM cache,
 4 environments, 10 mm terrain, UTD 64, sticky p=0.01 takeover, and 16 dashboard
 signals. Each disk block row is now 631 bytes including its global row ID;
 a 100 MB CPU suffix bitmap gives post-success eligibility without duplicating
 physical transitions. Checkpoints persist the suffix index. See
 `ALGORITHM_CONTRACT.md` for the exact data and update contract.
+
+## Additional algorithm fidelity correction
+
+The success-suffix correction alone did not establish full algorithm fidelity.
+The subsequent audit found SAC initialization copied from IQL, missing online
+warmup, modified actor constraints, and changed optimization defaults. Those
+runs are superseded and their checkpoints must not seed the corrected run.
+The restored source matches learner/network computations from 9778c66 and
+restores independent SAC initialization, warmup, and old optimization defaults.
+The runtime preflight is recorded separately in
+`runs/mos9_limit_action/fidelity_v2_preflight`; full verification passed.
+The recorded eligibility index exactly matches 2496 successful teacher rows
+reconstructed from actual episodes. All learner/optimizer state stayed unchanged
+during 4096 warmup transitions. Four online updates followed, with a clean stop
+at 4860 rows. See `MOS9_ALGORITHM_AUDIT.md` for details.

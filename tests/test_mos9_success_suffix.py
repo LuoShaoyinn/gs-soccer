@@ -47,6 +47,41 @@ class SuccessSuffixTest(unittest.TestCase):
     def test_memory(self):
         self.check_backend(VectorReplayBuffer(10,2,1),'cpu')
 
+    def test_capacity_does_not_confirm_an_unstored_terminal(self):
+        replay = VectorReplayBuffer(5, 2, 1)
+        tracker = SuccessfulSuffixTracker(2, replay)
+        for step in range(3):
+            done = torch.tensor([step == 2, step == 2])
+            success = torch.tensor([False, step == 2])
+            batch = ReplayBatch(torch.zeros(2,2), torch.zeros(2,1), success.float(),
+                                torch.ones(2,2), success, done, torch.zeros(2,dtype=torch.bool))
+            ids = replay.add_batch(batch)
+            tracker.record(ids, torch.ones(2,dtype=torch.bool), success, done)
+        self.assertTrue(replay.full)
+        self.assertEqual(len(replay), 5)
+        self.assertFalse(replay.human_suffix.any())
+        self.assertEqual(tracker.confirmed_suffixes, 0)
+        with self.assertRaises(BufferError):
+            replay.add_batch(batch)
+
+    def test_checkpoint_suffix_snapshots_are_immutable(self):
+        with tempfile.TemporaryDirectory() as path:
+            replay = DiskReplayBuffer(8,2,1,directory=path,device='cpu',batch_size=2,
+                                      block_size=2,ram_blocks=2,gpu_cache_bytes=0)
+            try:
+                batch = ReplayBatch(torch.zeros(2,2),torch.zeros(2,1),torch.zeros(2),
+                                    torch.ones(2,2),torch.zeros(2,dtype=torch.bool),
+                                    torch.zeros(2,dtype=torch.bool),torch.zeros(2,dtype=torch.bool))
+                replay.add_batch(batch)
+                first = replay.state_dict()
+                replay.mark_human_suffix([1])
+                second = replay.state_dict()
+                self.assertNotEqual(first['suffix_index'], second['suffix_index'])
+                self.assertFalse(torch.load(first['suffix_index'],weights_only=True).any())
+                self.assertEqual(torch.load(second['suffix_index'],weights_only=True).tolist(),[False,True])
+            finally:
+                replay.close()
+
     def test_disk_cpu(self):
         with tempfile.TemporaryDirectory() as path:
             b=DiskReplayBuffer(10,2,1,directory=path,device='cpu',batch_size=8,block_size=4,ram_blocks=1,gpu_cache_bytes=0)

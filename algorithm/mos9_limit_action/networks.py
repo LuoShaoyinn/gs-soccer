@@ -26,7 +26,7 @@ class FrozenObservationNormalizer(nn.Module):
 
 
 class FrozenActionNormalizer(nn.Module):
-    """Frozen scale for distances between joint targets in radians."""
+    """Frozen scale for distances between teacher actions in task-native units."""
 
     def __init__(self, action_dim: int) -> None:
         super().__init__()
@@ -60,17 +60,12 @@ class VectorActor(nn.Module):
         self.trunk = _trunk(observation_dim, hidden_dim)
         self.output = nn.Linear(hidden_dim, action_dim)
         self.action_limit = float(action_limit)
-        self.register_buffer("joint_lower", torch.full((action_dim,), -float(action_limit)))
-        self.register_buffer("joint_upper", torch.full((action_dim,), float(action_limit)))
 
     def forward(self, observation: torch.Tensor) -> torch.Tensor:
-        # Replay holds the teacher's raw joint-target multipliers rather than
-        # normalized [-1, 1] actions.  Scaling the pre-activation before tanh
-        # makes this nearly identity-valued around normal teacher actions
-        # (typically O(1..10)), while retaining the MDP's ±100 safety bound.
+        # Preserve task-native replay units and the original scalar actor
+        # formula. The configured action limit belongs to the task interface.
         raw_action = self.output(self.trunk(observation))
-        action = self.action_limit * torch.tanh(raw_action / self.action_limit)
-        return torch.maximum(self.joint_lower, torch.minimum(self.joint_upper, action))
+        return self.action_limit * torch.tanh(raw_action / self.action_limit)
 
 
 class VectorCritic(nn.Module):

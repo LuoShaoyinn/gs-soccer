@@ -118,25 +118,27 @@ and learner prefixes stay in ordinary replay, excluded from IQL/H/floor.
 
 ```bash
 .venv/bin/python launch_mos9_limit_action.py \
-  --run-dir runs/mos9_limit_action/new_run --utd 64 --batch-size 256
+  --run-dir runs/mos9_limit_action/new_run --utd 64 --batch-size 4096 \
+  --teacher onnx --no-flat-soles --terrain-height .01
 ```
 
 Training defaults to the generated flat-sole contact model used by the workable
 teacher, gentle 0–1 mm uniform terrain, 20 mm reset clearance, 50 Hz control,
 and 500 steps per episode. Training uses the full `implicitfast` integrator,
 CG constraints, 50 solver iterations, tolerance 1e-5, full scene resets at
-episode boundaries, and 4000 Hz physics and limits learner
-joint-target changes to 0.05 radians per control step. Use `--no-flat-soles` for original URDF contacts.
+episode boundaries, and 4000 Hz physics. Extra action slew limiting is disabled. Use `--no-flat-soles` for original URDF contacts.
 Rewards are zero except -1 on falling and +1 on completing 10 seconds with
-at least 0.3 m forward progress. Gamma is 1 for this finite-horizon task.
+at least 0.3 m forward progress. Gamma remains 0.99, matching the older algorithm branch.
 
 Here UTD means primary SAC TD minibatch rows divided by newly collected online
 transitions: updates accrue at `utd * num_envs / batch_size` per vector step,
-with fractional credit carried forward. Thus UTD 64 and batch 256 produce one
-update per four transitions, independent of environment count. Every combined
+with fractional credit carried forward. Thus UTD 64 and batch 4096 produce one
+update per 64 transitions, or 16 vector steps with four environments. Every combined
 update also samples an IQL batch and a floor batch, and trains action likeness;
 those auxiliary samples are excluded from the named UTD. Initial IQL/H
-pretraining (500 updates after 2048 teacher transitions) is reported separately.
+pretraining (2000 updates after 2000 successful teacher episodes) is reported
+separately. The independently initialized SAC actor then collects 65536
+warmup transitions without optimizer updates.
 `metrics.jsonl` records achieved online UTD and factual episode outcomes.
 `checkpoint.pt` stores networks, optimizers, replay metadata, counters, update credit,
 and Torch RNG state. The trainer saves on completion, interruption, and failure;
@@ -146,20 +148,17 @@ folders are rejected to protect artifacts. Shared infrastructure is unchanged.
 
 The initial approximate-integrator and Newton-solver runs encountered Genesis
 constraint-force NaNs during teacher collection and are retained as failed
-artifacts. The current `run3` uses CG and full scene resets, importing factual
-teacher rows from `run2/checkpoint.pt` with `--teacher-checkpoint`. This option
-imports teacher-only replay from a matching task/model, not optimizer or
-physics state; outcomes are preserved. Physics solver changes are recorded
-in the new config.
+artifacts. The historical `run3` used CG and full scene resets with imported
+teacher rows. It predates the full fidelity correction and cannot seed the
+audited experiment. The corrected run uses fresh weights and fresh data.
 
 TensorBoard logs are written under each run directory in `tensorboard/`.
-Training scalars use collected online transitions as the x-axis; offline
-pretraining uses pretraining updates. Losses, target/achieved UTD, update
-counts, throughput, and separate teacher/learner episode distance, duration,
-fall and success rates are logged. Rolling episode metrics use the latest
+The dashboard contains only the 16 selected online scalar tags listed below.
+Initial collection and offline pretraining remain in JSON and console logs.
+Online scalars use collected online transitions as the x-axis. Rolling episode metrics use the latest
 100 episodes per controller. The default effective UTD is 64, matching
 `experiment/limit-action` (4 updates × 4096 batch / 256 environments);
-this run uses one environment and minibatch 256.
+the audited setup uses four environments and minibatch 4096.
 
 ```bash
 .venv/bin/tensorboard --logdir runs/mos9_limit_action --port 6006
@@ -208,7 +207,7 @@ PyTorch build:
 uv pip install --python .venv/bin/python --no-deps \
   'git+ssh://git@github.com/LuoShaoyinn/torch-block-replay.git@f276e76ef480ea209d4975c6c841a4301814097b'
 .venv/bin/python launch_mos9_limit_action.py \
-  --run-dir runs/mos9_limit_action/onnx_10mm_block4_utd64 \
+  --run-dir runs/mos9_limit_action/onnx_10mm_block4_old_branch_fidelity \
   --teacher onnx --no-flat-soles --terrain-height .01 --num-envs 4 \
   --utd 64 --teacher-intervention-prob .01 --replay-backend block \
   --replay-capacity 100000000 --replay-block-size 4096 \
@@ -217,10 +216,10 @@ uv pip install --python .venv/bin/python --no-deps \
 ```
 
 Environments 0 and 1 stay autonomous; 2 and 3 allow sticky takeover. Initial
-2048-row teacher collection remains separate from online learner-first episodes.
-`training/teacher_fraction` now measures cumulative online teacher rows, while
-`training/current_teacher_env_fraction` reports the instantaneous controller
-mask. Episode records include takeover step and actual teacher-step fraction.
+collection retains 2000 complete successful teacher episodes, followed by
+2000 reference pretraining updates and 65536 learner-first warmup transitions
+without optimizer updates. SAC stays independently initialized.
+`training/teacher_fraction` now measures cumulative online teacher rows, with detailed controller masks retained in JSON logs. Episode records include takeover step and actual teacher-step fraction.
 
 Replay has one physical disk store with a success-confirmed suffix index over
 immutable cached rows. Sampling is uniform within the current caches rather
@@ -243,15 +242,14 @@ fraction; SAC critic MSE and actor loss; IQL critic TD; action-likeness loss;
 floor RMS violation; action-limit loss; effective UTD; replay size; and throughput.
 Full diagnostics and configuration remain in the JSON logs.
 
-The existing run continues without a trainer restart: `filter_mos9_tensorboard.py`
-relays these 16 tags from its original events into `tensorboard_selected/`.
-The current dashboard at `http://localhost:6006/` reads that selected directory.
-Future trainers use the 16-tag writer directly in their normal `tensorboard/`
-directory. Original current-run event files are preserved for diagnostics.
-
+New trainers write the selected 16 tags directly into `tensorboard/`.
+The dashboard must point to the active audited run.
 
 The prior all-teacher-reference runs are invalid as algorithm experiments.
 They have been stopped and archived with explicit invalid-run metadata.
 See [ALGORITHM_CONTRACT.md](ALGORITHM_CONTRACT.md) for the restored dataset
 and update rules. A separate persisted suffix index confirms row eligibility
 only after success, including rows already published or cached on GPU.
+
+The complete comparison and remaining explicit task/resource differences are
+recorded in [MOS9_ALGORITHM_AUDIT.md](MOS9_ALGORITHM_AUDIT.md).
