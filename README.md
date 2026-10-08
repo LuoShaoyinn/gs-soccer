@@ -237,3 +237,15 @@ budget is 16 GiB, and the full disk replay is about 58 GiB before serialization
 overhead. These budgets exclude simulator, learner, and staging allocations.
 A four-environment preflight verified GPU sampling, teacher-only sampling,
 learner-first sticky takeover, UTD 64, and clean stop exactly at buffer capacity.
+
+TensorBoard is limited to 16 scalar observations: rolling success, episode
+length and distance for autonomous and intervened episodes; online teacher
+fraction; SAC critic MSE and actor loss; IQL critic TD; action-likeness loss;
+floor RMS violation; action-limit loss; effective UTD; replay size; and throughput.
+Full diagnostics and configuration remain in the JSON logs.
+
+The existing run continues without a trainer restart: `filter_mos9_tensorboard.py`
+relays these 16 tags from its original events into `tensorboard_selected/`.
+The current dashboard at `http://localhost:6006/` reads that selected directory.
+Future trainers use the 16-tag writer directly in their normal `tensorboard/`
+directory. Original current-run event files are preserved for diagnostics.

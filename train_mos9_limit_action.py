@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 import signal
 import torch
-from torch.utils.tensorboard import SummaryWriter
+from algorithm.mos9_limit_action.tensorboard import TrainingSummaryWriter as SummaryWriter
 from mos9_walk import parse_args as walk_args, build_walking_env
 from algorithm.mos9_teacher.phase import PhaseWalkingTeacher
 from algorithm.mos9_limit_action.config import GroundedSACConfig
