@@ -1,4 +1,5 @@
 """The sixteen scalar observations used by the MOS9 training dashboard."""
+from collections import deque
 from torch.utils.tensorboard import SummaryWriter
 
 SCALAR_TAGS = frozenset({
@@ -20,3 +21,24 @@ class TrainingSummaryWriter(SummaryWriter):
     def add_text(self, *args, **kwargs):
         # Full configuration is already persisted in config.json.
         pass
+
+
+class CollectionSummaryWriter(TrainingSummaryWriter):
+    """Use existing tags in a separate run whose x-axis is attempted episodes."""
+    def __init__(self, log_dir, *, row_limit, **kwargs):
+        super().__init__(log_dir, **kwargs)
+        self.recent = deque(maxlen=100)
+        self.episodes = self.accepted_rows = 0
+        self.row_limit = row_limit
+
+    def add_episode(self, row, *, replay_size=None):
+        self.episodes += 1
+        self.recent.append(row)
+        if row['success']:
+            self.accepted_rows = min(self.row_limit, self.accepted_rows + row['steps'])
+        for metric in ('success', 'steps', 'distance'):
+            self.add_scalar('rolling/teacher/'+metric,
+                            sum(float(r[metric]) for r in self.recent)/len(self.recent),
+                            self.episodes)
+        self.add_scalar('replay/size', self.accepted_rows if replay_size is None else replay_size,
+                        self.episodes)

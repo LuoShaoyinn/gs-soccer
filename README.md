@@ -153,9 +153,11 @@ teacher rows. It predates the full fidelity correction and cannot seed the
 audited experiment. The corrected run uses fresh weights and fresh data.
 
 TensorBoard logs are written under each run directory in `tensorboard/`.
-The dashboard contains only the 16 selected online scalar tags listed below.
-Initial collection and offline pretraining remain in JSON and console logs.
-Online scalars use collected online transitions as the x-axis. Rolling episode metrics use the latest
+The dashboard uses only the 16 selected scalar tags listed below.
+Collection charts appear in the `collection` subrun with attempted episodes
+as the x-axis. Pretraining uses the `pretrain` subrun with optimizer updates
+as its x-axis; it logs the selected IQL and action-likeness losses. Online
+scalars use collected online transitions as the x-axis in the main run. Rolling episode metrics use the latest
 100 episodes per controller. The default effective UTD is 64, matching
 `experiment/limit-action` (4 updates × 4096 batch / 256 environments);
 the audited setup uses four environments and minibatch 4096.
@@ -253,3 +255,16 @@ only after success, including rows already published or cached on GPU.
 
 The complete comparison and remaining explicit task/resource differences are
 recorded in [MOS9_ALGORITHM_AUDIT.md](MOS9_ALGORITHM_AUDIT.md).
+
+For a trainer launched before phase logging was repaired, collection charts
+can be backfilled and followed without restarting training:
+
+```sh
+.venv/bin/python relay_mos9_collection_tensorboard.py \
+  --run-dir runs/mos9_limit_action/onnx_10mm_block4_old_branch_fidelity
+```
+
+Launch this relay only once per run. It reads `teacher_collection.jsonl`,
+uses four of the existing 16 tags, and stops when demo collection completes.
+It does not modify training, checkpoints, or replay. New trainers write
+collection and pretraining charts directly.

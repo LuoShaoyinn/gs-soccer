@@ -8,6 +8,7 @@ from pathlib import Path
 import signal
 import torch
 from algorithm.mos9_limit_action.tensorboard import TrainingSummaryWriter as SummaryWriter
+from algorithm.mos9_limit_action.tensorboard import CollectionSummaryWriter
 from mos9_walk import parse_args as walk_args, build_walking_env
 from algorithm.mos9_teacher.phase import PhaseWalkingTeacher
 from algorithm.mos9_limit_action.config import GroundedSACConfig
@@ -115,6 +116,10 @@ def main():
     manifest = {'algorithm_contract':'old_branch_fidelity_v2','arguments': {k:str(v) if isinstance(v, Path) else v for k,v in vars(args).items()}, 'learner':asdict(cfg), 'environment':{'policy_hz':50,'max_steps':500,'integrator':'implicitfast','solver_iterations':50,'solver_tolerance':1e-5,'sim_freq':settings.sim_freq,'action_slew':args.action_slew,'terrain_height':settings.terrain_height,'flat_soles':args.flat_soles}, 'teacher':teacher_metadata, 'physics_solver':'CG with full scene reset on episode boundaries', 'baseline_training_budgets':{'demo_episodes':args.demo_episodes,'initial_row_target':teacher_target,'pretrain_updates':args.pretrain_updates,'hidden_dim':args.hidden_dim,'batch_size':args.batch_size,'warmup_transitions':args.warmup_transitions},'reference_data':'only confirmed successful teacher suffixes; initial demos are complete successful teacher episodes; SAC retains all online transitions', 'replay_policy':'one physical buffer with success-confirmed suffix index; failed rescues and learner prefixes excluded from reference view; stop at capacity without overwriting', 'controller':{'learner_first':True,'sticky_until_episode_end':True,'rescue_envs':list(range(args.num_envs//2,args.num_envs)),'per_step_probability':args.teacher_intervention_prob}, 'utd_definition':'primary SAC TD minibatch rows / new online transitions; pretraining excluded; each update also samples one IQL batch and one floor batch'}
     (args.run_dir/'config.json').write_text(json.dumps(manifest, indent=2)+'\n')
     writer = SummaryWriter(str(args.run_dir / "tensorboard"), flush_secs=10)
+    collection_writer = CollectionSummaryWriter(str(args.run_dir/'tensorboard'/'collection'),
+                                               row_limit=((teacher_target+499)//500)*500,
+                                               flush_secs=10)
+    pretrain_writer = SummaryWriter(str(args.run_dir/'tensorboard'/'pretrain'), flush_secs=10)
     writer.add_text("config", json.dumps(manifest, indent=2), 0)
     recent = defaultdict(lambda: deque(maxlen=100))
     episode_counts = defaultdict(int)
@@ -175,18 +180,17 @@ def main():
                 print(f'initial demo vector steps={demo_ticks} successful rows={seed_transitions}',flush=True)
             previous_seed = seed_transitions
             seed_transitions += collect(action, torch.ones(args.num_envs, dtype=torch.bool, device=obs.device), warmup=True)
-            writer.add_scalar("collection/teacher_transitions", seed_transitions, seed_transitions)
             for row in env.MDP.completed[seed_cursor:]:
                 with (args.run_dir/'teacher_collection.jsonl').open('a') as log:
                     log.write(json.dumps(row)+'\n')
-                for metric in ('steps', 'distance', 'success', 'fallen'):
-                    writer.add_scalar('collection/teacher/'+metric, float(row[metric]), seed_transitions)
+                collection_writer.add_episode(row, replay_size=len(replay))
                 print(f'teacher collection episode={row}', flush=True)
             seed_cursor = len(env.MDP.completed)
             if seed_transitions != previous_seed:
                 print(f'teacher transitions={seed_transitions} episodes={len(env.MDP.completed)}',flush=True)
         if stopped:
             return
+        collection_writer.flush()
         learner.fit_normalizer_once()
         for i in range(args.pretrain_updates):
             if stopped:
@@ -194,12 +198,13 @@ def main():
             metrics = learner.pretrain_iql_update(replay.sample(args.batch_size,cfg.device,human_suffix=True))
             if (i+1)%10 == 0 or i+1 == args.pretrain_updates:
                 for key, value in metrics.items():
-                    writer.add_scalar("pretrain/"+key, float(value), i+1)
+                    pretrain_writer.add_scalar(key, float(value), i+1)
             if (i+1)%50 == 0:
                 print(f'pretrain={i+1} actor_loss={float(metrics["iql/actor_loss"]):.6f}',flush=True)
         # Keep independently initialized SAC parameters, matching the old branch.
         save()
         writer.flush()
+        pretrain_writer.flush()
         started = time.monotonic()
         obs = env.reset()[0]
         teacher_mode = torch.zeros(args.num_envs,dtype=torch.bool,device=obs.device)
@@ -293,6 +298,8 @@ def main():
         (args.run_dir/'status.json').write_text(json.dumps({'reason':'buffer_full' if replay.full else ('signal' if stopped else 'transition_limit_or_error'),'replay_size':len(replay),'replay_capacity':replay.capacity,'online_transitions':online_transitions,'online_updates':online_updates,'warmup_transitions':warmup_transitions},indent=2)+'\n')
         (args.run_dir/'episodes.json').write_text(json.dumps(env.MDP.completed,indent=2)+'\n')
         writer.close()
+        collection_writer.close()
+        pretrain_writer.close()
         if args.replay_backend == 'block':
             replay.close()
         env.scene.destroy()
