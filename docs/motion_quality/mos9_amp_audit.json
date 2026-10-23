@@ -1,0 +1,3373 @@
+{
+  "urdf": "assets/MOS9/MOS9_walk.urdf",
+  "urdf_sha256": "1e8e4479e4b5319c4899337d4266c35775f52fa9c3589a4eda6cca4cc50a532b",
+  "clips": [
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/B10_-__Walk_turn_left_45_stageii.npz",
+      "frames": 298,
+      "seconds": 5.94,
+      "sha256": "30f7da92cf43ef47772902000d05adb2d1d1ce2bf61a1e3d00a2d5f036c12c18",
+      "trajectory_sha256": "7ac851e18654ff01469444e52406c20220189d81498c772f60907a3227a45671",
+      "root_displacement_xy_m": [
+        -1.2518076922278851,
+        2.737357610836625
+      ],
+      "root_speed_m_s": {
+        "min": 0.023035175751923077,
+        "p05": 0.056251579860210156,
+        "median": 0.6353557804655956,
+        "p95": 0.8579748873366757,
+        "max": 0.9776317148130088
+      },
+      "joint_limit_violation_max_rad": 0.030616688728332564,
+      "joint_limit_violation_frame_fraction": 0.0,
+      "joint_step_max_rad": 0.23178106546401978,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 0.000287126749753952,
+        "p05": 0.040064714848995216,
+        "median": 0.5176104605197906,
+        "p95": 3.247819673269987,
+        "max": 9.187376871705055
+      },
+      "logged_joint_velocity_rmse_rad_s": 4.263412491513212e-08,
+      "root_quaternion_norm_error_max": 2.7761659082692347e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 1.0935074933085104e-08,
+        "median": 9.379724582512467e-08,
+        "p95": 2.751489412175728e-07,
+        "max": 6.997781222239407e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 2.4574003900165134e-08,
+        "median": 3.7754031868879117e-07,
+        "p95": 8.220480174451646e-07,
+        "max": 1.4684682953736377e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.02598296805325631,
+        "p05": -0.01751599486867178,
+        "median": -0.0026806311014313453,
+        "p95": 0.01326974216794141,
+        "max": 0.023241902892892616
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.030201342281879196,
+      "raw_both_feet_over_2cm_frame_fraction": 0.010067114093959731,
+      "best_constant_ground_offset_m": 0.0026806311014313453,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.016778523489932886,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.020134228187919462,
+      "calibrated_airborne_longest_seconds": 0.08,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.00116677971547084,
+        "p05": 0.012283850002594769,
+        "median": 0.12959633021829903,
+        "p95": 2.9049265097730173,
+        "max": 3.128665626491165
+      },
+      "contact_speed_over_02m_s_fraction": 0.4035433070866142,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.003892139796533609,
+        "p05": 0.01420900119967363,
+        "median": 0.09324563260555434,
+        "p95": 2.798250262618726,
+        "max": 3.128665626491165
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.3564954682779456,
+      "nonfoot_minimum_height_m": 0.13124301150305215
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/B11_-__Walk_turn_left_135_stageii.npz",
+      "frames": 323,
+      "seconds": 6.44,
+      "sha256": "0e8f71a6bf766141778615493df838ae7019d48d74fe88d67cb15b6f05002fa6",
+      "trajectory_sha256": "cea36d250cf59a737742155263d58c4794d553da9a25c6a626452d7b9d82b3ef",
+      "root_displacement_xy_m": [
+        -1.3559334287419915,
+        -0.16636819019913673
+      ],
+      "root_speed_m_s": {
+        "min": 0.0033099781446887986,
+        "p05": 0.09220368476469855,
+        "median": 0.6508067002531426,
+        "p95": 0.8712483696415758,
+        "max": 1.254019295930189
+      },
+      "joint_limit_violation_max_rad": 0.11098244786262512,
+      "joint_limit_violation_frame_fraction": 0.02786377708978328,
+      "joint_step_max_rad": 0.2154185175895691,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 0.00021159648895263672,
+        "p05": 0.06068281829357148,
+        "median": 0.6088804453611374,
+        "p95": 3.3997995965182746,
+        "max": 10.300470143556595
+      },
+      "logged_joint_velocity_rmse_rad_s": 4.2300251594461975e-08,
+      "root_quaternion_norm_error_max": 3.0645198445533595e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 8.268453017487656e-09,
+        "median": 8.466730913401992e-08,
+        "p95": 2.3571517175464212e-07,
+        "max": 5.13958331967193e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.6610923973956428e-08,
+        "median": 3.7793643927096887e-07,
+        "p95": 8.365422869105566e-07,
+        "max": 1.4287207545435276e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.02656297021965842,
+        "p05": -0.015538009745775135,
+        "median": -0.001426174861138614,
+        "p95": 0.008131507722667259,
+        "max": 0.01251007910739911
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.02786377708978328,
+      "raw_both_feet_over_2cm_frame_fraction": 0.0,
+      "best_constant_ground_offset_m": 0.001426174861138614,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.021671826625386997,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.0,
+      "calibrated_airborne_longest_seconds": 0.0,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.0018126599486085965,
+        "p05": 0.0183744408545173,
+        "median": 0.14760399089155016,
+        "p95": 2.897760248385925,
+        "max": 3.216302794952736
+      },
+      "contact_speed_over_02m_s_fraction": 0.43508771929824563,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.0018126599486085965,
+        "p05": 0.018216143162290407,
+        "median": 0.10474055164803164,
+        "p95": 2.749854037718651,
+        "max": 3.159554224162275
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.35597826086956524,
+      "nonfoot_minimum_height_m": 0.12553923250383248
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/B13_-__Walk_turn_right_90_stageii.npz",
+      "frames": 280,
+      "seconds": 5.58,
+      "sha256": "29349153da8ee2ca3a2d5e5f2b69bd1c39bb4e5071f19cc55adcbeb0ca4e3b26",
+      "trajectory_sha256": "e863e74e31d6688173de59a9c827c80447688d739fd0fba1bc8c9ade3ac52699",
+      "root_displacement_xy_m": [
+        2.009239197941497,
+        1.4779649954289198
+      ],
+      "root_speed_m_s": {
+        "min": 0.05395911732873584,
+        "p05": 0.14459321775248454,
+        "median": 0.6676262763944225,
+        "p95": 0.8882535546020071,
+        "max": 0.996124954035007
+      },
+      "joint_limit_violation_max_rad": 0.12413105368614197,
+      "joint_limit_violation_frame_fraction": 0.02857142857142857,
+      "joint_step_max_rad": 0.15636056661605835,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 5.9604644775390625e-06,
+        "p05": 0.04718366079032421,
+        "median": 0.5851179361343384,
+        "p95": 3.292742669582369,
+        "max": 7.817727327346802
+      },
+      "logged_joint_velocity_rmse_rad_s": 4.2436136881266076e-08,
+      "root_quaternion_norm_error_max": 2.7069810171198583e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 1.0044830402266345e-08,
+        "median": 9.051694322345319e-08,
+        "p95": 2.590097868168622e-07,
+        "max": 6.111884579977068e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.090674900349028e-08,
+        "median": 3.8577183308652444e-07,
+        "p95": 8.615637660722009e-07,
+        "max": 1.5305180690210308e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.044464790008495375,
+        "p05": -0.03136952822313651,
+        "median": -0.0065201277077334835,
+        "p95": 0.0037549010436439064,
+        "max": 0.007197761825334437
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.1357142857142857,
+      "raw_both_feet_over_2cm_frame_fraction": 0.0,
+      "best_constant_ground_offset_m": 0.0065201277077334835,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.07857142857142857,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.0,
+      "calibrated_airborne_longest_seconds": 0.0,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.0030207165018810355,
+        "p05": 0.017056480176789367,
+        "median": 0.1397725528726249,
+        "p95": 2.9420699842192417,
+        "max": 3.2650670288613703
+      },
+      "contact_speed_over_02m_s_fraction": 0.4329004329004329,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.004679616886101423,
+        "p05": 0.015715204495285982,
+        "median": 0.11033951311521259,
+        "p95": 2.921734746057194,
+        "max": 3.2650670288613703
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.3651877133105802,
+      "nonfoot_minimum_height_m": 0.10105699567630703
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/B14_-__Walk_turn_right_45_t2_stageii.npz",
+      "frames": 289,
+      "seconds": 5.76,
+      "sha256": "c8fcb6a6cb6ad235fcde89cd70da6ed09c1ec160fe4fc73260f95a91443b9882",
+      "trajectory_sha256": "167e9247646f8a2c482eba967a41dfe65f1531ca0ca18ada976005b081ebb580",
+      "root_displacement_xy_m": [
+        2.9701776462607086,
+        1.4856405230239034
+      ],
+      "root_speed_m_s": {
+        "min": 0.007732086410216217,
+        "p05": 0.04163598757607114,
+        "median": 0.7199663293666432,
+        "p95": 0.9214660656533337,
+        "max": 1.0544327947514383
+      },
+      "joint_limit_violation_max_rad": 0.0,
+      "joint_limit_violation_frame_fraction": 0.0,
+      "joint_step_max_rad": 0.16254711151123047,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 5.066394805908203e-05,
+        "p05": 0.03428801894187928,
+        "median": 0.5623832810670137,
+        "p95": 3.5174614610150416,
+        "max": 7.9268500208854675
+      },
+      "logged_joint_velocity_rmse_rad_s": 4.3678149583655034e-08,
+      "root_quaternion_norm_error_max": 2.520899704538948e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 1.041106613134554e-08,
+        "median": 9.580688936717519e-08,
+        "p95": 2.9560480668879845e-07,
+        "max": 6.766115660599805e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.1929353788865303e-08,
+        "median": 3.6979637345391004e-07,
+        "p95": 8.459293566314079e-07,
+        "max": 1.4027650475738397e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.049298643792200864,
+        "p05": -0.029230932507536438,
+        "median": -0.003528943775420436,
+        "p95": 0.007876607607772769,
+        "max": 0.012610611544781623
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.1314878892733564,
+      "raw_both_feet_over_2cm_frame_fraction": 0.0,
+      "best_constant_ground_offset_m": 0.003528943775420436,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.08650519031141868,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.0,
+      "calibrated_airborne_longest_seconds": 0.0,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.0036079883768113338,
+        "p05": 0.013922313416082056,
+        "median": 0.13083971801649077,
+        "p95": 3.0996407264003,
+        "max": 3.3853785091232234
+      },
+      "contact_speed_over_02m_s_fraction": 0.41019955654101997,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.0051239343525226085,
+        "p05": 0.018909095752259297,
+        "median": 0.1044027781155832,
+        "p95": 3.1353391429583044,
+        "max": 3.3853785091232234
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.3602693602693603,
+      "nonfoot_minimum_height_m": 0.11223039041060756
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/B15_-__Walk_turn_around_stageii.npz",
+      "frames": 374,
+      "seconds": 7.46,
+      "sha256": "dda6d489a7f58aeb89d301b73c8cbe97700152a4cfa8f30731a9fa7f892b967e",
+      "trajectory_sha256": "1132cae5524ee0201b8a574b4b68b5fb204a4d591182543b51afcee95d7f49ec",
+      "root_displacement_xy_m": [
+        -0.013769841054454446,
+        -0.4203417915850878
+      ],
+      "root_speed_m_s": {
+        "min": 0.006526814103407504,
+        "p05": 0.06315363776726154,
+        "median": 0.6429839922760835,
+        "p95": 0.8898804869326417,
+        "max": 0.979028675449714
+      },
+      "joint_limit_violation_max_rad": 0.030241072177886963,
+      "joint_limit_violation_frame_fraction": 0.0,
+      "joint_step_max_rad": 0.19705092906951904,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 6.891787052154541e-05,
+        "p05": 0.04775973502546549,
+        "median": 0.5824223160743713,
+        "p95": 3.1955428048968306,
+        "max": 9.161658585071564
+      },
+      "logged_joint_velocity_rmse_rad_s": 4.0464427658616865e-08,
+      "root_quaternion_norm_error_max": 2.8312629485327534e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 8.214814672620957e-09,
+        "median": 8.133091701727285e-08,
+        "p95": 2.3409614267626326e-07,
+        "max": 5.703699165487973e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.6611294461009226e-08,
+        "median": 3.8531584103506167e-07,
+        "p95": 8.543817404705945e-07,
+        "max": 1.4568354050052414e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.03724291592748732,
+        "p05": -0.020957699069683797,
+        "median": -0.0017053947572510404,
+        "p95": 0.0049250448146729315,
+        "max": 0.0064993057824112264
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.05614973262032086,
+      "raw_both_feet_over_2cm_frame_fraction": 0.0,
+      "best_constant_ground_offset_m": 0.0017053947572510404,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.045454545454545456,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.0,
+      "calibrated_airborne_longest_seconds": 0.0,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.00399387371052127,
+        "p05": 0.018822459996193402,
+        "median": 0.1396790214296559,
+        "p95": 2.96932212526328,
+        "max": 3.4012722990870383
+      },
+      "contact_speed_over_02m_s_fraction": 0.41068702290076337,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.00399387371052127,
+        "p05": 0.016637261891439156,
+        "median": 0.10935896430644715,
+        "p95": 2.9831731477391443,
+        "max": 3.4012722990870383
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.32857142857142857,
+      "nonfoot_minimum_height_m": 0.12415831018177846
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/B22_-__side_step_left_stageii.npz",
+      "frames": 122,
+      "seconds": 2.42,
+      "sha256": "f615441961b566bb4693781d108972229e2a5580bfb857a6c6a5c387092dcd50",
+      "trajectory_sha256": "79fede98e611c6ed833fb64cdb1ec883d9e9412d834b4b3445ec04709b46e53a",
+      "root_displacement_xy_m": [
+        -0.3349731571506709,
+        -0.024527949281036854
+      ],
+      "root_speed_m_s": {
+        "min": 0.0023734975782410688,
+        "p05": 0.006551610818675437,
+        "median": 0.0966191661178305,
+        "p95": 0.6088963072646215,
+        "max": 0.657024295336746
+      },
+      "joint_limit_violation_max_rad": 0.0,
+      "joint_limit_violation_frame_fraction": 0.0,
+      "joint_step_max_rad": 0.08230734057724476,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 9.872019290924072e-06,
+        "p05": 0.010708114132285118,
+        "median": 0.18875878304243088,
+        "p95": 1.3450829486828297,
+        "max": 4.105754941701889
+      },
+      "logged_joint_velocity_rmse_rad_s": 1.5488500685256824e-08,
+      "root_quaternion_norm_error_max": 2.4391176700611084e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 6.16410379095926e-09,
+        "median": 6.484976441388679e-08,
+        "p95": 1.939496486871187e-07,
+        "max": 3.8950360307861867e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 2.119326944034741e-08,
+        "median": 3.653812534537259e-07,
+        "p95": 7.875648921549753e-07,
+        "max": 1.29917827833861e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.00964577528255016,
+        "p05": -0.00926977488972021,
+        "median": -0.007173114808515468,
+        "p95": 0.009662896409690215,
+        "max": 0.013131536465043333
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.0,
+      "raw_both_feet_over_2cm_frame_fraction": 0.0,
+      "best_constant_ground_offset_m": 0.007173114808515468,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.0,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.00819672131147541,
+      "calibrated_airborne_longest_seconds": 0.02,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.0007743312152073027,
+        "p05": 0.002746671350925455,
+        "median": 0.012755378779217744,
+        "p95": 0.1692725693664951,
+        "max": 0.8454621833071302
+      },
+      "contact_speed_over_02m_s_fraction": 0.04736842105263158,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.0007743312152073027,
+        "p05": 0.0031243974758717466,
+        "median": 0.017028476405884223,
+        "p95": 0.08356974522748141,
+        "max": 0.5390134607396084
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.02631578947368421,
+      "nonfoot_minimum_height_m": 0.14364071402942646
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/B23_-__side_step_right_stageii.npz",
+      "frames": 149,
+      "seconds": 2.96,
+      "sha256": "4f4155a1feacc77752958048629b84ffb81c917cf4ffd61c43348c03dfe36da5",
+      "trajectory_sha256": "19854ce48e4225bbf74e8248c6ab56948c286cb3074638c36568a3d9eae46dec",
+      "root_displacement_xy_m": [
+        0.31580704380758107,
+        -0.011322149075567722
+      ],
+      "root_speed_m_s": {
+        "min": 0.0013223251733039062,
+        "p05": 0.0031522096826533375,
+        "median": 0.024495690894622172,
+        "p95": 0.5752105649668624,
+        "max": 0.6298127561050331
+      },
+      "joint_limit_violation_max_rad": 0.0,
+      "joint_limit_violation_frame_fraction": 0.0,
+      "joint_step_max_rad": 0.07167127728462219,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 6.51925802230835e-05,
+        "p05": 0.0060201995074749,
+        "median": 0.12000799179077148,
+        "p95": 1.2420972064137445,
+        "max": 3.544345870614052
+      },
+      "logged_joint_velocity_rmse_rad_s": 1.5202701508680115e-08,
+      "root_quaternion_norm_error_max": 2.9738693330116917e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 8.056072345580652e-09,
+        "median": 6.281872481061808e-08,
+        "p95": 1.8963925955076833e-07,
+        "max": 3.3748449166521067e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.638233559303029e-08,
+        "median": 3.6278279991480433e-07,
+        "p95": 8.275736159432002e-07,
+        "max": 1.3109821913644754e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.009462296144803498,
+        "p05": -0.009236176008345979,
+        "median": -0.003996858744334253,
+        "p95": 0.009767988819864093,
+        "max": 0.013792503182934096
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.0,
+      "raw_both_feet_over_2cm_frame_fraction": 0.0,
+      "best_constant_ground_offset_m": 0.003996858744334253,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.0,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.0,
+      "calibrated_airborne_longest_seconds": 0.0,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.00010553679789736962,
+        "p05": 0.0018129700007682578,
+        "median": 0.010132821640416656,
+        "p95": 0.06613880886528108,
+        "max": 0.6615581624859945
+      },
+      "contact_speed_over_02m_s_fraction": 0.028225806451612902,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.00025409037774590265,
+        "p05": 0.0018377007239456676,
+        "median": 0.01044988477358041,
+        "p95": 0.049750418486311315,
+        "max": 0.0705493365565633
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.0,
+      "nonfoot_minimum_height_m": 0.14743955754014035
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/B4_-_Stand_to_Walk_backwards_stageii.npz",
+      "frames": 229,
+      "seconds": 4.5600000000000005,
+      "sha256": "e936394f9afae28b9318423ec072cd68984c6b08ae6f891f67fb82de1880af7f",
+      "trajectory_sha256": "10e090a9090b38b328f834f9f5da64d41f7442f42ac13d15398f16fda9e28c14",
+      "root_displacement_xy_m": [
+        1.7542407531291246,
+        -1.4094665036100196
+      ],
+      "root_speed_m_s": {
+        "min": 0.0030100821253732494,
+        "p05": 0.04691976395132277,
+        "median": 0.5781423918652301,
+        "p95": 0.7638522099398604,
+        "max": 0.7996663527873765
+      },
+      "joint_limit_violation_max_rad": 0.00252621173858647,
+      "joint_limit_violation_frame_fraction": 0.0,
+      "joint_step_max_rad": 0.0937339048832655,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 0.00033974647521972656,
+        "p05": 0.04528059624135494,
+        "median": 0.5515761498827487,
+        "p95": 2.430657676886767,
+        "max": 4.615531861782074
+      },
+      "logged_joint_velocity_rmse_rad_s": 2.8880730994894806e-08,
+      "root_quaternion_norm_error_max": 2.787928434777598e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 8.860098674844135e-09,
+        "median": 8.141465924218615e-08,
+        "p95": 2.2425755319850547e-07,
+        "max": 4.4391621568596704e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.4962623498318276e-08,
+        "median": 3.6069793031452165e-07,
+        "p95": 8.238195676498994e-07,
+        "max": 1.461426316037598e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.039324261561423844,
+        "p05": -0.026979645075223043,
+        "median": -0.008222196490764944,
+        "p95": 0.0013636560463146602,
+        "max": 0.006940232274151078
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.1091703056768559,
+      "raw_both_feet_over_2cm_frame_fraction": 0.0,
+      "best_constant_ground_offset_m": 0.008222196490764944,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.043668122270742356,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.0,
+      "calibrated_airborne_longest_seconds": 0.0,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.00020270767846695836,
+        "p05": 0.009617544414144986,
+        "median": 0.1338623425215926,
+        "p95": 2.326209572094406,
+        "max": 2.61655306173507
+      },
+      "contact_speed_over_02m_s_fraction": 0.43990384615384615,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.00020270767846695836,
+        "p05": 0.009444431161649931,
+        "median": 0.07788559261891081,
+        "p95": 2.2595747905939567,
+        "max": 2.61655306173507
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.4076923076923077,
+      "nonfoot_minimum_height_m": 0.12608237033942013
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/B9_-__Walk_turn_left_90_stageii.npz",
+      "frames": 250,
+      "seconds": 4.98,
+      "sha256": "f6f844bb251f9207f577d9f1fc23dda6ffdb5c5daebc752bf7d4615ed8ff0ca8",
+      "trajectory_sha256": "114fcdaea9a2f5f7757317dbffd5f2c52a8944ef7c0988bc332c57e160397e08",
+      "root_displacement_xy_m": [
+        -1.3949633850716054,
+        1.451983685605228
+      ],
+      "root_speed_m_s": {
+        "min": 0.019733566626191457,
+        "p05": 0.16893623002943947,
+        "median": 0.6156990328937528,
+        "p95": 0.8440052173148548,
+        "max": 0.8957738654791266
+      },
+      "joint_limit_violation_max_rad": 0.0991259098052979,
+      "joint_limit_violation_frame_fraction": 0.092,
+      "joint_step_max_rad": 0.1830921173095703,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 0.000155717134475708,
+        "p05": 0.04687771201133729,
+        "median": 0.612687598913908,
+        "p95": 3.29126000404358,
+        "max": 9.02366116642952
+      },
+      "logged_joint_velocity_rmse_rad_s": 4.2786659864014236e-08,
+      "root_quaternion_norm_error_max": 3.0943142093065035e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 8.77796464819221e-09,
+        "median": 8.506321207025437e-08,
+        "p95": 2.329511032888309e-07,
+        "max": 4.822112165705583e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.4435375739781121e-08,
+        "median": 3.7803317021857216e-07,
+        "p95": 8.171831712856965e-07,
+        "max": 1.3466152491414061e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.027643817390884465,
+        "p05": -0.01944651852073417,
+        "median": -0.003876606828694871,
+        "p95": 0.006410590098412669,
+        "max": 0.012365789016287473
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.048,
+      "raw_both_feet_over_2cm_frame_fraction": 0.0,
+      "best_constant_ground_offset_m": 0.003876606828694871,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.02,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.0,
+      "calibrated_airborne_longest_seconds": 0.0,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.006088471131403084,
+        "p05": 0.016803918035526135,
+        "median": 0.16001821121684104,
+        "p95": 2.810244843021191,
+        "max": 3.115492035792424
+      },
+      "contact_speed_over_02m_s_fraction": 0.46258503401360546,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.006088471131403084,
+        "p05": 0.013461948968712811,
+        "median": 0.09781725173524197,
+        "p95": 2.642833572128803,
+        "max": 2.975764631878118
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.3992673992673993,
+      "nonfoot_minimum_height_m": 0.12464446087580063
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/C11_-_run_turn_left_90_stageii.npz",
+      "frames": 140,
+      "seconds": 2.7800000000000002,
+      "sha256": "b82311dba9e688b366ee8dbceab57863e1c6fe58a934d597de473009b05ad7ad",
+      "trajectory_sha256": "f660797ca11a460d1c0aa35e3a59a2a5f4108a30f7f6fa4c23183a3be39c9a10",
+      "root_displacement_xy_m": [
+        -1.7980182142928243,
+        1.8011742834933102
+      ],
+      "root_speed_m_s": {
+        "min": 0.4918134129848027,
+        "p05": 0.6038996904001213,
+        "median": 1.2868354868318734,
+        "p95": 1.823537402907765,
+        "max": 2.053737257941826
+      },
+      "joint_limit_violation_max_rad": 0.22979502677917485,
+      "joint_limit_violation_frame_fraction": 0.14285714285714285,
+      "joint_step_max_rad": 1.5043713748455048,
+      "motor_speed_violation_max_rad_s": 59.61856874227524,
+      "motor_speed_violation_frame_fraction": 0.03597122302158273,
+      "joint_speed_abs_rad_s": {
+        "min": 0.0001519918441772461,
+        "p05": 0.13302629813551903,
+        "median": 1.5355117619037628,
+        "p95": 7.048540916293849,
+        "max": 49.58762750029564
+      },
+      "logged_joint_velocity_rmse_rad_s": 1.0705609210579667e-07,
+      "root_quaternion_norm_error_max": 2.9290753400523784e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 1.0783779852253339e-08,
+        "median": 9.696817716746475e-08,
+        "p95": 2.5120747778963375e-07,
+        "max": 4.40199059564858e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.2204941203637562e-08,
+        "median": 3.896088672010709e-07,
+        "p95": 8.847769299243297e-07,
+        "max": 1.5263621015199895e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.027682332612156163,
+        "p05": -0.020578242420406477,
+        "median": 0.003995799986318355,
+        "p95": 0.025389550669146325,
+        "max": 0.034954623975286384
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.07142857142857142,
+      "raw_both_feet_over_2cm_frame_fraction": 0.12857142857142856,
+      "best_constant_ground_offset_m": -0.003995799986318355,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.1,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.05714285714285714,
+      "calibrated_airborne_longest_seconds": 0.08,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.011234750967894936,
+        "p05": 0.026845148979839896,
+        "median": 0.3717539795118714,
+        "p95": 4.1629583928606495,
+        "max": 4.88308608556804
+      },
+      "contact_speed_over_02m_s_fraction": 0.7288135593220338,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.01282486222872693,
+        "p05": 0.04783459605168074,
+        "median": 0.3620625382480202,
+        "p95": 1.6695904089783424,
+        "max": 4.3803297044503005
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.7346938775510204,
+      "nonfoot_minimum_height_m": 0.10974432351883204
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/C12_-_run_turn_left_45_stageii.npz",
+      "frames": 109,
+      "seconds": 2.16,
+      "sha256": "9d85dc66d037a0277282fc7602b45dea8af0d290239dedd19edac56491e2524f",
+      "trajectory_sha256": "2390993eeb21568df41e4a62bf63f3a209577fe8deb2bfbcd98f9d2501a821fe",
+      "root_displacement_xy_m": [
+        -1.2332131871953607,
+        3.296396731864661
+      ],
+      "root_speed_m_s": {
+        "min": 1.0209403413519973,
+        "p05": 1.173606695762973,
+        "median": 1.7730840353623307,
+        "p95": 2.2775992222700117,
+        "max": 2.351279411381528
+      },
+      "joint_limit_violation_max_rad": 0.042983412742614746,
+      "joint_limit_violation_frame_fraction": 0.0,
+      "joint_step_max_rad": 0.2958580255508423,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 0.002771615982055664,
+        "p05": 0.13336418196558958,
+        "median": 1.6415640711784363,
+        "p95": 7.84502416849135,
+        "max": 14.184091985225677
+      },
+      "logged_joint_velocity_rmse_rad_s": 1.1090635971318547e-07,
+      "root_quaternion_norm_error_max": 2.854134228957861e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 1.1542134231393317e-08,
+        "median": 1.0196689277279617e-07,
+        "p95": 3.115316247554559e-07,
+        "max": 7.022490758014109e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 2.2788819879646083e-08,
+        "median": 4.002115012567262e-07,
+        "p95": 9.361535224631078e-07,
+        "max": 1.5945412492807996e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.025655163176298436,
+        "p05": -0.01734571704896723,
+        "median": 0.00930856605613617,
+        "p95": 0.054377571730254176,
+        "max": 0.06940884249995882
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.01834862385321101,
+      "raw_both_feet_over_2cm_frame_fraction": 0.22018348623853212,
+      "best_constant_ground_offset_m": -0.00930856605613617,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.09174311926605505,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.11009174311926606,
+      "calibrated_airborne_longest_seconds": 0.14,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.01705516718924582,
+        "p05": 0.06127139666957388,
+        "median": 0.42848356686913525,
+        "p95": 5.004217997103961,
+        "max": 5.391594551241618
+      },
+      "contact_speed_over_02m_s_fraction": 0.7211538461538461,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.01705516718924582,
+        "p05": 0.0562109756344919,
+        "median": 0.265640918477102,
+        "p95": 1.1948956820665235,
+        "max": 4.5854062711054855
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.6027397260273972,
+      "nonfoot_minimum_height_m": 0.13634870889364029
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/C13_-_run_turn_left_135_stageii.npz",
+      "frames": 153,
+      "seconds": 3.04,
+      "sha256": "a4bd5f196734d8048308a29a8b8d820c84f92cf6b5ad5383c09131e246531688",
+      "trajectory_sha256": "822830323139dfc35162aa13b3e534f8419c6aa1a2b50624b2a9b7a1194fb275",
+      "root_displacement_xy_m": [
+        -1.430904631037265,
+        0.1506378478370607
+      ],
+      "root_speed_m_s": {
+        "min": 0.08978782408195735,
+        "p05": 0.16911388426338209,
+        "median": 1.303449008366916,
+        "p95": 2.055192413755098,
+        "max": 2.5721432420688486
+      },
+      "joint_limit_violation_max_rad": 0.1372137546539307,
+      "joint_limit_violation_frame_fraction": 0.08496732026143791,
+      "joint_step_max_rad": 0.6319419145584106,
+      "motor_speed_violation_max_rad_s": 15.997095727920533,
+      "motor_speed_violation_frame_fraction": 0.019736842105263157,
+      "joint_speed_abs_rad_s": {
+        "min": 0.0052001094445586205,
+        "p05": 0.11695915833115578,
+        "median": 1.3421591371297836,
+        "p95": 7.0303962565958455,
+        "max": 31.597095727920532
+      },
+      "logged_joint_velocity_rmse_rad_s": 9.459912763170763e-08,
+      "root_quaternion_norm_error_max": 2.8460789813777865e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 1.0411076100259014e-08,
+        "median": 8.579308029966663e-08,
+        "p95": 2.3236031410030471e-07,
+        "max": 4.447337417968289e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.7263162137731236e-08,
+        "median": 3.966267673363617e-07,
+        "p95": 8.952801324190697e-07,
+        "max": 1.4738483728442156e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.035550493940060185,
+        "p05": -0.01754429068062194,
+        "median": 0.007235925856295136,
+        "p95": 0.023841106641489813,
+        "max": 0.03306077064048041
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.0392156862745098,
+      "raw_both_feet_over_2cm_frame_fraction": 0.0915032679738562,
+      "best_constant_ground_offset_m": -0.007235925856295136,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.0915032679738562,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.026143790849673203,
+      "calibrated_airborne_longest_seconds": 0.04,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.010737764087965115,
+        "p05": 0.041654556089282015,
+        "median": 0.3010935570998613,
+        "p95": 3.4281574566392017,
+        "max": 11.860845149666064
+      },
+      "contact_speed_over_02m_s_fraction": 0.6379310344827587,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.012309508424464734,
+        "p05": 0.04123186485295083,
+        "median": 0.22864438483975336,
+        "p95": 1.0046980317585121,
+        "max": 2.2014486507377233
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.5737704918032787,
+      "nonfoot_minimum_height_m": 0.12750736149439706
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/C14_-_run_turn_right_90_stageii.npz",
+      "frames": 158,
+      "seconds": 3.14,
+      "sha256": "221fddc13b1be2db0ff6c2cadd1e936f4b88c432785792ee26a7d103972f9dd1",
+      "trajectory_sha256": "6d24b0759e3d68881c48627d6b3f7b34d80c536a004f928898496c051152d047",
+      "root_displacement_xy_m": [
+        2.3597824565076735,
+        2.162369491532445
+      ],
+      "root_speed_m_s": {
+        "min": 0.38295776314458857,
+        "p05": 0.4856612972863828,
+        "median": 1.3277806296404053,
+        "p95": 2.008023786008286,
+        "max": 2.1359909093394225
+      },
+      "joint_limit_violation_max_rad": 0.27357130050659184,
+      "joint_limit_violation_frame_fraction": 0.08227848101265822,
+      "joint_step_max_rad": 0.5034684240818024,
+      "motor_speed_violation_max_rad_s": 9.573421204090119,
+      "motor_speed_violation_frame_fraction": 0.01910828025477707,
+      "joint_speed_abs_rad_s": {
+        "min": 0.0005908310413360596,
+        "p05": 0.15022766012407374,
+        "median": 1.6523174941539764,
+        "p95": 7.342981202527877,
+        "max": 20.376842468976974
+      },
+      "logged_joint_velocity_rmse_rad_s": 9.906108364623017e-08,
+      "root_quaternion_norm_error_max": 2.7103284883089884e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 1.2771972898178029e-08,
+        "median": 1.0661284731365441e-07,
+        "p95": 2.7967629945284186e-07,
+        "max": 7.266613772684665e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.5058643036322733e-08,
+        "median": 3.9065408196206076e-07,
+        "p95": 8.955270983778832e-07,
+        "max": 1.745854110464199e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.03891867919425458,
+        "p05": -0.028387995839609187,
+        "median": 0.0029033216371927035,
+        "p95": 0.021883679788765167,
+        "max": 0.03368143347362086
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.1518987341772152,
+      "raw_both_feet_over_2cm_frame_fraction": 0.0759493670886076,
+      "best_constant_ground_offset_m": -0.0029033216371927035,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.16455696202531644,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.04430379746835443,
+      "calibrated_airborne_longest_seconds": 0.06,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.009639823152079941,
+        "p05": 0.07185328545266609,
+        "median": 0.36353479867989424,
+        "p95": 4.561241686265832,
+        "max": 5.1349218353617845
+      },
+      "contact_speed_over_02m_s_fraction": 0.710691823899371,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.009639823152079941,
+        "p05": 0.07289736553430937,
+        "median": 0.3537054967591855,
+        "p95": 1.2842724038910578,
+        "max": 4.560058638547006
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.7109375,
+      "nonfoot_minimum_height_m": 0.09795311178670738
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/C15_-_run_turn_right_45_stageii.npz",
+      "frames": 155,
+      "seconds": 3.08,
+      "sha256": "5e3a612848fdc88414f5d2351d8b4858fb4fa2da4c8b33f741ab87f29c5f115c",
+      "trajectory_sha256": "5394fed426f5c146f60046e0eec962ec403c3894afe6bbc2ffd66e4bfa55a4e5",
+      "root_displacement_xy_m": [
+        3.592367172241211,
+        1.5347961196675897
+      ],
+      "root_speed_m_s": {
+        "min": 0.5417967223773702,
+        "p05": 0.7749592589875046,
+        "median": 1.4434173035321851,
+        "p95": 1.9407803551838696,
+        "max": 2.182320628214588
+      },
+      "joint_limit_violation_max_rad": 0.05970805883407593,
+      "joint_limit_violation_frame_fraction": 0.01935483870967742,
+      "joint_step_max_rad": 0.6742041110992432,
+      "motor_speed_violation_max_rad_s": 18.110205554962157,
+      "motor_speed_violation_frame_fraction": 0.012987012987012988,
+      "joint_speed_abs_rad_s": {
+        "min": 0.0003904104232788086,
+        "p05": 0.12929634191095832,
+        "median": 1.4911910984665155,
+        "p95": 7.094267047941678,
+        "max": 23.685501515865326
+      },
+      "logged_joint_velocity_rmse_rad_s": 9.791863224149868e-08,
+      "root_quaternion_norm_error_max": 2.7277111613877025e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 1.4235842332965983e-08,
+        "median": 1.1328456786663497e-07,
+        "p95": 3.0539945247297006e-07,
+        "max": 6.6697422448478e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.1838020631999662e-08,
+        "median": 3.7500547030217927e-07,
+        "p95": 8.75688607351457e-07,
+        "max": 1.6245524253942235e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.04610557085041029,
+        "p05": -0.034056010161048665,
+        "median": -0.0016894138927765097,
+        "p95": 0.02005330577943719,
+        "max": 0.026017168769658615
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.14193548387096774,
+      "raw_both_feet_over_2cm_frame_fraction": 0.05161290322580645,
+      "best_constant_ground_offset_m": 0.0016894138927765097,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.10967741935483871,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.07741935483870968,
+      "calibrated_airborne_longest_seconds": 0.12,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.004523560649854763,
+        "p05": 0.09431277519461263,
+        "median": 0.43205122373710086,
+        "p95": 4.323188198835958,
+        "max": 5.024262806732989
+      },
+      "contact_speed_over_02m_s_fraction": 0.7628205128205128,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.004523560649854763,
+        "p05": 0.06300458101884163,
+        "median": 0.36258543483315325,
+        "p95": 2.2912896794822375,
+        "max": 3.0967533698524234
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.7024793388429752,
+      "nonfoot_minimum_height_m": 0.0992059224612373
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/C16_-_run_turn_right_135_stageii.npz",
+      "frames": 157,
+      "seconds": 3.12,
+      "sha256": "4de8d5cca007cbe966656b74a6132dc609fede0b94ed1bf266be259beabd57ea",
+      "trajectory_sha256": "368cb50e4e1e71a75bfff2414ed7d960fc9e95c16c93731ce905c41ed3badc21",
+      "root_displacement_xy_m": [
+        1.482728005386889,
+        -0.5199695229530334
+      ],
+      "root_speed_m_s": {
+        "min": 0.04259246456842665,
+        "p05": 0.15637747190457607,
+        "median": 1.3482025003864415,
+        "p95": 2.0701464009666215,
+        "max": 2.2257259322199725
+      },
+      "joint_limit_violation_max_rad": 0.0076884508132935014,
+      "joint_limit_violation_frame_fraction": 0.0,
+      "joint_step_max_rad": 0.31069910526275635,
+      "motor_speed_violation_max_rad_s": 2.5477049875259397,
+      "motor_speed_violation_frame_fraction": 0.00641025641025641,
+      "joint_speed_abs_rad_s": {
+        "min": 0.0002868473529815674,
+        "p05": 0.13477429747581482,
+        "median": 1.4943931251764297,
+        "p95": 7.136732968501747,
+        "max": 15.277302265167236
+      },
+      "logged_joint_velocity_rmse_rad_s": 9.274608142087282e-08,
+      "root_quaternion_norm_error_max": 2.3445260488585973e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 9.754632018040978e-09,
+        "median": 9.694715519516979e-08,
+        "p95": 2.514945784841192e-07,
+        "max": 4.5623192425258813e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.5403909105355554e-08,
+        "median": 3.808574608164145e-07,
+        "p95": 9.174734412786461e-07,
+        "max": 1.8254521389769021e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.04239966103735772,
+        "p05": -0.01814874944277401,
+        "median": 0.005583353800397525,
+        "p95": 0.02741996992974726,
+        "max": 0.053439387820995984
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.050955414012738856,
+      "raw_both_feet_over_2cm_frame_fraction": 0.12738853503184713,
+      "best_constant_ground_offset_m": -0.005583353800397525,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.07643312101910828,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.06369426751592357,
+      "calibrated_airborne_longest_seconds": 0.1,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.008962044590327515,
+        "p05": 0.050139251086217154,
+        "median": 0.2329356309873527,
+        "p95": 2.8961419050883603,
+        "max": 5.021777394597456
+      },
+      "contact_speed_over_02m_s_fraction": 0.5471698113207547,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.00901697278814609,
+        "p05": 0.052978109852718266,
+        "median": 0.22653931025288504,
+        "p95": 1.0210353041751554,
+        "max": 2.0351423168191114
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.536,
+      "nonfoot_minimum_height_m": 0.12473646265172884
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/C17_-_run_change_direction_stageii.npz",
+      "frames": 151,
+      "seconds": 3.0,
+      "sha256": "e52d807e58b1cf6a4066d36329362ff6153d80e9e3c5b1ac44666063fc438f2a",
+      "trajectory_sha256": "123e615be430fcec0856a04f27814a29c6cc45b8ccbea1a4ccf6c9499c2807b0",
+      "root_displacement_xy_m": [
+        -1.1026101125462446,
+        3.737826823722571
+      ],
+      "root_speed_m_s": {
+        "min": 0.6414240630513481,
+        "p05": 0.9689464565958759,
+        "median": 1.5150923083929868,
+        "p95": 2.1161365167769746,
+        "max": 2.3060444601609924
+      },
+      "joint_limit_violation_max_rad": 0.3308945178985596,
+      "joint_limit_violation_frame_fraction": 0.10596026490066225,
+      "joint_step_max_rad": 0.3062259554862976,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 0.0001821666955947876,
+        "p05": 0.1295049930922687,
+        "median": 1.5587463974952698,
+        "p95": 7.0473757386207625,
+        "max": 14.702384173870087
+      },
+      "logged_joint_velocity_rmse_rad_s": 9.728239558328345e-08,
+      "root_quaternion_norm_error_max": 3.0239197923442873e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 1.23329508014605e-08,
+        "median": 1.0853710656263776e-07,
+        "p95": 2.951511997256318e-07,
+        "max": 5.9817152002129e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.9660040933733296e-08,
+        "median": 3.7735921200011804e-07,
+        "p95": 8.954846610423509e-07,
+        "max": 1.4118464015605449e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.03989681994483944,
+        "p05": -0.029052429578711833,
+        "median": -0.003506215021798112,
+        "p95": 0.028685650451522916,
+        "max": 0.05555546250224433
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.08609271523178808,
+      "raw_both_feet_over_2cm_frame_fraction": 0.17218543046357615,
+      "best_constant_ground_offset_m": 0.003506215021798112,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.0728476821192053,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.2052980132450331,
+      "calibrated_airborne_longest_seconds": 0.26,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.029536500844713168,
+        "p05": 0.06234555783134344,
+        "median": 0.39327654290583597,
+        "p95": 4.398568904060764,
+        "max": 5.395847502923515
+      },
+      "contact_speed_over_02m_s_fraction": 0.7567567567567568,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.029536500844713168,
+        "p05": 0.05769266647727425,
+        "median": 0.37546644802919554,
+        "p95": 4.068093398933967,
+        "max": 5.254520455409995
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.7425742574257426,
+      "nonfoot_minimum_height_m": 0.11461465990403598
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/C1_-_stand_to_run_stageii.npz",
+      "frames": 203,
+      "seconds": 4.04,
+      "sha256": "d41e1e0e590e6eb5d9f5ea17f4c99a361509df57b966a55fe93e0ab439154b8a",
+      "trajectory_sha256": "f759348cd3ffcc1827451e983672a31c50852a4ffc4112211bf1a64ca213ce6b",
+      "root_displacement_xy_m": [
+        -1.8789083971641958,
+        1.8929762812331319
+      ],
+      "root_speed_m_s": {
+        "min": 0.0011592843784331056,
+        "p05": 0.0028971543604248457,
+        "median": 0.408139066327426,
+        "p95": 1.9822640141231695,
+        "max": 2.2605704982731862
+      },
+      "joint_limit_violation_max_rad": 0.0752576947212219,
+      "joint_limit_violation_frame_fraction": 0.009852216748768473,
+      "joint_step_max_rad": 0.28389865159988403,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 3.03611159324646e-05,
+        "p05": 0.005650287494063377,
+        "median": 0.35201823338866234,
+        "p95": 4.532957077026367,
+        "max": 14.097368717193604
+      },
+      "logged_joint_velocity_rmse_rad_s": 6.168487882650043e-08,
+      "root_quaternion_norm_error_max": 2.4903540096765653e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 8.532804759755061e-09,
+        "median": 7.492064184768487e-08,
+        "p95": 2.2017410883228543e-07,
+        "max": 4.7142187402306523e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 2.0367153869553855e-08,
+        "median": 3.7154255548157175e-07,
+        "p95": 8.531538080044278e-07,
+        "max": 1.8416326570186797e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.03975808770437814,
+        "p05": -0.012757539632367785,
+        "median": -0.008781177535563733,
+        "p95": 0.03473141102714588,
+        "max": 0.0692237206503549
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.034482758620689655,
+      "raw_both_feet_over_2cm_frame_fraction": 0.10344827586206896,
+      "best_constant_ground_offset_m": 0.008781177535563733,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.019704433497536946,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.13793103448275862,
+      "calibrated_airborne_longest_seconds": 0.52,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.00039416388901153035,
+        "p05": 0.0016218051571447048,
+        "median": 0.015276589266460243,
+        "p95": 0.81516077757958,
+        "max": 3.790534380293199
+      },
+      "contact_speed_over_02m_s_fraction": 0.14893617021276595,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.00039416388901153035,
+        "p05": 0.0015623814649438396,
+        "median": 0.01557789087523983,
+        "p95": 0.6197520851006066,
+        "max": 1.2564235073439234
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.1415929203539823,
+      "nonfoot_minimum_height_m": 0.12383589239426526
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/C3_-_run_stageii.npz",
+      "frames": 135,
+      "seconds": 2.68,
+      "sha256": "d16db2dbca55f9b27c8adc82e764fbd6b959341e6a664b4636958de0d5d34b81",
+      "trajectory_sha256": "1f9ba743fa9497c4221da7507941ab1acb50b589d269d9946149781017a4b30f",
+      "root_displacement_xy_m": [
+        -3.4709565648809075,
+        3.3472790722735226
+      ],
+      "root_speed_m_s": {
+        "min": 0.9891651815238143,
+        "p05": 1.1572898929349087,
+        "median": 1.880127348768862,
+        "p95": 2.351038609861528,
+        "max": 2.5474233668714863
+      },
+      "joint_limit_violation_max_rad": 0.11335868835449237,
+      "joint_limit_violation_frame_fraction": 0.014814814814814815,
+      "joint_step_max_rad": 0.4127812385559082,
+      "motor_speed_violation_max_rad_s": 5.0390619277954105,
+      "motor_speed_violation_frame_fraction": 0.014925373134328358,
+      "joint_speed_abs_rad_s": {
+        "min": 0.0036448240280151367,
+        "p05": 0.14236534480005503,
+        "median": 1.619993639178574,
+        "p95": 8.831393010914326,
+        "max": 20.63906192779541
+      },
+      "logged_joint_velocity_rmse_rad_s": 1.0709337103335423e-07,
+      "root_quaternion_norm_error_max": 2.7419802228756396e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 1.1082803718499773e-08,
+        "median": 1.2497026646126738e-07,
+        "p95": 3.4257030344898577e-07,
+        "max": 7.009363982494929e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.5179630466223807e-08,
+        "median": 3.881450893445296e-07,
+        "p95": 9.367815026683873e-07,
+        "max": 1.6345227517609857e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.054305653921020935,
+        "p05": -0.02636792150788076,
+        "median": 0.012498368786784349,
+        "p95": 0.066609902637044,
+        "max": 0.07648460397490217
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.08888888888888889,
+      "raw_both_feet_over_2cm_frame_fraction": 0.3851851851851852,
+      "best_constant_ground_offset_m": -0.012498368786784349,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.18518518518518517,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.21481481481481482,
+      "calibrated_airborne_longest_seconds": 0.14,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.030410544622537516,
+        "p05": 0.07970256508065901,
+        "median": 0.3410227963342567,
+        "p95": 3.734746418879686,
+        "max": 4.875153260343859
+      },
+      "contact_speed_over_02m_s_fraction": 0.6901408450704225,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.030410544622537516,
+        "p05": 0.07709774570258913,
+        "median": 0.3169599380725492,
+        "p95": 2.155424612465072,
+        "max": 3.9144213489416764
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.6666666666666666,
+      "nonfoot_minimum_height_m": 0.11510442114427824
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/C4_-_run_to_walk_a_stageii.npz",
+      "frames": 191,
+      "seconds": 3.8000000000000003,
+      "sha256": "95a1a7000af97e12c6bbf24fc5c637dd47bb258cde613f2d59fff8b572d39e2f",
+      "trajectory_sha256": "def44c1a04d5092a45f7bd3591b1f31c159505c8cccddd2eb72cf04fa78c39cc",
+      "root_displacement_xy_m": [
+        -2.7253193873912096,
+        2.466447347367648
+      ],
+      "root_speed_m_s": {
+        "min": 0.6109371568785936,
+        "p05": 0.6525043558429308,
+        "median": 0.9192633120585544,
+        "p95": 1.6296301860016738,
+        "max": 1.9950619978558124
+      },
+      "joint_limit_violation_max_rad": 0.6415901184082031,
+      "joint_limit_violation_frame_fraction": 0.9947643979057592,
+      "joint_step_max_rad": 0.5813844203948975,
+      "motor_speed_violation_max_rad_s": 13.469221019744873,
+      "motor_speed_violation_frame_fraction": 0.010526315789473684,
+      "joint_speed_abs_rad_s": {
+        "min": 0.0,
+        "p05": 0.0,
+        "median": 1.13538084551692,
+        "p95": 5.130208344198759,
+        "max": 29.069221019744873
+      },
+      "logged_joint_velocity_rmse_rad_s": 7.756379367114876e-08,
+      "root_quaternion_norm_error_max": 2.7276304503942583e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 1.0729781453017662e-08,
+        "median": 1.1540374271539833e-07,
+        "p95": 3.2775945326295703e-07,
+        "max": 7.410266755826756e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.5231834535521884e-08,
+        "median": 3.8040931889649593e-07,
+        "p95": 8.298479261187952e-07,
+        "max": 1.812012198467697e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.03440472861265836,
+        "p05": -0.02438081555969736,
+        "median": -0.0005660097508510195,
+        "p95": 0.023316606560284916,
+        "max": 0.027013264334153284
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.08900523560209424,
+      "raw_both_feet_over_2cm_frame_fraction": 0.08376963350785341,
+      "best_constant_ground_offset_m": 0.0005660097508510195,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.08376963350785341,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.08900523560209424,
+      "calibrated_airborne_longest_seconds": 0.26,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.007499455609388362,
+        "p05": 0.0359361503440899,
+        "median": 0.19326211553773473,
+        "p95": 3.3051750487239846,
+        "max": 3.7174918260714236
+      },
+      "contact_speed_over_02m_s_fraction": 0.48623853211009177,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.007499455609388362,
+        "p05": 0.03155411261026408,
+        "median": 0.13900388506756456,
+        "p95": 0.9205167113986988,
+        "max": 3.673791902399877
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.34838709677419355,
+      "nonfoot_minimum_height_m": 0.12298956757125093
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/C5_-_walk_to_run_stageii.npz",
+      "frames": 177,
+      "seconds": 3.52,
+      "sha256": "6b8b060306ed83ae5964b087aeb8a32c2592d2633b22b4be20b1c3a83200ed10",
+      "trajectory_sha256": "b78579caf1685a8147590ff1c0d21a6fac720feaf3c9ced9ae4042856fbfadc7",
+      "root_displacement_xy_m": [
+        -3.3289437303319573,
+        3.0210213649552315
+      ],
+      "root_speed_m_s": {
+        "min": 0.625482009578696,
+        "p05": 0.7500408001236487,
+        "median": 1.0571317094015422,
+        "p95": 2.229782561569185,
+        "max": 2.566770757889059
+      },
+      "joint_limit_violation_max_rad": 0.027066826820373535,
+      "joint_limit_violation_frame_fraction": 0.0,
+      "joint_step_max_rad": 0.3339284658432007,
+      "motor_speed_violation_max_rad_s": 1.0964232921600345,
+      "motor_speed_violation_frame_fraction": 0.011363636363636364,
+      "joint_speed_abs_rad_s": {
+        "min": 0.003352481871843338,
+        "p05": 0.11538118124008179,
+        "median": 1.3099944218993187,
+        "p95": 6.176979839801788,
+        "max": 16.2582665681839
+      },
+      "logged_joint_velocity_rmse_rad_s": 8.743836301598863e-08,
+      "root_quaternion_norm_error_max": 2.528858265016254e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 1.1962163523056606e-08,
+        "median": 1.0442091641943467e-07,
+        "p95": 3.11791609430451e-07,
+        "max": 6.442970766522554e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.7115608865389518e-08,
+        "median": 3.81503429382159e-07,
+        "p95": 8.869735840969191e-07,
+        "max": 1.5539744675032647e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.03837069323265281,
+        "p05": -0.028968232882986493,
+        "median": -0.007207694017582561,
+        "p95": 0.043261735075347925,
+        "max": 0.09160641671086431
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.1694915254237288,
+      "raw_both_feet_over_2cm_frame_fraction": 0.1977401129943503,
+      "best_constant_ground_offset_m": 0.007207694017582561,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.07344632768361582,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.2824858757062147,
+      "calibrated_airborne_longest_seconds": 0.3,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.004539975367348437,
+        "p05": 0.04914876402911478,
+        "median": 0.22962158012301137,
+        "p95": 3.4115759415683145,
+        "max": 3.76531054556034
+      },
+      "contact_speed_over_02m_s_fraction": 0.5411764705882353,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.004539975367348437,
+        "p05": 0.0486436344360656,
+        "median": 0.18867342210338278,
+        "p95": 3.0848596423918995,
+        "max": 3.5821407309657167
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.4909090909090909,
+      "nonfoot_minimum_height_m": 0.11298250505924379
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/C6_-_stand_to_run_backwards_stageii.npz",
+      "frames": 290,
+      "seconds": 5.78,
+      "sha256": "d4973e104df7762b139c3fc217a175c356311be3857f05147740381425d2c7a2",
+      "trajectory_sha256": "a75a3c6bd7d3d1d107f7a5be90ce1cbfaf5a88d5b1412bfc04ae6e3fd97117be",
+      "root_displacement_xy_m": [
+        2.0121648339554667,
+        -1.8363494883524254
+      ],
+      "root_speed_m_s": {
+        "min": 0.0004269370246914042,
+        "p05": 0.0026187119196634783,
+        "median": 0.05062724968203258,
+        "p95": 1.5298331113425452,
+        "max": 1.6936326228387948
+      },
+      "joint_limit_violation_max_rad": 0.1040145754814148,
+      "joint_limit_violation_frame_fraction": 0.017241379310344827,
+      "joint_step_max_rad": 0.2554730176925659,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 2.4028122425079346e-05,
+        "p05": 0.007612118497490881,
+        "median": 0.2019943669438362,
+        "p95": 4.053963981568819,
+        "max": 12.411853671073914
+      },
+      "logged_joint_velocity_rmse_rad_s": 5.342855172262806e-08,
+      "root_quaternion_norm_error_max": 2.857874525918902e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 8.060066799559838e-09,
+        "median": 7.131451558877034e-08,
+        "p95": 2.0029503688709025e-07,
+        "max": 4.886267290117299e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 2.238990452443628e-08,
+        "median": 3.685622164839941e-07,
+        "p95": 8.450182185891651e-07,
+        "max": 1.4198499312323396e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.06275873112798361,
+        "p05": -0.019589977984266118,
+        "median": -0.013860392391988507,
+        "p95": 0.01005808047508329,
+        "max": 0.02231979826175612
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.05172413793103448,
+      "raw_both_feet_over_2cm_frame_fraction": 0.006896551724137931,
+      "best_constant_ground_offset_m": 0.013860392391988507,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.027586206896551724,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.09310344827586207,
+      "calibrated_airborne_longest_seconds": 0.26,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.00012669703469833616,
+        "p05": 0.002337158815228514,
+        "median": 0.012464464035530611,
+        "p95": 0.45481369832705326,
+        "max": 4.310935978249501
+      },
+      "contact_speed_over_02m_s_fraction": 0.12060301507537688,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.00012669703469833616,
+        "p05": 0.002178240128805181,
+        "median": 0.011493628873125912,
+        "p95": 0.5944242391924985,
+        "max": 4.310935978249501
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.13588850174216027,
+      "nonfoot_minimum_height_m": 0.12363525554605029
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/C8_-_run_backwards_to_stand_stageii.npz",
+      "frames": 199,
+      "seconds": 3.96,
+      "sha256": "6afda65bf5732f42ea05d576f95eefd35ae1e41d27e3f3409ac0b88d22ef8061",
+      "trajectory_sha256": "bfa9c3441d5aa65b3c8189c44279637327d46d48746161cec93b687314fea840",
+      "root_displacement_xy_m": [
+        2.30371356010437,
+        -2.121769431512803
+      ],
+      "root_speed_m_s": {
+        "min": 0.005765544071702922,
+        "p05": 0.030648150817514003,
+        "median": 0.9224423207338817,
+        "p95": 1.663554589095814,
+        "max": 1.844772038597417
+      },
+      "joint_limit_violation_max_rad": 0.01294343471527104,
+      "joint_limit_violation_frame_fraction": 0.0,
+      "joint_step_max_rad": 0.2310342788696289,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 9.5367431640625e-05,
+        "p05": 0.03269769251346588,
+        "median": 0.6960478669498116,
+        "p95": 4.865138791501522,
+        "max": 11.16555780172348
+      },
+      "logged_joint_velocity_rmse_rad_s": 6.374494668969479e-08,
+      "root_quaternion_norm_error_max": 2.97475689414739e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 1.3127193055189266e-08,
+        "median": 1.203503677105488e-07,
+        "p95": 3.373309091247148e-07,
+        "max": 7.136666182175986e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.609423642645959e-08,
+        "median": 3.77050376703216e-07,
+        "p95": 8.749622311917067e-07,
+        "max": 1.5682480809346818e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.03408885584103798,
+        "p05": -0.021727051863794068,
+        "median": -0.005313645712139263,
+        "p95": 0.023389415326047193,
+        "max": 0.030913182261858217
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.07537688442211055,
+      "raw_both_feet_over_2cm_frame_fraction": 0.11557788944723618,
+      "best_constant_ground_offset_m": 0.005313645712139263,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.02512562814070352,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.21105527638190955,
+      "calibrated_airborne_longest_seconds": 0.56,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.0015655257377713695,
+        "p05": 0.004218048707091124,
+        "median": 0.0693766506648359,
+        "p95": 1.8006915135430481,
+        "max": 3.797661298063338
+      },
+      "contact_speed_over_02m_s_fraction": 0.334841628959276,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.0025419323618418436,
+        "p05": 0.00506959137641911,
+        "median": 0.07066258386971747,
+        "p95": 1.4032671089349165,
+        "max": 3.765209694552041
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.3404255319148936,
+      "nonfoot_minimum_height_m": 0.1296044603608909
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/C9_-_run_backwards_turn_run_forward_stageii.npz",
+      "frames": 178,
+      "seconds": 3.54,
+      "sha256": "e0b78af516128b70803f81543c59ad86b603bb2425cd2c0de9588027f26342a4",
+      "trajectory_sha256": "50839551325ebd21dda9061b485ed7187882130b9f87f196d7ae51bdc5b48c2d",
+      "root_displacement_xy_m": [
+        -3.271084311651066,
+        3.282808304997161
+      ],
+      "root_speed_m_s": {
+        "min": 0.6069441730806445,
+        "p05": 0.7619203209636527,
+        "median": 1.3122263789129214,
+        "p95": 1.9762354310538384,
+        "max": 2.1190391837708935
+      },
+      "joint_limit_violation_max_rad": 0.1705300092697144,
+      "joint_limit_violation_frame_fraction": 0.17415730337078653,
+      "joint_step_max_rad": 0.5275470018386841,
+      "motor_speed_violation_max_rad_s": 10.777350091934204,
+      "motor_speed_violation_frame_fraction": 0.011299435028248588,
+      "joint_speed_abs_rad_s": {
+        "min": 0.002708344254642725,
+        "p05": 0.12863926589488986,
+        "median": 1.455603539943695,
+        "p95": 6.526039950549601,
+        "max": 26.377350091934204
+      },
+      "logged_joint_velocity_rmse_rad_s": 9.179805250641539e-08,
+      "root_quaternion_norm_error_max": 2.808159338396621e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 9.544147326143053e-09,
+        "median": 1.1734335273376815e-07,
+        "p95": 3.3775627586426055e-07,
+        "max": 7.270453594587183e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.4050337989227331e-08,
+        "median": 3.8222680289495187e-07,
+        "p95": 8.80590338483467e-07,
+        "max": 1.7671834322206708e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.03891043652950603,
+        "p05": -0.02325333669308544,
+        "median": 0.002063053139095836,
+        "p95": 0.04255076093691056,
+        "max": 0.0601487648464992
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.07303370786516854,
+      "raw_both_feet_over_2cm_frame_fraction": 0.1853932584269663,
+      "best_constant_ground_offset_m": -0.002063053139095836,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.07303370786516854,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.16853932584269662,
+      "calibrated_airborne_longest_seconds": 0.26,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.02737162716408792,
+        "p05": 0.06455965637246988,
+        "median": 0.29204365217804124,
+        "p95": 4.046831411913765,
+        "max": 4.605329589849809
+      },
+      "contact_speed_over_02m_s_fraction": 0.6569767441860465,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.02737162716408792,
+        "p05": 0.06587119022523949,
+        "median": 0.24188207666824002,
+        "p95": 1.8546570745986897,
+        "max": 3.6429593695365803
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.6015037593984962,
+      "nonfoot_minimum_height_m": 0.12085118992398816
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/Walk_B10_-_Walk_turn_left_45_stageii.npz",
+      "frames": 420,
+      "seconds": 8.38,
+      "sha256": "673b24c351a280a259b08105132c598bf36d8e760d83cbbf78d01e610983b460",
+      "trajectory_sha256": "4fbdf35dc2b3650a3dde0f09582984a6d21124c07cbecd0067f748552e294c71",
+      "root_displacement_xy_m": [
+        -3.3268327675759792,
+        -1.6149383783340454
+      ],
+      "root_speed_m_s": {
+        "min": 0.01763537224197437,
+        "p05": 0.07731097155505039,
+        "median": 0.5263057303020107,
+        "p95": 0.7085714501046831,
+        "max": 0.7968273560102171
+      },
+      "joint_limit_violation_max_rad": 0.06560437679290776,
+      "joint_limit_violation_frame_fraction": 0.01904761904761905,
+      "joint_step_max_rad": 0.1220044493675232,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 0.0001348555088043213,
+        "p05": 0.028309682384133346,
+        "median": 0.39726614486426115,
+        "p95": 2.5802353024482643,
+        "max": 6.040895730257034
+      },
+      "logged_joint_velocity_rmse_rad_s": 3.366277289163669e-08,
+      "root_quaternion_norm_error_max": 2.644243188854034e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 9.737804849347273e-09,
+        "median": 9.870417043551459e-08,
+        "p95": 2.9123305231319647e-07,
+        "max": 7.537679788234929e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.0712805513125686e-08,
+        "median": 3.818732097709152e-07,
+        "p95": 9.071140282318759e-07,
+        "max": 1.5830628656683651e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.0414188789915903,
+        "p05": -0.027497093227837367,
+        "median": -0.005413052855897039,
+        "p95": 0.017417306291947036,
+        "max": 0.02622000432041914
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.14047619047619048,
+      "raw_both_feet_over_2cm_frame_fraction": 0.030952380952380953,
+      "best_constant_ground_offset_m": 0.005413052855897039,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.07142857142857142,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.11428571428571428,
+      "calibrated_airborne_longest_seconds": 0.16,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.0016282894546392802,
+        "p05": 0.008130279792304258,
+        "median": 0.0725852768777081,
+        "p95": 2.3505477452047305,
+        "max": 2.525198507461861
+      },
+      "contact_speed_over_02m_s_fraction": 0.34782608695652173,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.0017612617092066017,
+        "p05": 0.008858705770897462,
+        "median": 0.10951253144236239,
+        "p95": 2.3932408953046997,
+        "max": 2.525198507461861
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.4300341296928328,
+      "nonfoot_minimum_height_m": 0.1380573469911736
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/Walk_B13_-_Walk_turn_right_45_stageii.npz",
+      "frames": 464,
+      "seconds": 9.26,
+      "sha256": "0b300bf60afd36a236f2dc45d1e426c90ec33a00d604e21241c3e5c17bbea759",
+      "trajectory_sha256": "dd55c67f48bd34678af34fc846f62e17f1b5dee3a303228945967465b9dd03c8",
+      "root_displacement_xy_m": [
+        3.4421801548451185,
+        1.6060043554753065
+      ],
+      "root_speed_m_s": {
+        "min": 0.006677765924159392,
+        "p05": 0.02246179833685159,
+        "median": 0.5280444023450293,
+        "p95": 0.7248903013440156,
+        "max": 0.8049303374106828
+      },
+      "joint_limit_violation_max_rad": 0.014289426803588912,
+      "joint_limit_violation_frame_fraction": 0.0,
+      "joint_step_max_rad": 0.12248453497886658,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 7.506459951400757e-05,
+        "p05": 0.025327028706669807,
+        "median": 0.3856141120195389,
+        "p95": 2.415882218629121,
+        "max": 6.02249950170517
+      },
+      "logged_joint_velocity_rmse_rad_s": 3.297350000319752e-08,
+      "root_quaternion_norm_error_max": 2.8306421429036277e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 9.55975455925248e-09,
+        "median": 1.032085242271713e-07,
+        "p95": 2.964945151829519e-07,
+        "max": 7.108008401873029e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.0316678945044783e-08,
+        "median": 4.001528094588549e-07,
+        "p95": 8.972674089930918e-07,
+        "max": 1.5949932936801493e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.054068502242422066,
+        "p05": -0.03276935073496788,
+        "median": 0.0006430974186364923,
+        "p95": 0.0204614258807558,
+        "max": 0.029085474732246902
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.16594827586206898,
+      "raw_both_feet_over_2cm_frame_fraction": 0.05387931034482758,
+      "best_constant_ground_offset_m": -0.0006430974186364923,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.16810344827586207,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.04741379310344827,
+      "calibrated_airborne_longest_seconds": 0.12,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.0012284718269328836,
+        "p05": 0.008628818135110324,
+        "median": 0.12158888486943897,
+        "p95": 2.445103178895899,
+        "max": 2.6324226328638174
+      },
+      "contact_speed_over_02m_s_fraction": 0.39634146341463417,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.0012284718269328836,
+        "p05": 0.007212603197386108,
+        "median": 0.11388059842586055,
+        "p95": 2.4814183540431576,
+        "max": 2.6324226328638174
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.3879310344827586,
+      "nonfoot_minimum_height_m": 0.13022334716443024
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/Walk_B15_-_Walk_turn_around_stageii.npz",
+      "frames": 568,
+      "seconds": 11.34,
+      "sha256": "5fbe90f6cfe6563806cbdc842105537b10c77efc9d2ba8c7a7adb26aa0660bf1",
+      "trajectory_sha256": "935f67b7b7bc282aaf500ae9a046b93ae5a2e1e13bcb8f258d7cf39bdcbe089c",
+      "root_displacement_xy_m": [
+        0.09654145129024982,
+        0.19390121288597584
+      ],
+      "root_speed_m_s": {
+        "min": 0.008617507576506136,
+        "p05": 0.05858804412284939,
+        "median": 0.47153411556619684,
+        "p95": 0.667557561291376,
+        "max": 0.763277743385218
+      },
+      "joint_limit_violation_max_rad": 0.0571191787719727,
+      "joint_limit_violation_frame_fraction": 0.01232394366197183,
+      "joint_step_max_rad": 0.13433962687849998,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 0.00011324882507324219,
+        "p05": 0.030902586877346046,
+        "median": 0.40752007625997066,
+        "p95": 2.400536863133316,
+        "max": 6.699622422456741
+      },
+      "logged_joint_velocity_rmse_rad_s": 3.119197286953505e-08,
+      "root_quaternion_norm_error_max": 2.616734133820131e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 9.694457622219538e-09,
+        "median": 8.699651126300636e-08,
+        "p95": 2.4125661974486404e-07,
+        "max": 6.178933400748551e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.9773662842204946e-08,
+        "median": 3.8022216334828206e-07,
+        "p95": 8.58358382814469e-07,
+        "max": 1.576382935599464e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.04627887838499399,
+        "p05": -0.03087305225394072,
+        "median": -0.009190038571997787,
+        "p95": 0.00803402950014945,
+        "max": 0.014105465276747432
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.18309859154929578,
+      "raw_both_feet_over_2cm_frame_fraction": 0.0,
+      "best_constant_ground_offset_m": 0.009190038571997787,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.06514084507042253,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.02992957746478873,
+      "calibrated_airborne_longest_seconds": 0.14,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.0007645659514906261,
+        "p05": 0.006879976255663664,
+        "median": 0.07902080634689317,
+        "p95": 2.288690856323956,
+        "max": 2.6411665657768446
+      },
+      "contact_speed_over_02m_s_fraction": 0.3689064558629776,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.0014760554874476352,
+        "p05": 0.007191018520623775,
+        "median": 0.07989146358333608,
+        "p95": 2.340657789188019,
+        "max": 2.6411665657768446
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.40162271805273836,
+      "nonfoot_minimum_height_m": 0.1281170700341588
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/Walk_B16_-_Walk_turn_change_stageii.npz",
+      "frames": 605,
+      "seconds": 12.08,
+      "sha256": "61342a58db3f7d74483dcf29ec17bc63bc545e93e4fb98e6d0e72560e29fde1e",
+      "trajectory_sha256": "bde530b1b8d1eacf5c1e10a2928300ccaf537598a7b4e361f8a681a6f449c8d9",
+      "root_displacement_xy_m": [
+        -2.3678622217848897,
+        0.35794234462082386
+      ],
+      "root_speed_m_s": {
+        "min": 0.001007710719380017,
+        "p05": 0.017651874611363153,
+        "median": 0.4158180363272601,
+        "p95": 0.6478913206988066,
+        "max": 0.7295201693159571
+      },
+      "joint_limit_violation_max_rad": 0.027835536003112837,
+      "joint_limit_violation_frame_fraction": 0.0,
+      "joint_step_max_rad": 0.12998558580875397,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 1.0943040251731873e-05,
+        "p05": 0.022846348583698276,
+        "median": 0.34927893429994583,
+        "p95": 2.0411428250372396,
+        "max": 6.492316350340843
+      },
+      "logged_joint_velocity_rmse_rad_s": 2.900383230142115e-08,
+      "root_quaternion_norm_error_max": 2.879868532534857e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 1.1063555455076568e-08,
+        "median": 9.812425453655935e-08,
+        "p95": 2.725509161709791e-07,
+        "max": 6.677484644980398e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.7597632465701935e-08,
+        "median": 3.813338324585179e-07,
+        "p95": 8.665752715216041e-07,
+        "max": 1.5829826376060505e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.04667078580088743,
+        "p05": -0.027018812143443677,
+        "median": -0.002854462889362419,
+        "p95": 0.010710225991150344,
+        "max": 0.01447182371102377
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.13553719008264462,
+      "raw_both_feet_over_2cm_frame_fraction": 0.0,
+      "best_constant_ground_offset_m": 0.002854462889362419,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.08760330578512397,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.0,
+      "calibrated_airborne_longest_seconds": 0.0,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.0010600574899066345,
+        "p05": 0.005952183375027414,
+        "median": 0.045406231759939575,
+        "p95": 2.1975948514868415,
+        "max": 2.6044109228461823
+      },
+      "contact_speed_over_02m_s_fraction": 0.29839704069050554,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.0012009936722190508,
+        "p05": 0.007985318143383264,
+        "median": 0.044481320889501866,
+        "p95": 2.2193564166286035,
+        "max": 2.6044109228461823
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.3273092369477912,
+      "nonfoot_minimum_height_m": 0.13133637411733712
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/Walk_B22_-_Side_step_left_stageii.npz",
+      "frames": 230,
+      "seconds": 4.58,
+      "sha256": "c14eb8882612a8d2811b9ebd1982c92555b58008956a708bcad906bbc06df763",
+      "trajectory_sha256": "d6ca6cde37ec305f97f69e0f245e2c582bd32c497f48c5fb88472e00aa940abf",
+      "root_displacement_xy_m": [
+        -0.47582280868664384,
+        0.0035182563588023186
+      ],
+      "root_speed_m_s": {
+        "min": 6.290991896941408e-05,
+        "p05": 0.0015221926642832553,
+        "median": 0.015688872408998272,
+        "p95": 0.4742925130901182,
+        "max": 0.6190705352270182
+      },
+      "joint_limit_violation_max_rad": 0.0,
+      "joint_limit_violation_frame_fraction": 0.0,
+      "joint_step_max_rad": 0.09316249191761017,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 1.8975697457790375e-06,
+        "p05": 0.0029221316799521446,
+        "median": 0.07988122524693608,
+        "p95": 1.1509832181036472,
+        "max": 4.591096565127373
+      },
+      "logged_joint_velocity_rmse_rad_s": 1.4057532977178078e-08,
+      "root_quaternion_norm_error_max": 2.529037670395695e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 6.3626178615201024e-09,
+        "median": 6.746229657675414e-08,
+        "p95": 2.1013033645781968e-07,
+        "max": 3.9361378052335645e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 2.2210712008702956e-08,
+        "median": 3.7107859982550117e-07,
+        "p95": 7.936936696185539e-07,
+        "max": 1.4150112219772945e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.00749582714772562,
+        "p05": -0.006599022443780646,
+        "median": -0.00447533364688857,
+        "p95": 0.013076113873145308,
+        "max": 0.022628462601080077
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.0,
+      "raw_both_feet_over_2cm_frame_fraction": 0.021739130434782608,
+      "best_constant_ground_offset_m": 0.00447533364688857,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.0,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.034782608695652174,
+      "calibrated_airborne_longest_seconds": 0.16,
+      "contact_material_speed_xy_m_s": {
+        "min": 9.965925869609681e-05,
+        "p05": 0.0010867102111359651,
+        "median": 0.012659776920705409,
+        "p95": 0.1428206078577508,
+        "max": 1.697542404214381
+      },
+      "contact_speed_over_02m_s_fraction": 0.04716981132075472,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 9.965925869609681e-05,
+        "p05": 0.0010867102111359651,
+        "median": 0.012659776920705409,
+        "p95": 0.1428206078577508,
+        "max": 1.697542404214381
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.04716981132075472,
+      "nonfoot_minimum_height_m": 0.1606649218703689
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/Walk_B23_-_Side_step_right_stageii.npz",
+      "frames": 178,
+      "seconds": 3.54,
+      "sha256": "2f7942cc570192c873dd6d840b09bc25d97ab11a9dc3ecd511aaf271cd990073",
+      "trajectory_sha256": "144da910d7d95b3d3edd33f338d8d26086e4dfaf9ff0a4998c102bbaf3a4db16",
+      "root_displacement_xy_m": [
+        0.44765549758449197,
+        -0.017161482945084572
+      ],
+      "root_speed_m_s": {
+        "min": 0.00015784904553538644,
+        "p05": 0.0036130143874413025,
+        "median": 0.05193208507080239,
+        "p95": 0.5303897325883412,
+        "max": 0.6089623992385232
+      },
+      "joint_limit_violation_max_rad": 0.0,
+      "joint_limit_violation_frame_fraction": 0.0,
+      "joint_step_max_rad": 0.09592068195343018,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 2.16066837310791e-05,
+        "p05": 0.002886506263166666,
+        "median": 0.10609030723571777,
+        "p95": 1.2382448837161062,
+        "max": 4.5536108314991
+      },
+      "logged_joint_velocity_rmse_rad_s": 1.6248915415876324e-08,
+      "root_quaternion_norm_error_max": 2.570917312372245e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 8.258567645044664e-09,
+        "median": 7.112227839909734e-08,
+        "p95": 2.2850543971400843e-07,
+        "max": 4.4540549830436884e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 2.3120394026161964e-08,
+        "median": 3.9637523499085753e-07,
+        "p95": 8.760692362112612e-07,
+        "max": 1.404389037712741e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.008856951788950851,
+        "p05": -0.006109351777200903,
+        "median": -0.004490233313604973,
+        "p95": 0.021647164845634954,
+        "max": 0.026171726437190394
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.0,
+      "raw_both_feet_over_2cm_frame_fraction": 0.07303370786516854,
+      "best_constant_ground_offset_m": 0.004490233313604973,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.0,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.11797752808988764,
+      "calibrated_airborne_longest_seconds": 0.42,
+      "contact_material_speed_xy_m_s": {
+        "min": 8.816346763903724e-05,
+        "p05": 0.0017293377042038108,
+        "median": 0.011086183231934846,
+        "p95": 0.09908500481297806,
+        "max": 0.30380435546472184
+      },
+      "contact_speed_over_02m_s_fraction": 0.03355704697986577,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 8.816346763903724e-05,
+        "p05": 0.0017293377042038108,
+        "median": 0.011086183231934846,
+        "p95": 0.09908500481297806,
+        "max": 0.30380435546472184
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.03355704697986577,
+      "nonfoot_minimum_height_m": 0.16031609630421684
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/Walk_B4_-_Stand_to_Walk_Back_stageii.npz",
+      "frames": 647,
+      "seconds": 12.92,
+      "sha256": "a8e92fda2f8f4d1703ad5923962dd39c538858ece59280dee7e131d276b9bdd0",
+      "trajectory_sha256": "e60476b0da67b18147cbc8ea89a76c9d808b4b751f21e3d4aa294216b15a49aa",
+      "root_displacement_xy_m": [
+        3.2699179649353027,
+        3.1234829472377896
+      ],
+      "root_speed_m_s": {
+        "min": 0.0006963776284043186,
+        "p05": 0.026464520218382134,
+        "median": 0.40049241489274723,
+        "p95": 0.5263579248624787,
+        "max": 0.5893559284868509
+      },
+      "joint_limit_violation_max_rad": 0.03386657238006596,
+      "joint_limit_violation_frame_fraction": 0.0,
+      "joint_step_max_rad": 0.13258963823318481,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 2.8684735298156738e-05,
+        "p05": 0.016935449093580246,
+        "median": 0.3416502382606268,
+        "p95": 1.8660656176507473,
+        "max": 6.629481911659241
+      },
+      "logged_joint_velocity_rmse_rad_s": 2.4326768711798137e-08,
+      "root_quaternion_norm_error_max": 2.98733946024754e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 1.0178834998848988e-08,
+        "median": 1.0823177660811965e-07,
+        "p95": 3.289213445572533e-07,
+        "max": 7.929689873744591e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.829668325489757e-08,
+        "median": 3.814158494500197e-07,
+        "p95": 8.77215370013155e-07,
+        "max": 1.5726891527157725e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.05380007310368787,
+        "p05": -0.032166114095262606,
+        "median": -0.0027488664137555463,
+        "p95": 0.01760792121121272,
+        "max": 0.025119251175135957
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.21947449768160743,
+      "raw_both_feet_over_2cm_frame_fraction": 0.027820710973724884,
+      "best_constant_ground_offset_m": 0.0027488664137555463,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.1839258114374034,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.05409582689335394,
+      "calibrated_airborne_longest_seconds": 0.22,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.000672709045858884,
+        "p05": 0.006145600381005622,
+        "median": 0.087688967944028,
+        "p95": 1.892582923327802,
+        "max": 2.11708259648788
+      },
+      "contact_speed_over_02m_s_fraction": 0.33382137628111275,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.000672709045858884,
+        "p05": 0.0054577883600015475,
+        "median": 0.06460982967713928,
+        "p95": 1.9127982152769591,
+        "max": 2.11708259648788
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.3119047619047619,
+      "nonfoot_minimum_height_m": 0.12114169384932026
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion_clipped_simple/step_left1.npz",
+      "frames": 86,
+      "seconds": 1.7,
+      "sha256": "6fc630463586ff1c91ac5a15d99c83c08ac642481dcd5a3eaef18542d82c0de2",
+      "trajectory_sha256": "d344765221b2b4c8b703f1d131191cd065027419e31841f4ef201df6e97c11c7",
+      "root_displacement_xy_m": [
+        -0.3334655030630529,
+        -0.006581902503967285
+      ],
+      "root_speed_m_s": {
+        "min": 0.008241101046518038,
+        "p05": 0.014851586446815642,
+        "median": 0.13765074649963202,
+        "p95": 0.6111569433162866,
+        "max": 0.657024295336746
+      },
+      "joint_limit_violation_max_rad": 0.0,
+      "joint_limit_violation_frame_fraction": 0.0,
+      "joint_step_max_rad": 0.08230734057724476,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 0.0001646578311920166,
+        "p05": 0.020280306052882228,
+        "median": 0.2769775688648224,
+        "p95": 1.527886337134987,
+        "max": 4.105754941701889
+      },
+      "logged_joint_velocity_rmse_rad_s": 0.0049685761701797485,
+      "root_quaternion_norm_error_max": 2.4391176700611084e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 8.032979284959482e-09,
+        "median": 6.494067142030373e-08,
+        "p95": 1.8925301684068315e-07,
+        "max": 3.8950360307861867e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 2.0308296149150975e-08,
+        "median": 3.6160126345668595e-07,
+        "p95": 8.074534166114144e-07,
+        "max": 1.29917827833861e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.00964577528255016,
+        "p05": -0.009152692916960073,
+        "median": -0.0038810471744637268,
+        "p95": 0.011174412730709054,
+        "max": 0.013131536465043333
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.0,
+      "raw_both_feet_over_2cm_frame_fraction": 0.0,
+      "best_constant_ground_offset_m": 0.0038810471744637268,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.0,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.0,
+      "calibrated_airborne_longest_seconds": 0.0,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.0022576122059772517,
+        "p05": 0.003761053113206843,
+        "median": 0.02463877813204558,
+        "p95": 0.5367895443043122,
+        "max": 0.9119415351822125
+      },
+      "contact_speed_over_02m_s_fraction": 0.09523809523809523,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.0022576122059772517,
+        "p05": 0.003464015591610401,
+        "median": 0.028001158197191508,
+        "p95": 0.12879543758930173,
+        "max": 0.5390134607396084
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.03614457831325301,
+      "nonfoot_minimum_height_m": 0.14364071402942646
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion_clipped_simple/step_left1_copy1.npz",
+      "frames": 86,
+      "seconds": 1.7,
+      "sha256": "6fc630463586ff1c91ac5a15d99c83c08ac642481dcd5a3eaef18542d82c0de2",
+      "trajectory_sha256": "d344765221b2b4c8b703f1d131191cd065027419e31841f4ef201df6e97c11c7",
+      "root_displacement_xy_m": [
+        -0.3334655030630529,
+        -0.006581902503967285
+      ],
+      "root_speed_m_s": {
+        "min": 0.008241101046518038,
+        "p05": 0.014851586446815642,
+        "median": 0.13765074649963202,
+        "p95": 0.6111569433162866,
+        "max": 0.657024295336746
+      },
+      "joint_limit_violation_max_rad": 0.0,
+      "joint_limit_violation_frame_fraction": 0.0,
+      "joint_step_max_rad": 0.08230734057724476,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 0.0001646578311920166,
+        "p05": 0.020280306052882228,
+        "median": 0.2769775688648224,
+        "p95": 1.527886337134987,
+        "max": 4.105754941701889
+      },
+      "logged_joint_velocity_rmse_rad_s": 0.0049685761701797485,
+      "root_quaternion_norm_error_max": 2.4391176700611084e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 8.032979284959482e-09,
+        "median": 6.494067142030373e-08,
+        "p95": 1.8925301684068315e-07,
+        "max": 3.8950360307861867e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 2.0308296149150975e-08,
+        "median": 3.6160126345668595e-07,
+        "p95": 8.074534166114144e-07,
+        "max": 1.29917827833861e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.00964577528255016,
+        "p05": -0.009152692916960073,
+        "median": -0.0038810471744637268,
+        "p95": 0.011174412730709054,
+        "max": 0.013131536465043333
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.0,
+      "raw_both_feet_over_2cm_frame_fraction": 0.0,
+      "best_constant_ground_offset_m": 0.0038810471744637268,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.0,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.0,
+      "calibrated_airborne_longest_seconds": 0.0,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.0022576122059772517,
+        "p05": 0.003761053113206843,
+        "median": 0.02463877813204558,
+        "p95": 0.5367895443043122,
+        "max": 0.9119415351822125
+      },
+      "contact_speed_over_02m_s_fraction": 0.09523809523809523,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.0022576122059772517,
+        "p05": 0.003464015591610401,
+        "median": 0.028001158197191508,
+        "p95": 0.12879543758930173,
+        "max": 0.5390134607396084
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.03614457831325301,
+      "nonfoot_minimum_height_m": 0.14364071402942646
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion_clipped_simple/step_left1_copy2.npz",
+      "frames": 86,
+      "seconds": 1.7,
+      "sha256": "6fc630463586ff1c91ac5a15d99c83c08ac642481dcd5a3eaef18542d82c0de2",
+      "trajectory_sha256": "d344765221b2b4c8b703f1d131191cd065027419e31841f4ef201df6e97c11c7",
+      "root_displacement_xy_m": [
+        -0.3334655030630529,
+        -0.006581902503967285
+      ],
+      "root_speed_m_s": {
+        "min": 0.008241101046518038,
+        "p05": 0.014851586446815642,
+        "median": 0.13765074649963202,
+        "p95": 0.6111569433162866,
+        "max": 0.657024295336746
+      },
+      "joint_limit_violation_max_rad": 0.0,
+      "joint_limit_violation_frame_fraction": 0.0,
+      "joint_step_max_rad": 0.08230734057724476,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 0.0001646578311920166,
+        "p05": 0.020280306052882228,
+        "median": 0.2769775688648224,
+        "p95": 1.527886337134987,
+        "max": 4.105754941701889
+      },
+      "logged_joint_velocity_rmse_rad_s": 0.0049685761701797485,
+      "root_quaternion_norm_error_max": 2.4391176700611084e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 8.032979284959482e-09,
+        "median": 6.494067142030373e-08,
+        "p95": 1.8925301684068315e-07,
+        "max": 3.8950360307861867e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 2.0308296149150975e-08,
+        "median": 3.6160126345668595e-07,
+        "p95": 8.074534166114144e-07,
+        "max": 1.29917827833861e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.00964577528255016,
+        "p05": -0.009152692916960073,
+        "median": -0.0038810471744637268,
+        "p95": 0.011174412730709054,
+        "max": 0.013131536465043333
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.0,
+      "raw_both_feet_over_2cm_frame_fraction": 0.0,
+      "best_constant_ground_offset_m": 0.0038810471744637268,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.0,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.0,
+      "calibrated_airborne_longest_seconds": 0.0,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.0022576122059772517,
+        "p05": 0.003761053113206843,
+        "median": 0.02463877813204558,
+        "p95": 0.5367895443043122,
+        "max": 0.9119415351822125
+      },
+      "contact_speed_over_02m_s_fraction": 0.09523809523809523,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.0022576122059772517,
+        "p05": 0.003464015591610401,
+        "median": 0.028001158197191508,
+        "p95": 0.12879543758930173,
+        "max": 0.5390134607396084
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.03614457831325301,
+      "nonfoot_minimum_height_m": 0.14364071402942646
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion_clipped_simple/step_left2.npz",
+      "frames": 111,
+      "seconds": 2.2,
+      "sha256": "5e569a93e73230dcf9adb3946319768d3a4cfedef1f2b29aed6cb09b95c48429",
+      "trajectory_sha256": "786f2228136d22fa3b934e7a97fda44e06fe5f7b8c0532082028497dced550ca",
+      "root_displacement_xy_m": [
+        -0.4791425811126828,
+        0.00557718425989151
+      ],
+      "root_speed_m_s": {
+        "min": 0.005243986925179186,
+        "p05": 0.018703714359874588,
+        "median": 0.194294379012523,
+        "p95": 0.5476793143158349,
+        "max": 0.6190705352270182
+      },
+      "joint_limit_violation_max_rad": 0.0,
+      "joint_limit_violation_frame_fraction": 0.0,
+      "joint_step_max_rad": 0.09316249191761017,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 0.0002562999725341797,
+        "p05": 0.0157532561570406,
+        "median": 0.2780773036647588,
+        "p95": 1.4918924495577799,
+        "max": 4.591096565127373
+      },
+      "logged_joint_velocity_rmse_rad_s": 0.005144447913112063,
+      "root_quaternion_norm_error_max": 2.4860754654909556e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 6.0158666911451924e-09,
+        "median": 6.46833015713604e-08,
+        "p95": 1.9678965407279334e-07,
+        "max": 3.6480632845211825e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 2.384029159359112e-08,
+        "median": 3.648488515961314e-07,
+        "p95": 8.025166253545054e-07,
+        "max": 1.4150112219772945e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.00749582714772562,
+        "p05": -0.00692468860758984,
+        "median": -0.0022864521119415095,
+        "p95": 0.01876958510874605,
+        "max": 0.022628462601080077
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.0,
+      "raw_both_feet_over_2cm_frame_fraction": 0.04504504504504504,
+      "best_constant_ground_offset_m": 0.0022864521119415095,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.0,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.06306306306306306,
+      "calibrated_airborne_longest_seconds": 0.14,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.0010211719623174555,
+        "p05": 0.0031730378074095434,
+        "median": 0.021510843964052093,
+        "p95": 1.4669809743559044,
+        "max": 1.697542404214381
+      },
+      "contact_speed_over_02m_s_fraction": 0.11711711711711711,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.0010211719623174555,
+        "p05": 0.0029241827032631907,
+        "median": 0.025646264739003933,
+        "p95": 1.5768421643470238,
+        "max": 1.697542404214381
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.13541666666666666,
+      "nonfoot_minimum_height_m": 0.1612388350660492
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion_clipped_simple/step_right1.npz",
+      "frames": 86,
+      "seconds": 1.7,
+      "sha256": "3e423417fd13ebed6d100e82a1c6035a36ebceea82bbc0cdcd13379ebaa326ae",
+      "trajectory_sha256": "a29c38cf6056836506bb305f0382fe37c473f2688d90c5ac9c5a21ffc6895c40",
+      "root_displacement_xy_m": [
+        0.3143407143652439,
+        0.0008374378085136414
+      ],
+      "root_speed_m_s": {
+        "min": 0.0023370589306391954,
+        "p05": 0.004509075301397383,
+        "median": 0.11684634983581196,
+        "p95": 0.5996640638309256,
+        "max": 0.6298127561050331
+      },
+      "joint_limit_violation_max_rad": 0.0,
+      "joint_limit_violation_frame_fraction": 0.0,
+      "joint_step_max_rad": 0.07167127728462219,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 1.3597309589385986e-05,
+        "p05": 0.015363159654953053,
+        "median": 0.28688376769423485,
+        "p95": 1.523870453238487,
+        "max": 3.544345870614052
+      },
+      "logged_joint_velocity_rmse_rad_s": 0.0092667190154768,
+      "root_quaternion_norm_error_max": 2.9738693330116917e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 8.017609593736877e-09,
+        "median": 6.361443892233799e-08,
+        "p95": 1.86288842675416e-07,
+        "max": 3.3748449166521067e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.7685577901205533e-08,
+        "median": 3.7191213831154176e-07,
+        "p95": 8.121101293190373e-07,
+        "max": 1.2165986094020135e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.009226799658340064,
+        "p05": -0.008634150738685342,
+        "median": -0.002586227025059836,
+        "p95": 0.010543322704550552,
+        "max": 0.013792503182934096
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.0,
+      "raw_both_feet_over_2cm_frame_fraction": 0.0,
+      "best_constant_ground_offset_m": 0.002586227025059836,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.0,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.0,
+      "calibrated_airborne_longest_seconds": 0.0,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.0006057927769693126,
+        "p05": 0.0030179030009215074,
+        "median": 0.022546993129484574,
+        "p95": 0.4363039929421619,
+        "max": 0.8274644555928466
+      },
+      "contact_speed_over_02m_s_fraction": 0.07874015748031496,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.0006057927769693126,
+        "p05": 0.002978873210969986,
+        "median": 0.021403009982293116,
+        "p95": 0.05250259703434297,
+        "max": 0.0705493365565633
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.0,
+      "nonfoot_minimum_height_m": 0.14743955754014035
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion_clipped_simple/step_right1_copy1.npz",
+      "frames": 86,
+      "seconds": 1.7,
+      "sha256": "3e423417fd13ebed6d100e82a1c6035a36ebceea82bbc0cdcd13379ebaa326ae",
+      "trajectory_sha256": "a29c38cf6056836506bb305f0382fe37c473f2688d90c5ac9c5a21ffc6895c40",
+      "root_displacement_xy_m": [
+        0.3143407143652439,
+        0.0008374378085136414
+      ],
+      "root_speed_m_s": {
+        "min": 0.0023370589306391954,
+        "p05": 0.004509075301397383,
+        "median": 0.11684634983581196,
+        "p95": 0.5996640638309256,
+        "max": 0.6298127561050331
+      },
+      "joint_limit_violation_max_rad": 0.0,
+      "joint_limit_violation_frame_fraction": 0.0,
+      "joint_step_max_rad": 0.07167127728462219,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 1.3597309589385986e-05,
+        "p05": 0.015363159654953053,
+        "median": 0.28688376769423485,
+        "p95": 1.523870453238487,
+        "max": 3.544345870614052
+      },
+      "logged_joint_velocity_rmse_rad_s": 0.0092667190154768,
+      "root_quaternion_norm_error_max": 2.9738693330116917e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 8.017609593736877e-09,
+        "median": 6.361443892233799e-08,
+        "p95": 1.86288842675416e-07,
+        "max": 3.3748449166521067e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.7685577901205533e-08,
+        "median": 3.7191213831154176e-07,
+        "p95": 8.121101293190373e-07,
+        "max": 1.2165986094020135e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.009226799658340064,
+        "p05": -0.008634150738685342,
+        "median": -0.002586227025059836,
+        "p95": 0.010543322704550552,
+        "max": 0.013792503182934096
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.0,
+      "raw_both_feet_over_2cm_frame_fraction": 0.0,
+      "best_constant_ground_offset_m": 0.002586227025059836,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.0,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.0,
+      "calibrated_airborne_longest_seconds": 0.0,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.0006057927769693126,
+        "p05": 0.0030179030009215074,
+        "median": 0.022546993129484574,
+        "p95": 0.4363039929421619,
+        "max": 0.8274644555928466
+      },
+      "contact_speed_over_02m_s_fraction": 0.07874015748031496,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.0006057927769693126,
+        "p05": 0.002978873210969986,
+        "median": 0.021403009982293116,
+        "p95": 0.05250259703434297,
+        "max": 0.0705493365565633
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.0,
+      "nonfoot_minimum_height_m": 0.14743955754014035
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion_clipped_simple/step_right1_copy2.npz",
+      "frames": 86,
+      "seconds": 1.7,
+      "sha256": "3e423417fd13ebed6d100e82a1c6035a36ebceea82bbc0cdcd13379ebaa326ae",
+      "trajectory_sha256": "a29c38cf6056836506bb305f0382fe37c473f2688d90c5ac9c5a21ffc6895c40",
+      "root_displacement_xy_m": [
+        0.3143407143652439,
+        0.0008374378085136414
+      ],
+      "root_speed_m_s": {
+        "min": 0.0023370589306391954,
+        "p05": 0.004509075301397383,
+        "median": 0.11684634983581196,
+        "p95": 0.5996640638309256,
+        "max": 0.6298127561050331
+      },
+      "joint_limit_violation_max_rad": 0.0,
+      "joint_limit_violation_frame_fraction": 0.0,
+      "joint_step_max_rad": 0.07167127728462219,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 1.3597309589385986e-05,
+        "p05": 0.015363159654953053,
+        "median": 0.28688376769423485,
+        "p95": 1.523870453238487,
+        "max": 3.544345870614052
+      },
+      "logged_joint_velocity_rmse_rad_s": 0.0092667190154768,
+      "root_quaternion_norm_error_max": 2.9738693330116917e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 8.017609593736877e-09,
+        "median": 6.361443892233799e-08,
+        "p95": 1.86288842675416e-07,
+        "max": 3.3748449166521067e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.7685577901205533e-08,
+        "median": 3.7191213831154176e-07,
+        "p95": 8.121101293190373e-07,
+        "max": 1.2165986094020135e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.009226799658340064,
+        "p05": -0.008634150738685342,
+        "median": -0.002586227025059836,
+        "p95": 0.010543322704550552,
+        "max": 0.013792503182934096
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.0,
+      "raw_both_feet_over_2cm_frame_fraction": 0.0,
+      "best_constant_ground_offset_m": 0.002586227025059836,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.0,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.0,
+      "calibrated_airborne_longest_seconds": 0.0,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.0006057927769693126,
+        "p05": 0.0030179030009215074,
+        "median": 0.022546993129484574,
+        "p95": 0.4363039929421619,
+        "max": 0.8274644555928466
+      },
+      "contact_speed_over_02m_s_fraction": 0.07874015748031496,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.0006057927769693126,
+        "p05": 0.002978873210969986,
+        "median": 0.021403009982293116,
+        "p95": 0.05250259703434297,
+        "max": 0.0705493365565633
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.0,
+      "nonfoot_minimum_height_m": 0.14743955754014035
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion_clipped_simple/step_right2.npz",
+      "frames": 91,
+      "seconds": 1.8,
+      "sha256": "11805c390abe07ad323bd4646ba2285234cc80db13e911399e9e39c9e5de9afd",
+      "trajectory_sha256": "8253de028eaf192219420a74dbdbfadeef1406da516b6f428a44c8f5b9337d1d",
+      "root_displacement_xy_m": [
+        0.4302904913201928,
+        -0.003877796232700348
+      ],
+      "root_speed_m_s": {
+        "min": 0.01606530391329057,
+        "p05": 0.020180545022350012,
+        "median": 0.1918920981916732,
+        "p95": 0.5638557981141328,
+        "max": 0.6089623992385232
+      },
+      "joint_limit_violation_max_rad": 0.0,
+      "joint_limit_violation_frame_fraction": 0.0,
+      "joint_step_max_rad": 0.09592068195343018,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 0.0009602867066860199,
+        "p05": 0.02450337400659919,
+        "median": 0.31910473480820656,
+        "p95": 1.7375439265742876,
+        "max": 4.5536108314991
+      },
+      "logged_joint_velocity_rmse_rad_s": 0.013244148098409826,
+      "root_quaternion_norm_error_max": 2.570917312372245e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 8.471503191942991e-09,
+        "median": 7.012908406036108e-08,
+        "p95": 2.315964461683666e-07,
+        "max": 4.4540549830436884e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 2.572143407812147e-08,
+        "median": 4.07059811842953e-07,
+        "p95": 8.608691170741384e-07,
+        "max": 1.404389037712741e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.008856951788950851,
+        "p05": -0.0074447354940628055,
+        "median": 0.00015767121542427376,
+        "p95": 0.022807887536826253,
+        "max": 0.026171726437190394
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.0,
+      "raw_both_feet_over_2cm_frame_fraction": 0.14285714285714285,
+      "best_constant_ground_offset_m": -0.00015767121542427376,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.0,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.13186813186813187,
+      "calibrated_airborne_longest_seconds": 0.24,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.003062941267909422,
+        "p05": 0.009582184066457214,
+        "median": 0.026514485537676977,
+        "p95": 0.8432814448584642,
+        "max": 1.2217036561234884
+      },
+      "contact_speed_over_02m_s_fraction": 0.13414634146341464,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.003062941267909422,
+        "p05": 0.008705580727426034,
+        "median": 0.027674585692251053,
+        "p95": 0.8966490882473903,
+        "max": 1.2217036561234884
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.14473684210526316,
+      "nonfoot_minimum_height_m": 0.1623997041586805
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion_clipped_simple/walk_backwards.npz",
+      "frames": 229,
+      "seconds": 4.5600000000000005,
+      "sha256": "e5b5e9b786d77fb2852b42614daf40b29117883f272291e7af05cf93efa96367",
+      "trajectory_sha256": "10e090a9090b38b328f834f9f5da64d41f7442f42ac13d15398f16fda9e28c14",
+      "root_displacement_xy_m": [
+        1.7542407531291246,
+        -1.4094665036100196
+      ],
+      "root_speed_m_s": {
+        "min": 0.0030100821253732494,
+        "p05": 0.04691976395132277,
+        "median": 0.5781423918652301,
+        "p95": 0.7638522099398604,
+        "max": 0.7996663527873765
+      },
+      "joint_limit_violation_max_rad": 0.00252621173858647,
+      "joint_limit_violation_frame_fraction": 0.0,
+      "joint_step_max_rad": 0.0937339048832655,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 0.00033974647521972656,
+        "p05": 0.04528059624135494,
+        "median": 0.5515761498827487,
+        "p95": 2.430657676886767,
+        "max": 4.615531861782074
+      },
+      "logged_joint_velocity_rmse_rad_s": 2.8880730994894806e-08,
+      "root_quaternion_norm_error_max": 2.787928434777598e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 8.860098674844135e-09,
+        "median": 8.141465924218615e-08,
+        "p95": 2.2425755319850547e-07,
+        "max": 4.4391621568596704e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.4962623498318276e-08,
+        "median": 3.6069793031452165e-07,
+        "p95": 8.238195676498994e-07,
+        "max": 1.461426316037598e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.039324261561423844,
+        "p05": -0.026979645075223043,
+        "median": -0.008222196490764944,
+        "p95": 0.0013636560463146602,
+        "max": 0.006940232274151078
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.1091703056768559,
+      "raw_both_feet_over_2cm_frame_fraction": 0.0,
+      "best_constant_ground_offset_m": 0.008222196490764944,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.043668122270742356,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.0,
+      "calibrated_airborne_longest_seconds": 0.0,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.00020270767846695836,
+        "p05": 0.009617544414144986,
+        "median": 0.1338623425215926,
+        "p95": 2.326209572094406,
+        "max": 2.61655306173507
+      },
+      "contact_speed_over_02m_s_fraction": 0.43990384615384615,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.00020270767846695836,
+        "p05": 0.009444431161649931,
+        "median": 0.07788559261891081,
+        "p95": 2.2595747905939567,
+        "max": 2.61655306173507
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.4076923076923077,
+      "nonfoot_minimum_height_m": 0.12608237033942013
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion_clipped_simple/walk_straight1.npz",
+      "frames": 126,
+      "seconds": 2.5,
+      "sha256": "c36ab2e7e1789c3144e2e78c319444ce5ba88ae17d019e5c3981ca0ce1b3c706",
+      "trajectory_sha256": "0e22ad0a79d61e43c94a5ba6f60e0ee1bccfc72f9869367bf2852d4fd4f423a5",
+      "root_displacement_xy_m": [
+        0.030439068330451846,
+        1.2722949963063002
+      ],
+      "root_speed_m_s": {
+        "min": 0.006526814103407504,
+        "p05": 0.07107289225805477,
+        "median": 0.5974615282112208,
+        "p95": 0.8068110035188458,
+        "max": 0.871462589501485
+      },
+      "joint_limit_violation_max_rad": 0.0,
+      "joint_limit_violation_frame_fraction": 0.0,
+      "joint_step_max_rad": 0.1422763168811798,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 6.891787052154541e-05,
+        "p05": 0.038440129719674594,
+        "median": 0.47290585935115814,
+        "p95": 2.8314795531332493,
+        "max": 6.959807872772217
+      },
+      "logged_joint_velocity_rmse_rad_s": 0.04052917476883279,
+      "root_quaternion_norm_error_max": 2.8312629485327534e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 8.61659053928583e-09,
+        "median": 7.614498420050297e-08,
+        "p95": 2.461645435379312e-07,
+        "max": 5.141308115492558e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.5325493595419416e-08,
+        "median": 3.9889100091359594e-07,
+        "p95": 9.069903151736767e-07,
+        "max": 1.3788084428668855e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.02733619142416427,
+        "p05": -0.018146753016038197,
+        "median": -0.0021623563407650974,
+        "p95": 0.004313719222531466,
+        "max": 0.005325979908044259
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.031746031746031744,
+      "raw_both_feet_over_2cm_frame_fraction": 0.0,
+      "best_constant_ground_offset_m": 0.0021623563407650974,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.031746031746031744,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.0,
+      "calibrated_airborne_longest_seconds": 0.0,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.005903359178863268,
+        "p05": 0.012200764604172482,
+        "median": 0.11609030621258828,
+        "p95": 2.8257022157665235,
+        "max": 3.0319710547951475
+      },
+      "contact_speed_over_02m_s_fraction": 0.42735042735042733,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.005903359178863268,
+        "p05": 0.010558726014815422,
+        "median": 0.07424369864248018,
+        "p95": 2.8617429936212067,
+        "max": 3.0319710547951475
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.35374149659863946,
+      "nonfoot_minimum_height_m": 0.12415831018177846
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion_clipped_simple/walk_straight2.npz",
+      "frames": 226,
+      "seconds": 4.5,
+      "sha256": "1eb3d0c896f7b079574a677cd204e487268300bc49bf7742082adcba3174d63d",
+      "trajectory_sha256": "14e040ee6e822ac668f397e4d0e1a827bb88c3b5287d348e5023c6fe804a0272",
+      "root_displacement_xy_m": [
+        -1.5339919310063124,
+        -1.1986149530857801
+      ],
+      "root_speed_m_s": {
+        "min": 0.008617507576506136,
+        "p05": 0.027938577500316565,
+        "median": 0.5062205536572695,
+        "p95": 0.6607461861372268,
+        "max": 0.7420119711085894
+      },
+      "joint_limit_violation_max_rad": 0.02194538712501526,
+      "joint_limit_violation_frame_fraction": 0.0,
+      "joint_step_max_rad": 0.12116730213165283,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 0.00031478703022003174,
+        "p05": 0.023507187142968178,
+        "median": 0.3475803881883621,
+        "p95": 2.3544379323720928,
+        "max": 5.895812809467316
+      },
+      "logged_joint_velocity_rmse_rad_s": 0.010149738733682127,
+      "root_quaternion_norm_error_max": 2.4586381797142565e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 9.882976547270926e-09,
+        "median": 7.94600214665039e-08,
+        "p95": 2.3276291741279978e-07,
+        "max": 4.90334515274125e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 2.212423794829821e-08,
+        "median": 3.748170804619933e-07,
+        "p95": 8.667540295433277e-07,
+        "max": 1.5632337691079877e-06
+      },
+      "foot_lowest_height_m": {
+        "min": -0.04627887838499399,
+        "p05": -0.03493985506013382,
+        "median": -0.013331633351383963,
+        "p95": 0.006246148302238272,
+        "max": 0.014105465276747432
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.2345132743362832,
+      "raw_both_feet_over_2cm_frame_fraction": 0.0,
+      "best_constant_ground_offset_m": 0.013331633351383963,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.05752212389380531,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.048672566371681415,
+      "calibrated_airborne_longest_seconds": 0.18,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.0007645659514906261,
+        "p05": 0.004484114127148092,
+        "median": 0.05698439257887326,
+        "p95": 2.351180587599853,
+        "max": 2.450554497846192
+      },
+      "contact_speed_over_02m_s_fraction": 0.33691756272401435,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.0014760554874476352,
+        "p05": 0.004514179396746639,
+        "median": 0.08196197520087253,
+        "p95": 2.367665123437242,
+        "max": 2.450554497846192
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.4166666666666667,
+      "nonfoot_minimum_height_m": 0.13483611750554514
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_rotate_motion/0313-39.npz",
+      "frames": 2960,
+      "seconds": 59.18,
+      "sha256": "32afa1b79055df82b90b44bd386e65ce6302bac2964ea853237ceb2ce6535c73",
+      "trajectory_sha256": "34b1026dcd0f2642439fa93ede48dc8861c5a644b2c863cc1e0f579c1443017f",
+      "root_displacement_xy_m": [
+        0.8286257669096813,
+        1.038550391793251
+      ],
+      "root_speed_m_s": {
+        "min": 5.2662482997990526e-05,
+        "p05": 0.01876191613509943,
+        "median": 0.1290956266658021,
+        "p95": 0.25289363893569355,
+        "max": 62.98213508163659
+      },
+      "joint_limit_violation_max_rad": 0.19603972434997563,
+      "joint_limit_violation_frame_fraction": 0.4192567567567568,
+      "joint_step_max_rad": 1.6069110836833715,
+      "motor_speed_violation_max_rad_s": 71.02555418416858,
+      "motor_speed_violation_frame_fraction": 0.0003379520108144643,
+      "joint_speed_abs_rad_s": {
+        "min": 3.725290298461914e-07,
+        "p05": 0.017702234908938408,
+        "median": 0.385357066988945,
+        "p95": 2.0507197990082187,
+        "max": 80.34555418416858
+      },
+      "logged_joint_velocity_rmse_rad_s": 3.227948989153449e-08,
+      "root_quaternion_norm_error_max": 3.1005148692919704e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 1.218825136014873e-08,
+        "median": 9.061031843778951e-08,
+        "p95": 2.463426478664402e-07,
+        "max": 6.654243086452435e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.4490047867452835e-08,
+        "median": 4.023481952387833e-07,
+        "p95": 8.845205909879102e-07,
+        "max": 1.6923812934979267e-06
+      },
+      "foot_lowest_height_m": {
+        "min": 0.0348079635957174,
+        "p05": 0.04161054721040456,
+        "median": 0.0466078879674352,
+        "p95": 0.05654394508792088,
+        "max": 0.06242720748344169
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.0,
+      "raw_both_feet_over_2cm_frame_fraction": 1.0,
+      "best_constant_ground_offset_m": -0.0466078879674352,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.0,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.0,
+      "calibrated_airborne_longest_seconds": 0.0,
+      "contact_material_speed_xy_m_s": {
+        "min": 7.118105232559418e-05,
+        "p05": 0.005133656644078273,
+        "median": 0.0347951351865744,
+        "p95": 0.2658888072912421,
+        "max": 64.301203152108
+      },
+      "contact_speed_over_02m_s_fraction": 0.1276440554339898,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 7.118105232559418e-05,
+        "p05": 0.003987384180886898,
+        "median": 0.03120239371893292,
+        "p95": 0.24210920307913722,
+        "max": 64.301203152108
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.10250266240681576,
+      "nonfoot_minimum_height_m": 0.18908240270039645
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_rotate_motion/0313-40.npz",
+      "frames": 4823,
+      "seconds": 96.44,
+      "sha256": "0c1dfc5fd59d27a44e97022b0a823c7762a0db4fe869167a45a5091fc5c8922d",
+      "trajectory_sha256": "a132de4f3076051937da14dbc39923f23b9d223a434b0ea094935f74b1093102",
+      "root_displacement_xy_m": [
+        0.794822184718214,
+        1.2201947122812271
+      ],
+      "root_speed_m_s": {
+        "min": 2.4027400458748785e-05,
+        "p05": 0.02628919401523047,
+        "median": 0.14844217026650242,
+        "p95": 0.3624827228808713,
+        "max": 66.04943136527012
+      },
+      "joint_limit_violation_max_rad": 0.34986834526062016,
+      "joint_limit_violation_frame_fraction": 0.5330707028820236,
+      "joint_step_max_rad": 1.5991482939571142,
+      "motor_speed_violation_max_rad_s": 70.63741469785572,
+      "motor_speed_violation_frame_fraction": 0.00020738282870178348,
+      "joint_speed_abs_rad_s": {
+        "min": 0.0,
+        "p05": 0.026855356991291046,
+        "median": 0.5173269892111421,
+        "p95": 2.691660672426223,
+        "max": 79.95741469785571
+      },
+      "logged_joint_velocity_rmse_rad_s": 3.933789065540017e-08,
+      "root_quaternion_norm_error_max": 3.078447097237813e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 1.2368591648602216e-08,
+        "median": 9.665012241206058e-08,
+        "p95": 2.4719986211946994e-07,
+        "max": 6.940018873833985e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.326118236057289e-08,
+        "median": 3.974295357880029e-07,
+        "p95": 8.807251510306743e-07,
+        "max": 1.7232960093713917e-06
+      },
+      "foot_lowest_height_m": {
+        "min": 0.02593200088542235,
+        "p05": 0.03758058382840444,
+        "median": 0.046884415876969905,
+        "p95": 0.05678519114332098,
+        "max": 0.06305730402153535
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.0,
+      "raw_both_feet_over_2cm_frame_fraction": 1.0,
+      "best_constant_ground_offset_m": -0.046884415876969905,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.0006220194899440182,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.0,
+      "calibrated_airborne_longest_seconds": 0.0,
+      "contact_material_speed_xy_m_s": {
+        "min": 2.5492269584883685e-06,
+        "p05": 0.006635301805547246,
+        "median": 0.044734228964247176,
+        "p95": 0.37442723572221104,
+        "max": 67.92987500056091
+      },
+      "contact_speed_over_02m_s_fraction": 0.1664431166930862,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 2.5492269584883685e-06,
+        "p05": 0.005322154389522682,
+        "median": 0.035749906969101394,
+        "p95": 0.32861839989975833,
+        "max": 67.92987500056091
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.13290811928977764,
+      "nonfoot_minimum_height_m": 0.17806627805971958
+    },
+    {
+      "file": "runs/mos9_amp_audit/raw/data/motions/mos9_fk_rotate_motion/0319-06.npz",
+      "frames": 2118,
+      "seconds": 42.34,
+      "sha256": "f4cb5eeff478edb0e4f682e9b85c6cde2acd5033b534ab0008707c08c7212e07",
+      "trajectory_sha256": "358157c6311e620231c42b76dbf8d96ed5d24e59ac3277bd961ce1d9e4cf4503",
+      "root_displacement_xy_m": [
+        -0.06842988729476929,
+        -0.20849525928497314
+      ],
+      "root_speed_m_s": {
+        "min": 0.0008316036215512519,
+        "p05": 0.007496292469741514,
+        "median": 0.1506976248244512,
+        "p95": 0.38911096847393656,
+        "max": 0.8924446633599294
+      },
+      "joint_limit_violation_max_rad": 0.14935541152954102,
+      "joint_limit_violation_frame_fraction": 0.023135033050047216,
+      "joint_step_max_rad": 0.12547868490219116,
+      "motor_speed_violation_max_rad_s": 0.0,
+      "motor_speed_violation_frame_fraction": 0.0,
+      "joint_speed_abs_rad_s": {
+        "min": 1.862645149230957e-07,
+        "p05": 0.015252702869474888,
+        "median": 0.36364969855640084,
+        "p95": 2.1446325071156025,
+        "max": 6.191381812095642
+      },
+      "logged_joint_velocity_rmse_rad_s": 2.6529309976571e-08,
+      "root_quaternion_norm_error_max": 3.8061594831440004e-07,
+      "stored_fk_position_error_m": {
+        "min": 0.0,
+        "p05": 9.554137931363264e-09,
+        "median": 7.743375634711433e-08,
+        "p95": 2.323080837118934e-07,
+        "max": 5.823180706014711e-07
+      },
+      "stored_fk_orientation_error_rad": {
+        "min": 0.0,
+        "p05": 1.0628699308448747e-08,
+        "median": 3.879374055936515e-07,
+        "p95": 8.621928735481356e-07,
+        "max": 1.6740097997226725e-06
+      },
+      "foot_lowest_height_m": {
+        "min": 0.016731097051419633,
+        "p05": 0.025594750532040435,
+        "median": 0.03776773781536119,
+        "p95": 0.04718442501333168,
+        "max": 0.053504776705439225
+      },
+      "raw_penetration_over_2cm_frame_fraction": 0.0,
+      "raw_both_feet_over_2cm_frame_fraction": 0.9924457034938622,
+      "best_constant_ground_offset_m": -0.03776773781536119,
+      "calibrated_penetration_over_2cm_frame_fraction": 0.0028328611898017,
+      "calibrated_both_feet_over_2cm_frame_fraction": 0.0,
+      "calibrated_airborne_longest_seconds": 0.0,
+      "contact_material_speed_xy_m_s": {
+        "min": 0.00031668303195068,
+        "p05": 0.0031391374341633413,
+        "median": 0.03489846520796673,
+        "p95": 0.537177370071605,
+        "max": 0.9938332102031056
+      },
+      "contact_speed_over_02m_s_fraction": 0.18676312968917472,
+      "lowest_support_material_speed_xy_m_s": {
+        "min": 0.00031668303195068,
+        "p05": 0.002667769161926659,
+        "median": 0.04571039640439602,
+        "p95": 0.5814217024448691,
+        "max": 0.9938332102031056
+      },
+      "lowest_support_speed_over_02m_s_fraction": 0.25214341387373346,
+      "nonfoot_minimum_height_m": 0.1753343533001785
+    }
+  ],
+  "duplicate_groups": [
+    [
+      "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion/B4_-_Stand_to_Walk_backwards_stageii.npz",
+      "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion_clipped_simple/walk_backwards.npz"
+    ],
+    [
+      "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion_clipped_simple/step_left1.npz",
+      "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion_clipped_simple/step_left1_copy1.npz",
+      "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion_clipped_simple/step_left1_copy2.npz"
+    ],
+    [
+      "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion_clipped_simple/step_right1.npz",
+      "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion_clipped_simple/step_right1_copy1.npz",
+      "runs/mos9_amp_audit/raw/data/motions/mos9_fk_motion_clipped_simple/step_right1_copy2.npz"
+    ]
+  ],
+  "gates": {
+    "ground_tolerance_m": 0.02,
+    "contact_height_tolerance_m": 0.015,
+    "contact_speed_flag_m_s": 0.2,
+    "joint_limit_tolerance_rad": 0.05
+  },
+  "limitations": "Kinematic screening, not dynamic feasibility; static ground offset is reported but never applied to source files."
+}

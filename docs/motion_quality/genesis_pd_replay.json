@@ -1,0 +1,174 @@
+{
+  "config": {
+    "seed": 0,
+    "num_envs": 5,
+    "dt": 0.02,
+    "substeps": 10,
+    "history": 10,
+    "future": 10,
+    "model_window": 8,
+    "horizon": 32,
+    "replay_steps": 1000,
+    "collect_steps": 5,
+    "update_ratio": 0.4,
+    "model_batches": 10,
+    "batch_size": 128,
+    "imagination_batch": 128,
+    "critic_epochs": 5,
+    "critic_minibatches": 4,
+    "model_widths": [
+      512,
+      512,
+      512
+    ],
+    "actor_widths": [
+      512,
+      256,
+      128
+    ],
+    "critic_widths": [
+      256,
+      128
+    ],
+    "latent_dim": 32,
+    "lr": 0.0002,
+    "gamma": 0.99,
+    "gae_lambda": 0.95,
+    "action_noise": 0.1,
+    "action_scale": 0.5,
+    "kp": 40.0,
+    "kd": 2.0,
+    "torque_limit": 20.0,
+    "height_threshold": 0.15,
+    "tilt_threshold": 0.8,
+    "randomize": false,
+    "sensor_noise": false,
+    "episode_steps": 1000
+  },
+  "actuation": "teammate",
+  "kp": [
+    47.177608489990234,
+    47.177608489990234,
+    105.19361877441406,
+    47.177608489990234,
+    47.177608489990234,
+    105.19361877441406,
+    105.19361877441406,
+    105.19361877441406,
+    105.19361877441406,
+    105.19361877441406,
+    105.19361877441406,
+    47.177608489990234,
+    105.19361877441406,
+    105.19361877441406,
+    105.19361877441406,
+    105.19361877441406,
+    105.19361877441406,
+    47.177608489990234
+  ],
+  "kd": [
+    1.7823469638824463,
+    1.7823469638824463,
+    2.629725933074951,
+    1.7823469638824463,
+    1.7823469638824463,
+    2.629725933074951,
+    2.629725933074951,
+    2.629725933074951,
+    2.629725933074951,
+    2.629725933074951,
+    2.629725933074951,
+    1.7823469638824463,
+    2.629725933074951,
+    2.629725933074951,
+    2.629725933074951,
+    2.629725933074951,
+    2.629725933074951,
+    1.7823469638824463
+  ],
+  "fingerprint": {
+    "clips": {
+      "retarget_walk1_subject1.npz": "703bed5f7f98ef3309eb138a036597c3e7b78be9bd965fc4d5b65896747f6be6",
+      "retarget_walk2_subject1.npz": "ebbe34c82cd6baa98d50ff06588130546caedb9e32c95a3ab9a858e976bc174a",
+      "teammate_step_right1.npz": "e328024f9f6c4080ea83bb1589a5d4233538bb363f5323d2f91ac1931a4d09e6",
+      "teammate_walk_straight1.npz": "8b12a4cbb7696c6ebb05c7ef1b16c064da64bfdd540223b6c2e468b70dcdba83",
+      "teammate_walk_straight2.npz": "c0f9f2e3d82e6be29735b028f53cc62163789f6dc6f0ba5edd5394077d0ae24d"
+    },
+    "urdf": "1e8e4479e4b5319c4899337d4266c35775f52fa9c3589a4eda6cca4cc50a532b"
+  },
+  "clips": [
+    {
+      "clip": "retarget_walk1_subject1.npz",
+      "first_failure_seconds": 1.04,
+      "recorded_seconds": 1.04,
+      "full_clip_seconds": 8.0,
+      "root_position_rmse_m": 0.2317049168382219,
+      "joint_rmse_rad": 0.03791859551497053,
+      "torque_saturation_fraction": 0.0,
+      "no_foot_contact_fraction": 0.019230769230769232,
+      "displacement_xy_m": [
+        0.03705708682537079,
+        -0.27727842330932617
+      ]
+    },
+    {
+      "clip": "retarget_walk2_subject1.npz",
+      "first_failure_seconds": 0.88,
+      "recorded_seconds": 0.88,
+      "full_clip_seconds": 8.0,
+      "root_position_rmse_m": 0.30568934810458764,
+      "joint_rmse_rad": 0.065953122281825,
+      "torque_saturation_fraction": 0.0,
+      "no_foot_contact_fraction": 0.045454545454545456,
+      "displacement_xy_m": [
+        0.11248014122247696,
+        -0.4802727997303009
+      ]
+    },
+    {
+      "clip": "teammate_step_right1.npz",
+      "first_failure_seconds": 1.68,
+      "recorded_seconds": 1.68,
+      "full_clip_seconds": 1.7,
+      "root_position_rmse_m": 0.33632213926137766,
+      "joint_rmse_rad": 0.06309656991056387,
+      "torque_saturation_fraction": 0.0,
+      "no_foot_contact_fraction": 0.0,
+      "displacement_xy_m": [
+        -0.12514235079288483,
+        0.40694302320480347
+      ]
+    },
+    {
+      "clip": "teammate_walk_straight1.npz",
+      "first_failure_seconds": 0.96,
+      "recorded_seconds": 0.96,
+      "full_clip_seconds": 2.5,
+      "root_position_rmse_m": 0.10787189791611362,
+      "joint_rmse_rad": 0.042628006508296845,
+      "torque_saturation_fraction": 0.0,
+      "no_foot_contact_fraction": 0.041666666666666664,
+      "displacement_xy_m": [
+        -0.04545333608984947,
+        0.5056357383728027
+      ]
+    },
+    {
+      "clip": "teammate_walk_straight2.npz",
+      "first_failure_seconds": 1.68,
+      "recorded_seconds": 1.68,
+      "full_clip_seconds": 4.5,
+      "root_position_rmse_m": 0.16809749647570255,
+      "joint_rmse_rad": 0.04907880727532493,
+      "torque_saturation_fraction": 0.0,
+      "no_foot_contact_fraction": 0.16666666666666666,
+      "displacement_xy_m": [
+        -0.3751291036605835,
+        0.2002609372138977
+      ]
+    }
+  ],
+  "controller": "reference position+velocity PD; no base assistance",
+  "limitation": "Controller-specific probe; not a policy evaluation or proof of infeasibility",
+  "runtime_source_sha256": "4776a6ebd4211723053b96951010e0f11c33dbd2ac1c9a02a28f37ebc932d454"
+}

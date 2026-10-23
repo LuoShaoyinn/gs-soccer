@@ -60,13 +60,13 @@ construction, the experiment compares its FK and link velocities with Genesis
 and refuses to run if the maximum discrepancy exceeds 1 mm or 0.001 rad,
 m/s, or rad/s respectively.
 
-**Human data/retargeting status:** no suitable MOS9 walking motion was found
-in the repository or its local `refs/`. The available recovery motions target
-PI Plus, a different morphology. Supply either MOS9 trajectories in the format
-above, or human walking data such as BVH/SMPL plus the source skeleton/model
-information so that a MOS9 retarget can be developed. Raw human data and G1
-retargets cannot be consumed directly. This branch does not invent a gait or
-silently use another robot's motions.
+**Reference-data status:** the public teammate MOS9 dataset has now been
+[audited](mos9_amp_quality.md). This retargeting branch also provides a
+[public G1-to-MOS9 workflow](mos9_retarget.md) and two locally generated
+walking candidates in the schema above. Their geometric contact errors are
+substantially smaller; balance under a learned tracker remains unvalidated.
+Raw human/G1 arrays still require an explicit conversion/retarget before
+loading. The generated candidates do not require new human recordings.
 
 ## Training and playback
 

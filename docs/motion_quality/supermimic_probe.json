@@ -1,0 +1,119 @@
+{
+  "metadata": {
+    "config": {
+      "seed": 0,
+      "num_envs": 16,
+      "dt": 0.02,
+      "substeps": 10,
+      "history": 10,
+      "future": 10,
+      "model_window": 8,
+      "horizon": 32,
+      "replay_steps": 1000,
+      "collect_steps": 8,
+      "update_ratio": 0.4,
+      "model_batches": 2,
+      "batch_size": 16,
+      "imagination_batch": 16,
+      "critic_epochs": 5,
+      "critic_minibatches": 4,
+      "model_widths": [
+        512,
+        512,
+        512
+      ],
+      "actor_widths": [
+        512,
+        256,
+        128
+      ],
+      "critic_widths": [
+        256,
+        128
+      ],
+      "latent_dim": 32,
+      "lr": 0.0002,
+      "gamma": 0.99,
+      "gae_lambda": 0.95,
+      "action_noise": 0.1,
+      "action_scale": 0.5,
+      "kp": 40.0,
+      "kd": 2.0,
+      "torque_limit": 20.0,
+      "height_threshold": 0.15,
+      "tilt_threshold": 0.8,
+      "randomize": true,
+      "sensor_noise": true,
+      "episode_steps": 1000
+    },
+    "fingerprint": {
+      "clips": {
+        "walk1_subject1.npz": "402ce129ad546a6be3d7719e9d81022aef46bfba995e069b35329945c405f645",
+        "walk2_subject1.npz": "d4454a2f20fbee30c27148f1e7f53b2181525c55e5b1bca98b7753adb0008562"
+      },
+      "urdf": "1e8e4479e4b5319c4899337d4266c35775f52fa9c3589a4eda6cca4cc50a532b"
+    },
+    "smoke_only": false,
+    "motion_path": "/home/luoshaoyinn/workspace/gs-soccer/runs/g1_mos9_retarget/mos9_fk_retarget",
+    "device": "cuda:0",
+    "provenance": {
+      "source_sha256": "5fc42ceb9bdb08dda9af1262b07f292dc231cc00271ac6e3077dbf3135ae45c8",
+      "git_commit": "abdfe0950ece0365a46a649e86ae307a2e3e4f2a"
+    },
+    "hardware": "AMD Radeon RX 7900 XTX",
+    "method": "MOS9/Genesis adaptation of arXiv:2610.28480; not an official implementation"
+  },
+  "metrics": [
+    {
+      "iteration": 1,
+      "simulation/reward": 0.06659281253814697,
+      "simulation/failure_rate": 0.0,
+      "reward/body_position": 0.018192075192928314,
+      "reward/body_orientation": 0.0004466429236344993,
+      "reward/body_velocity": 0.017674075439572334,
+      "reward/body_angular_velocity": 0.013530177995562553,
+      "reward/root_position": 0.009940387681126595,
+      "reward/root_orientation": 0.007564444560557604,
+      "reward/action_smoothness": -0.0007549950387328863,
+      "reward/joint_limit": 0.0,
+      "model/state_loss": 0.13200557231903076,
+      "model/termination_loss": 0.5979006886482239,
+      "model/gradient_norm": 1.0577136278152466,
+      "policy/loss": -0.1419452428817749,
+      "policy/gradient_norm": 0.004476697649806738,
+      "critic/loss": 0.015420793555676937,
+      "policy/imagined_return": 0.1419452428817749,
+      "policy/survival": 9.959377322843466e-09,
+      "training/updates": 3,
+      "training/transitions": 128,
+      "training/wall_seconds": 3.450412445999973
+    },
+    {
+      "iteration": 2,
+      "simulation/reward": 0.06456287205219269,
+      "simulation/failure_rate": 0.0,
+      "reward/body_position": 0.0174923837184906,
+      "reward/body_orientation": 0.00042919066618196666,
+      "reward/body_velocity": 0.017883185297250748,
+      "reward/body_angular_velocity": 0.014070624485611916,
+      "reward/root_position": 0.009770847856998444,
+      "reward/root_orientation": 0.005554970353841782,
+      "reward/action_smoothness": -0.0006383273866958916,
+      "reward/joint_limit": 0.0,
+      "model/state_loss": 0.10366049408912659,
+      "model/termination_loss": 0.5118403136730194,
+      "model/gradient_norm": 0.9047420620918274,
+      "policy/loss": -0.13877196609973907,
+      "policy/gradient_norm": 0.005745069123804569,
+      "critic/loss": 0.0033429113682359457,
+      "policy/imagined_return": 0.13877196609973907,
+      "policy/survival": 5.497433974710475e-08,
+      "episodes/return": 0.5569810047745705,
+      "episodes/failure_rate": 0.0,
+      "training/updates": 6,
+      "training/transitions": 256,
+      "training/wall_seconds": 6.435515800003486
+    }
+  ],
+  "scope": "two integration iterations, not a walking success test"
+}

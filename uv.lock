@@ -461,6 +461,10 @@ metal = [
     { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" } },
     { name = "triton", version = "3.8.0", source = { registry = "https://pypi.org/simple" } },
 ]
+motion = [
+    { name = "matplotlib" },
+    { name = "scipy" },
+]
 rocm = [
     { name = "torch", version = "2.11.0+rocm7.2.4.lw.git5fbd98f3", source = { registry = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2.4/" } },
     { name = "triton", version = "3.7.0+rocm7.2.4.gitb4e20bbe", source = { registry = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2.4/" } },
@@ -469,7 +473,9 @@ rocm = [
 [package.metadata]
 requires-dist = [
     { name = "genesis-world", specifier = "==1.4.5" },
+    { name = "matplotlib", marker = "extra == 'motion'" },
     { name = "numpy" },
+    { name = "scipy", marker = "extra == 'motion'" },
     { name = "setuptools", specifier = "<80.0.0" },
     { name = "tensorboard", specifier = ">=2.20.0" },
     { name = "torch" },
@@ -480,7 +486,7 @@ requires-dist = [
     { name = "triton", marker = "extra == 'metal'", index = "https://pypi.org/simple", conflict = { package = "gs-soccer", extra = "metal" } },
     { name = "triton", marker = "extra == 'rocm'", index = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2.4/", conflict = { package = "gs-soccer", extra = "rocm" } },
 ]
-provides-extras = ["cuda", "metal", "rocm"]
+provides-extras = ["motion", "cuda", "metal", "rocm"]
 
 [[package]]
 name = "imageio"

@@ -19,6 +19,8 @@ library. The two provided straight-walking clips have ground penetration and
 sliding near contact. A constant floor-height correction does not remove the
 problem. Some sidestep clips are substantially cleaner and remain useful
 candidates for a separate lateral-stepping task.
+These checks assess full motion tracking in the current Genesis model; they
+do not evaluate the teammate's trained AMP policy.
 
 | Simple clip | Worst penetration | Lowest support point's horizontal speed, p95 | Fraction above 0.2 m/s |
 | --- | ---: | ---: | ---: |
