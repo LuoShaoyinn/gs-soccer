@@ -13,7 +13,8 @@ dependencies = [
     "skrl[torch]>=1.4.3",
     "ipython>=9.10.0",
     "setuptools<80.0.0",
-    "torchrl"
+    "torchrl",
+    "torch-block-replay @ git+ssh://git@github.com/LuoShaoyinn/torch-block-replay.git@f276e76ef480ea209d4975c6c841a4301814097b"
 ]
 
 [project.optional-dependencies]
