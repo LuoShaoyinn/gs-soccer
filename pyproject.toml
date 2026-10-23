@@ -1,20 +1,15 @@
 [project]
 name = "gs-soccer"
 version = "0.1.0"
-description = "Add your description here"
+description = "Shared Genesis simulator, robot definitions, and soccer robot assets"
 readme = "README.md"
 requires-python = ">=3.12, <3.13"
 
 dependencies = [
     "torch",
-    "gymnasium[classic-control]",
-    "genesis-world",
-    "tensorboard>=2.20.0",
-    "skrl[torch]>=1.4.3",
-    "ipython>=9.10.0",
+    "numpy",
+    "genesis-world==1.4.5",
     "setuptools<80.0.0",
-    "torchrl",
-    "torch-block-replay @ git+ssh://git@github.com/LuoShaoyinn/torch-block-replay.git@f276e76ef480ea209d4975c6c841a4301814097b"
 ]
 
 [project.optional-dependencies]

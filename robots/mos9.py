@@ -12,6 +12,9 @@ from .robot import Robot, RobotConfig
 class MOS9Config(RobotConfig):
     robot_URDF:     str         = 'assets/MOS9/MOS9_walk.urdf'
     base_link_name: str         = "base_link"
+    foot_link_names: list[str]  = field(default_factory=lambda: ["Rfoot", "Lfoot"])
+    armature: np.ndarray = field(default_factory=lambda: np.zeros(12, dtype=np.float32))
+    damping: np.ndarray = field(default_factory=lambda: np.zeros(12, dtype=np.float32))
     joint_names:    list[str]   = field(default_factory=\
             lambda: ['right_hip_pitch',     'left_hip_pitch',
                      'right_hip_roll',      'left_hip_roll', 
