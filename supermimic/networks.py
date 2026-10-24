@@ -49,7 +49,7 @@ class WorldModel(nn.Module):
         super().__init__()
         self.task = task
         self.dynamics = mlp(
-            task.state_dim + task.n + task.context_dim,
+            task.state_dim + task.n + task.model_context_dim,
             task.cfg.model_widths,
             task.physical_dim,
             small_output=True,
@@ -59,7 +59,9 @@ class WorldModel(nn.Module):
     def forward(self, state, action, context):
         t = self.task
         delta = self.dynamics(
-            torch.cat((model_features(t, state), action, context), -1)
+            torch.cat(
+                (model_features(t, state), action, t.model_context(state, context)), -1
+            )
         )
         # Kinematic integration is a stable initial prior. The network learns contact/actuation corrections.
         q = state[..., t.q] + state[..., t.dq] * t.cfg.dt
@@ -112,12 +114,21 @@ class Critic(nn.Module):
         super().__init__()
         self.task = task
         self.net = mlp(
-            task.state_dim + task.goal_frame_dim * task.cfg.future + task.context_dim,
+            task.state_dim
+            + task.goal_frame_dim * task.cfg.future
+            + task.model_context_dim,
             task.cfg.critic_widths,
             1,
         )
 
     def forward(self, state, goal, context):
         return self.net(
-            torch.cat((model_features(self.task, state), goal, context), -1)
+            torch.cat(
+                (
+                    model_features(self.task, state),
+                    goal,
+                    self.task.model_context(state, context),
+                ),
+                -1,
+            )
         ).squeeze(-1)

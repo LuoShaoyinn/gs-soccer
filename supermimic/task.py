@@ -31,6 +31,17 @@ class Task(nn.Module):
         self.physical_dim, self.state_dim = 2 * n + 13, 3 * n + 13
         self.obs_dim, self.goal_frame_dim = 3 * n + 6, 2 * n + 15
         self.context_dim = n + 4
+        self.com_context = slice(n + 1, n + 4)
+        self.kp_context = slice(n + 4, 2 * n + 4)
+        self.kd_context = slice(2 * n + 4, 3 * n + 4)
+        self.offset_context = slice(3 * n + 4, 3 * n + 7)
+        self.terrain = None
+        if cfg.robust:
+            from .terrain import UniformTerrain
+
+            self.terrain = UniformTerrain(cfg)
+            self.context_dim = 3 * n + 7
+        self.model_context_dim = self.context_dim + (25 if cfg.robust else 0)
         self.kin = Kinematics(URDF, JOINT_NAMES, TRACKED_LINKS)
         self.register_buffer("home", torch.zeros(n))
         # scale: q, dq, pos, quat, base velocity, base angular velocity, previous action
@@ -55,6 +66,13 @@ class Task(nn.Module):
         if previous is None:
             previous = torch.zeros_like(q)
         return torch.cat((q, dq, pos, normalize(quat), vel, ang, previous), -1)
+
+    def model_context(self, state, context):
+        if not self.cfg.robust:
+            return context
+        return torch.cat(
+            (context, self.terrain.features(state[..., self.pos][..., :2])), -1
+        )
 
     def observation(self, state, noisy=False):
         quat = state[..., self.quat]
@@ -150,7 +168,12 @@ class Task(nn.Module):
             gravity(state[..., self.quat])[..., 2]
             - gravity(reference[..., self.quat])[..., 2]
         ).abs()
-        return (height > self.cfg.height_threshold) | (tilt > self.cfg.tilt_threshold)
+        failed = (height > self.cfg.height_threshold) | (tilt > self.cfg.tilt_threshold)
+        if self.cfg.robust:
+            failed |= (
+                state[..., self.pos][..., :2].abs() > self.cfg.terrain_size / 2 - 0.25
+            ).any(-1)
+        return failed
 
     def targets(self, action, context):
         # Keep the executed normalized action in replay even if a setpoint reaches a joint limit.

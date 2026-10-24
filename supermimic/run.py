@@ -54,6 +54,11 @@ def load_checkpoint(path):
     return data
 
 
+def file_sha256(path):
+    with Path(path).open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
 def seed_everything(seed):
     random.seed(seed)
     np.random.seed(seed)
@@ -140,9 +145,14 @@ def train(args):
         args.iterations = 2 if args.smoke_test else 10000
     cfg = Config(num_envs=args.num_envs, seed=args.seed)
     saved = load_checkpoint(args.resume) if args.resume else None
+    initialization = None
     if saved:
         cfg = Config(**saved["config"])
     else:
+        if args.robust_terrain:
+            cfg.robustness_preset()
+        if args.config:
+            cfg = Config(**(asdict(cfg) | json.loads(args.config.read_text())))
         for name in (
             "batch_size",
             "imagination_batch",
@@ -188,6 +198,25 @@ def train(args):
     library = MotionLibrary(motion_path, task, device, allow_smoke=allow_smoke)
     sampler, replay = ResetSampler(library, cfg.gamma), Replay(cfg.replay_steps)
     learner = Learner(task, library)
+    if args.init_from:
+        source = load_checkpoint(args.init_from)
+        if (
+            source["fingerprint"]["urdf"] != library.fingerprint["urdf"]
+            or source["smoke_only"]
+        ):
+            raise ValueError(
+                "warm start requires a real MOS9 tracker with the same URDF"
+            )
+        expanded = learner.warm_start(source["learner"])
+        initialization = {
+            "checkpoint": str(args.init_from.resolve()),
+            "sha256": file_sha256(args.init_from),
+            "parent_iteration": source["iteration"],
+            "parent_transitions": source["total_steps"],
+            "zero_extended_inputs": expanded,
+            "optimizer_replay_sampler": "fresh",
+        }
+        del source
     from .environment import WalkingEnv
 
     env = WalkingEnv(task, library, sampler, args.viewer)
@@ -209,6 +238,14 @@ def train(args):
         restore_rng(saved)
         # Reset using restored sampling statistics. Simulator contacts and episodes start afresh.
         env.reset(torch.arange(cfg.num_envs, device=device))
+        initialization = {
+            "resume_checkpoint": str(args.resume.resolve()),
+            "sha256": file_sha256(args.resume),
+            "parent_iteration": iteration,
+            "parent_transitions": total_steps,
+            "optimizer_replay_sampler": "restored; physical episodes restart",
+        }
+        del saved
     metadata = {
         "config": asdict(cfg),
         "fingerprint": library.fingerprint,
@@ -220,8 +257,12 @@ def train(args):
         if device.type == "cuda"
         else "CPU",
         "method": "MOS9/Genesis adaptation of arXiv:2610.28480; not an official implementation",
+        "initialization": initialization,
+        "terrain": task.terrain.manifest() if cfg.robust else None,
     }
     (run / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
+    if cfg.robust:
+        np.save(run / "terrain_height_m.npy", task.terrain.grid.detach().cpu().numpy())
     from torch.utils.tensorboard import SummaryWriter
 
     writer = SummaryWriter(str(run / "tensorboard"))
@@ -235,9 +276,21 @@ def train(args):
         s: signal.signal(s, request_stop) for s in (signal.SIGINT, signal.SIGTERM)
     }
     start = time.monotonic()
+    stage_start_steps = total_steps
     print(
         f"{'SMOKE ONLY; not walking training' if library.smoke_only else 'MOS9 motion tracking'}: {device}, {cfg.num_envs} environments",
         flush=True,
+    )
+    save_checkpoint(
+        run / "initial.pt",
+        cfg,
+        library,
+        learner,
+        replay,
+        sampler,
+        iteration,
+        budget,
+        total_steps,
     )
     try:
         for _ in range(args.iterations):
@@ -292,8 +345,16 @@ def train(args):
                     "training/updates": learner.updates,
                     "training/transitions": total_steps,
                     "training/wall_seconds": time.monotonic() - start,
+                    "training/stage_transitions": total_steps - stage_start_steps,
+                    "training/transitions_per_second": (total_steps - stage_start_steps)
+                    / (time.monotonic() - start),
                 }
             )
+            metrics.update(env.diagnostics())
+            if torch.cuda.is_available():
+                metrics["resource/torch_peak_vram_bytes"] = (
+                    torch.cuda.max_memory_allocated(device)
+                )
             for key, value in metrics.items():
                 writer.add_scalar(key, value, total_steps)
             with (run / "metrics.jsonl").open("a") as f:
@@ -345,7 +406,12 @@ def train(args):
 def evaluate(args):
     saved = load_checkpoint(args.checkpoint)
     cfg = Config(**saved["config"])
-    cfg.num_envs, cfg.randomize, cfg.sensor_noise = 1, False, False
+    cfg.num_envs, cfg.randomize, cfg.sensor_noise = 1, args.randomized, args.randomized
+    cfg.push_enabled = args.pushes
+    if args.seed is not None:
+        cfg.seed = args.seed
+    if args.flat:
+        cfg.terrain_height = 0.0
     device = init_genesis(cfg, args.backend, args.viewer)
     seed_everything(cfg.seed)
     task = Task(cfg).to(device)
@@ -361,21 +427,32 @@ def evaluate(args):
     env = WalkingEnv(task, library, sampler, args.viewer)
     rows = []
     try:
-        for clip, name in enumerate(library.names):
+        for trial, clip in (
+            (trial, clip)
+            for trial in range(args.trials)
+            for clip in range(len(library.names))
+        ):
+            name = library.names[clip]
+            if not 0 <= args.start_frame < int(library.lengths[clip]) - 1:
+                raise ValueError("start-frame must precede the final reference frame")
             env.reset(
                 torch.tensor([0], device=device),
                 torch.tensor([clip], device=device),
-                torch.tensor([0], device=device),
+                torch.tensor([args.start_frame], device=device),
             )
             env.trajectories[0] = []
+            initial_xy = env.state()[0, task.pos][:2].clone()
             errors, distance = [], []
             total = 0.0
-            for frame in range(int(library.lengths[clip]) - 1):
+            duration_frames = int(library.lengths[clip]) - 1 - args.start_frame
+            for frame in range(duration_frames):
                 reward, terminal, _truncated, _ = env.step(
                     learner.actor, deterministic=True, auto_reset=False
                 )
                 state = env.state()
-                reference = library.reference(env.clip, env.frame)[:, 0]
+                reference = library.reference(env.clip, env.frame, context=env.context)[
+                    :, 0
+                ]
                 errors.append(
                     float((state[:, task.pos] - reference[:, task.pos]).norm())
                 )
@@ -383,18 +460,16 @@ def evaluate(args):
                 total += float(reward[0])
                 if terminal[0]:
                     break
-            displacement = [
-                distance[-1][i] - float(library.states[clip, 0, task.pos][i])
-                for i in range(2)
-            ]
+            displacement = [distance[-1][i] - float(initial_xy[i]) for i in range(2)]
             rows.append(
                 {
                     "clip": name,
+                    "trial": trial,
+                    "start_frame": args.start_frame,
                     "frames": frame + 1,
                     "failed": bool(terminal[0]),
                     "return": total,
-                    "normalized_return": total
-                    / (5 * cfg.dt * (int(library.lengths[clip]) - 1)),
+                    "normalized_return": total / (5 * cfg.dt * duration_frames),
                     "root_position_rmse": float(np.sqrt(np.mean(np.square(errors)))),
                     "displacement_xy": displacement,
                 }
@@ -408,6 +483,14 @@ def evaluate(args):
         "clips": rows,
         "fingerprint": library.fingerprint,
         "checkpoint": str(args.checkpoint.resolve()),
+        "settings": {
+            "randomized": cfg.randomize,
+            "sensor_noise": cfg.sensor_noise,
+            "pushes": cfg.push_enabled,
+            "seed": cfg.seed,
+            "terrain": task.terrain.manifest() if cfg.robust else None,
+        },
+        "pushes_total": env.pushes_total,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2) + "\n")
@@ -425,6 +508,19 @@ def main():
     p.add_argument("--motion", type=Path)
     p.add_argument("--run-dir", type=Path, required=True)
     p.add_argument("--resume", type=Path)
+    p.add_argument(
+        "--init-from",
+        type=Path,
+        help="warm start weights; fresh optimizer/replay; compatible privileged inputs may grow",
+    )
+    p.add_argument(
+        "--robust-terrain",
+        action="store_true",
+        help="5 cm uniform terrain, larger dynamics variation and random chunk impulses",
+    )
+    p.add_argument(
+        "--config", type=Path, help="JSON configuration overrides, recorded in metadata"
+    )
     p.add_argument(
         "--smoke-test",
         action="store_true",
@@ -451,11 +547,39 @@ def main():
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--backend", choices=("cpu", "gpu"), default="gpu")
     p.add_argument("--viewer", action="store_true")
+    p.add_argument(
+        "--flat",
+        action="store_true",
+        help="flat-ground control evaluation for a terrain checkpoint",
+    )
+    p.add_argument(
+        "--randomized",
+        action="store_true",
+        help="sample the training dynamics and sensor noise",
+    )
+    p.add_argument(
+        "--pushes",
+        action="store_true",
+        help="apply saved random chunk impulse settings",
+    )
+    p.add_argument("--trials", type=int, default=1)
+    p.add_argument("--start-frame", type=int, default=0)
+    p.add_argument(
+        "--seed",
+        type=int,
+        help="also regenerates a fresh terrain for terrain checkpoints",
+    )
     args = parser.parse_args()
     try:
         if args.command == "train":
+            if args.resume and (args.init_from or args.robust_terrain or args.config):
+                raise ValueError(
+                    "resume restores saved configuration; use init-from for a new distribution"
+                )
             train(args)
         elif args.command == "eval":
+            if args.trials < 1:
+                raise ValueError("trials must be positive")
             evaluate(args)
         else:
             cfg = Config()

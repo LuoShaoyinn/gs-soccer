@@ -24,6 +24,7 @@ class WalkingEnv:
             rigid_options=gs.options.RigidOptions(
                 enable_self_collision=True,
                 batch_links_info=True,
+                batch_dofs_info=cfg.robust,
                 constraint_solver=gs.constraint_solver.CG,
                 integrator=gs.integrator.implicitfast,
                 iterations=50,
@@ -31,8 +32,17 @@ class WalkingEnv:
             ),
             show_viewer=viewer,
         )
+        if cfg.robust and cfg.terrain_height > 0:
+            morph = gs.morphs.Terrain(
+                height_field=task.terrain.grid.detach().cpu().numpy() / 0.001,
+                horizontal_scale=cfg.terrain_cell,
+                vertical_scale=0.001,
+                pos=(-cfg.terrain_size / 2, -cfg.terrain_size / 2, 0),
+            )
+        else:
+            morph = gs.morphs.Plane()
         self.floor = self.scene.add_entity(
-            gs.morphs.Plane(), material=gs.materials.Rigid(friction=1.0)
+            morph, material=gs.materials.Rigid(friction=1.0)
         )
         robot_cfg = MOS9Config(
             robot_URDF=str(URDF),
@@ -65,6 +75,10 @@ class WalkingEnv:
         self.clip = torch.zeros(cfg.num_envs, dtype=torch.long, device=device)
         self.frame = torch.zeros_like(self.clip)
         self.steps = torch.zeros_like(self.clip)
+        self.push_countdown = torch.zeros_like(self.clip)
+        self.pushes_total = 0
+        self.pushes_since_log = 0
+        self.push_delta_max = 0.0
         self.previous = torch.zeros(cfg.num_envs, n, device=device)
         self.history = torch.zeros(
             cfg.num_envs, cfg.history, task.obs_dim, device=device
@@ -100,23 +114,56 @@ class WalkingEnv:
         context = torch.zeros(len(idx), t.context_dim, device=t.home.device)
         context[:, 0] = 1.0
         if cfg.randomize:
-            context[:, 0] = 0.3 + 0.9 * torch.rand(len(idx), device=t.home.device)
+
+            def uniform(low, high, shape):
+                return low + (high - low) * torch.rand(shape, device=t.home.device)
+
+            context[:, 0] = uniform(*cfg.friction_range, (len(idx),))
             context[:, 1 : 1 + t.n] = (
-                0.02 * torch.rand(len(idx), t.n, device=t.home.device) - 0.01
+                2
+                * cfg.calibration_range
+                * torch.rand(len(idx), t.n, device=t.home.device)
+                - cfg.calibration_range
             )
-            context[:, -3:] = (
+            context[:, t.com_context] = (
                 2 * torch.rand(len(idx), 3, device=t.home.device) - 1
-            ) * torch.tensor([0.025, 0.05, 0.05], device=t.home.device)
-        self.context[idx] = context
+            ) * torch.tensor(cfg.com_range, device=t.home.device)
+            if cfg.robust:
+                # Store deviations from nominal; zero appended inputs preserve
+                # the flat-ground checkpoint when widening its model inputs.
+                context[:, t.kp_context] = uniform(*cfg.kp_range, (len(idx), t.n)) - 1
+                context[:, t.kd_context] = uniform(*cfg.kd_range, (len(idx), t.n)) - 1
+                context[:, t.offset_context.start : t.offset_context.start + 2] = (
+                    uniform(
+                        -cfg.terrain_spawn_span / 2,
+                        cfg.terrain_spawn_span / 2,
+                        (len(idx), 2),
+                    )
+                )
         ratio = context[:, :1].expand(-1, r.n_links).contiguous()
         r.set_friction_ratio(ratio, envs_idx=idx)
         self.floor.set_friction_ratio(context[:, :1], envs_idx=idx)
         r.set_links_COM(
-            (self.nominal_com + context[:, -3:]).unsqueeze(1),
+            (self.nominal_com + context[:, t.com_context]).unsqueeze(1),
             [self.root_link],
             envs_idx=idx,
         )
-        ref = self.library.reference(clips, frames)[:, 0]
+        if cfg.robust:
+            r.set_dofs_kp(
+                cfg.kp * (1 + context[:, t.kp_context]), self.indices, envs_idx=idx
+            )
+            r.set_dofs_kv(
+                cfg.kd * (1 + context[:, t.kd_context]), self.indices, envs_idx=idx
+            )
+            if cfg.terrain_height > 0:
+                ref = self.library.reference(clips, frames, context=context)[:, 0]
+                p, q, _, _ = t.bodies(ref)
+                feet = [TRACKED_LINKS.index(name) for name in ("Rfoot", "Lfoot")]
+                context[:, t.offset_context.stop - 1] = t.terrain.spawn_lift(
+                    p[:, feet], q[:, feet]
+                )
+        self.context[idx] = context
+        ref = self.library.reference(clips, frames, context=context)[:, 0]
         r.set_dofs_position(ref[:, t.q], self.indices, envs_idx=idx, zero_velocity=True)
         r.set_pos(ref[:, t.pos], envs_idx=idx)
         r.set_quat(ref[:, t.quat], envs_idx=idx)
@@ -126,6 +173,7 @@ class WalkingEnv:
         )
         r.set_dofs_velocity(root_velocity, self.root_dofs, envs_idx=idx)
         r.set_dofs_velocity(ref[:, t.dq], self.indices, envs_idx=idx)
+        self.push_countdown[idx] = self.sample_push_delay(len(idx))
         self.previous[idx] = 0
         r.control_dofs_position(
             t.targets(torch.zeros_like(self.previous), self.context), self.indices
@@ -135,6 +183,76 @@ class WalkingEnv:
         self.history[idx] = obs[:, None].expand(-1, cfg.history, -1)
         for i in idx.tolist():
             self.trajectories[i] = []
+
+    def sample_push_delay(self, count):
+        low, high = self.cfg.push_interval_chunks
+        return self.cfg.push_chunk_steps * torch.randint(
+            low, high + 1, (count,), device=self.clip.device
+        )
+
+    @torch.no_grad()
+    def apply_push(self, idx, replay=None, delta=None):
+        """Instantaneous additive world xy/yaw velocity impulse, without pose reset."""
+        if len(idx) == 0:
+            return
+        if delta is None:
+            extent = torch.tensor(
+                [
+                    self.cfg.push_velocity,
+                    self.cfg.push_velocity,
+                    self.cfg.push_yaw_velocity,
+                ],
+                device=self.clip.device,
+            )
+            delta = (2 * torch.rand(len(idx), 3, device=self.clip.device) - 1) * extent
+        # The free-root angular generalized velocities are body-local. Convert
+        # the world-z angular increment before applying it.
+        velocity = self.robot.get_dofs_velocity(self.root_dofs, envs_idx=idx)
+        velocity[:, :2] += delta[:, :2]
+        world_angular = torch.zeros(len(idx), 3, device=self.clip.device)
+        world_angular[:, 2] = delta[:, 2]
+        velocity[:, 3:] += rotate(
+            conjugate(self.robot.get_quat(envs_idx=idx)), world_angular
+        )
+        self.robot.set_dofs_velocity(velocity, self.root_dofs, envs_idx=idx)
+        if replay is not None:
+            # A kick is external to the learned action dynamics. Cut only model
+            # windows at this discontinuity, without labeling a fall or ending
+            # the physical episode. The next recorded state contains the kick.
+            replay.cut_episodes(idx)
+        self.history[idx, -1] = self.task.observation(
+            self.state()[idx], self.cfg.sensor_noise
+        )
+        self.pushes_total += len(idx)
+        self.pushes_since_log += len(idx)
+        self.push_delta_max = max(
+            self.push_delta_max, float(delta[:, :2].norm(dim=-1).max())
+        )
+        self.push_countdown[idx] = self.sample_push_delay(len(idx))
+
+    def diagnostics(self):
+        t = self.task
+        result = {
+            "perturbation/pushes_total": self.pushes_total,
+            "perturbation/pushes_this_iteration": self.pushes_since_log,
+            "perturbation/max_delta_xy_speed": self.push_delta_max,
+            "domain/friction_min": float(self.context[:, 0].min()),
+            "domain/friction_max": float(self.context[:, 0].max()),
+        }
+        if self.cfg.robust:
+            for label, section in (("kp", t.kp_context), ("kd", t.kd_context)):
+                result[f"domain/{label}_ratio_min"] = float(
+                    (1 + self.context[:, section]).min()
+                )
+                result[f"domain/{label}_ratio_max"] = float(
+                    (1 + self.context[:, section]).max()
+                )
+            for i, axis in enumerate("xyz"):
+                result[f"domain/com_{axis}_abs_max"] = float(
+                    self.context[:, t.com_context][:, i].abs().max()
+                )
+        self.pushes_since_log = 0
+        return result
 
     @torch.no_grad()
     def validate_kinematics(self):
@@ -160,8 +278,13 @@ class WalkingEnv:
     @torch.no_grad()
     def step(self, actor, replay=None, deterministic=False, auto_reset=True):
         t, cfg = self.task, self.cfg
+        if cfg.push_enabled:
+            self.push_countdown -= 1
+            self.apply_push((self.push_countdown <= 0).nonzero().flatten(), replay)
         state = self.state()
-        ref = self.library.reference(self.clip, self.frame, cfg.future)
+        ref = self.library.reference(
+            self.clip, self.frame, cfg.future, context=self.context
+        )
         action = actor(self.history, t.goal(state, ref))
         if not deterministic:
             action = action + cfg.action_noise * torch.randn_like(action)
@@ -173,7 +296,9 @@ class WalkingEnv:
         next_state = self.state()
         if not torch.isfinite(next_state).all():
             raise FloatingPointError("nonfinite Genesis state")
-        target = self.library.reference(self.clip, self.frame + 1)[:, 0]
+        target = self.library.reference(
+            self.clip, self.frame + 1, context=self.context
+        )[:, 0]
         reward, terms = t.reward(next_state, state[:, t.previous], action, target)
         terminal = t.terminal(next_state, target)
         self.steps += 1
@@ -194,11 +319,20 @@ class WalkingEnv:
                 history=self.history,
             )
         # Log factual rewards, never a reset observation substituted for next_state.
-        for i, (c, f, rew) in enumerate(
-            zip(self.clip.tolist(), self.frame.tolist(), reward.tolist())
+        # Copy vectors once; testing thousands of GPU scalar booleans one by one
+        # otherwise synchronizes the device once per environment per step.
+        for i, (c, f, rew, ended, failed, steps) in enumerate(
+            zip(
+                self.clip.tolist(),
+                self.frame.tolist(),
+                reward.tolist(),
+                done.tolist(),
+                terminal.tolist(),
+                self.steps.tolist(),
+            )
         ):
             self.trajectories[i].append((c, f, rew))
-            if done[i]:
+            if ended:
                 if not deterministic:
                     self.sampler.update(self.trajectories[i])
                 self.completed.append(
@@ -206,8 +340,8 @@ class WalkingEnv:
                         "clip": self.library.names[c],
                         "steps": len(self.trajectories[i]),
                         "return": sum(x[2] for x in self.trajectories[i]),
-                        "failed": bool(terminal[i]),
-                        "timeout": bool(self.steps[i] >= cfg.episode_steps),
+                        "failed": failed,
+                        "timeout": steps >= cfg.episode_steps,
                     }
                 )
         self.frame += 1

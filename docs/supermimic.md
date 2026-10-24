@@ -180,3 +180,9 @@ Smoke checkpoints and evaluation reports retain that label.
 See [the recorded validation](supermimic_validation.md) for results from the
 development machine. Passing these checks establishes executable code and
 specific contracts, not a learned walking gait.
+
+## Terrain and robustness training
+
+See [the robustness experiment](supermimic_robustness.md) for bounded ±5 cm
+terrain, larger per-episode dynamics variation, chunk velocity impulses,
+4096-environment scaling, warm initialization, and challenge evaluation.

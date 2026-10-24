@@ -7,9 +7,12 @@ analytic policy-gradient updates through the learned model. It includes
 motion tracking, reference-state resets, return-based reset sampling,
 checkpoint/resume, TensorBoard, and deterministic full-clip evaluation.
 
-**Walking reference data is still required.** No MOS9 walking dataset ships
-with this branch. Human or G1 motions must be retargeted to the MOS9 URDF.
-The synthetic smoke mode verifies execution only; it cannot establish walking.
+Walking references must be retargeted to the MOS9 URDF. The separate
+`experiments/MOS9-retarget` branch provides the public G1 conversion workflow;
+generated data and trained checkpoints stay under ignored `runs/`. The first
+local policy completed its eight-second training clip, while transfer to the
+unused second clip remained limited. The synthetic smoke mode verifies
+execution only; it cannot establish walking.
 
 ```bash
 uv sync --extra rocm
@@ -19,7 +22,9 @@ uv run --extra rocm python -m supermimic train \
 ```
 
 See [the experiment guide](docs/supermimic.md) for data, method, testing,
-evaluation, and resume instructions.
+evaluation, and resume instructions. The [terrain robustness experiment](docs/supermimic_robustness.md)
+adds ±5 cm terrain, wider gain/COG/friction variation and random chunk impulses
+with a 4096-environment configuration.
 
 ## Shared infrastructure
 

@@ -65,9 +65,11 @@ class Learner:
                 .square()
                 .mean()
             )
-            ref = self.library.reference(batch["clip"][:, k], batch["frame"][:, k] + 1)[
-                :, 0
-            ]
+            ref = self.library.reference(
+                batch["clip"][:, k],
+                batch["frame"][:, k] + 1,
+                context=batch["context"][:, k],
+            )[:, 0]
             death_loss += F.binary_cross_entropy_with_logits(
                 self.model.death_logit(state, ref), batch["terminal"][:, k].float()
             )
@@ -95,14 +97,14 @@ class Learner:
         # No no_grad here: actor needs model Jacobians and the terminal-value derivative.
         with frozen(self.model, self.critic):
             for k in range(cfg.horizon):
-                ref = lib.reference(clips, frames + k, cfg.future)
+                ref = lib.reference(clips, frames + k, cfg.future, context=context)
                 goal = t.goal(state, ref)
                 states.append(state.detach())
                 goals.append(goal.detach())
                 values.append(self.critic(state, goal, context))
                 action = self.actor(history, goal)
                 next_state = self.model(state, action, context)
-                target = lib.reference(clips, frames + k + 1)[:, 0]
+                target = lib.reference(clips, frames + k + 1, context=context)[:, 0]
                 reward, _ = t.reward(next_state, state[..., t.previous], action, target)
                 death = torch.sigmoid(self.model.death_logit(next_state, target))
                 # Clip end and time horizon are truncations, not physical failure labels.
@@ -120,7 +122,10 @@ class Learner:
                     ),
                     1,
                 )
-            goal = t.goal(state, lib.reference(clips, frames + cfg.horizon, cfg.future))
+            goal = t.goal(
+                state,
+                lib.reference(clips, frames + cfg.horizon, cfg.future, context=context),
+            )
             values.append(self.critic(state, goal, context))
             objective += cfg.gamma**cfg.horizon * survival * values[-1]
             actor_loss = -objective.mean()
@@ -172,6 +177,36 @@ class Learner:
             "optimizers": {k: o.state_dict() for k, o in self.optimizers.items()},
             "updates": self.updates,
         }
+
+    def warm_start(self, state):
+        """Copy a compatible tracker; zero newly added privileged input columns.
+
+        Optimizers, replay and update counters deliberately start fresh because
+        the dynamics distribution and vector batch size have changed.
+        """
+        expanded = []
+        for name in ("model", "actor", "critic"):
+            module = getattr(self, name)
+            target = module.state_dict()
+            source = state[name]
+            if set(source) != set(target):
+                raise ValueError(f"incompatible warm-start {name} keys")
+            for key, value in source.items():
+                if value.shape == target[key].shape:
+                    target[key] = value
+                elif (
+                    (name, key)
+                    in (("model", "dynamics.0.weight"), ("critic", "net.0.weight"))
+                    and value.shape[0] == target[key].shape[0]
+                    and value.shape[1] < target[key].shape[1]
+                ):
+                    target[key].zero_()
+                    target[key][:, : value.shape[1]] = value
+                    expanded.append(f"{name}.{key}")
+                else:
+                    raise ValueError(f"incompatible warm-start tensor {name}.{key}")
+            module.load_state_dict(target)
+        return expanded
 
     def load_state_dict(self, data):
         for key in ("model", "actor", "critic"):

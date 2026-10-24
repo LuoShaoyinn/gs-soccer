@@ -129,10 +129,14 @@ class MotionLibrary:
         }
         self.device, self.task = device, task
 
-    def reference(self, clips, frames, count=1):
+    def reference(self, clips, frames, count=1, context=None):
         idx = frames[..., None] + torch.arange(count, device=self.states.device)
         idx = torch.minimum(idx, self.lengths[clips][..., None] - 1)
-        return self.states[clips[..., None], idx]
+        result = self.states[clips[..., None], idx]
+        if context is not None and self.task.cfg.robust:
+            result = result.clone()
+            result[..., self.task.pos] += context[..., None, self.task.offset_context]
+        return result
 
 
 class ResetSampler:

@@ -69,7 +69,8 @@ class Replay:
         for k, v in state["data"].items():
             self.data[k][: len(v)].copy_(v)
 
-    def cut_episodes(self):
+    def cut_episodes(self, envs_idx=None):
         # A resumed physics scene cannot continue a recorded episode.
         if self.size:
-            self.data["done"][(self.cursor - 1) % self.capacity] = True
+            idx = slice(None) if envs_idx is None else envs_idx.detach().cpu()
+            self.data["done"][(self.cursor - 1) % self.capacity, idx] = True
